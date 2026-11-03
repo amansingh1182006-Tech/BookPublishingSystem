@@ -1,0 +1,49 @@
+﻿@model Application.DTOs.AdminDashboardDto
+
+<h2>Admin Central Control Dashboard</h2>
+
+<hr />
+<h3>All User Profiles</h3>
+<table class="table table-bordered">
+    <thead>
+        <tr>
+            <th>User ID</th>
+            <th>Email</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var user in Model.Users)
+        {
+            <tr>
+                <td>@user.UserId</td>
+                <td>@user.Email</td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+<hr />
+<h3>All Purchased Books & Subscription Plans</h3>
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th>User Email</th>
+            <th>Book Title</th>
+            <th>Plan Type</th>
+            <th>Amount Paid</th>
+            <th>Purchase Date</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var purchase in Model.Purchases)
+        {
+            <tr>
+                <td>@purchase.UserEmail</td>
+                <td>@purchase.BookTitle</td>
+                <td><span class="badge bg-info">@purchase.PlanType</span></td>
+                <td>₹@purchase.Amount</td>
+                <td>@purchase.Date.ToString("dd MMM yyyy")</td>
+            </tr>
+        }
+    </tbody>
+</table>

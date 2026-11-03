@@ -1,0 +1,25 @@
+﻿using BookPublishingSystem.Domain.Entities;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+
+namespace Infrastructure.Persistence.Configurations
+{
+    public class ApplicationUserConfiguration : IEntityTypeConfiguration<ApplicationUser>
+    {
+        public void Configure(EntityTypeBuilder<ApplicationUser> builder)
+        {
+            builder.Property(u => u.FullName)
+                   .HasMaxLength(200)
+                   .IsRequired();
+
+            builder.Property(u => u.Bio)
+                   .HasMaxLength(1000);
+
+            
+            builder.HasMany(u => u.AuthoredBooks)
+                   .WithOne(b => b.Author)
+                   .HasForeignKey(b => b.AuthorId)
+                   .OnDelete(DeleteBehavior.Restrict);
+        }
+    }
+}

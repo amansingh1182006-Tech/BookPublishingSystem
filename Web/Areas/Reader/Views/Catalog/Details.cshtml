@@ -1,0 +1,94 @@
+﻿@{
+    ViewData["Title"] = "Book Details & Chapter Index";
+    Layout = null;
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"]</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100 text-slate-800 font-sans">
+    <div id="catalog-details-root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        function CatalogDetailsApp() {
+            const [book, setBook] = useState(null);
+            const [loading, setLoading] = useState(true);
+
+            // Extract Book ID from URL Path parameter
+            const pathParts = window.location.pathname.split('/');
+            const bookId = pathParts[pathParts.length - 1];
+
+            useEffect(() => {
+                if (bookId) fetchBookDetails();
+            }, [bookId]);
+
+            const fetchBookDetails = async () => {
+                try {
+                    const res = await fetch(`/api/reader/catalog/books/${bookId}`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        setBook(data);
+                    }
+                } catch (e) {
+                    console.error("Book detail error:", e);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            if (loading) return <div className="p-10 text-center text-xs text-slate-600">Loading Book Catalog...</div>;
+            if (!book) return <div className="p-10 text-center text-xs text-red-600">Publication not found.</div>;
+
+            return (
+                <div className="max-w-4xl mx-auto p-6 space-y-6">
+                    <div className="bg-white p-6 rounded-xl shadow border border-gray-200 flex flex-col md:flex-row gap-6">
+                        <div className="w-36 h-48 bg-slate-100 rounded border flex items-center justify-center shrink-0">
+                            <img src={book.coverImagePath} alt={book.title} className="h-full object-contain" />
+                        </div>
+                        <div className="flex-1 space-y-2">
+                            <h1 className="text-xl font-bold text-slate-900">{book.title}</h1>
+                            <p className="text-xs text-slate-500">by <strong className="text-slate-800">{book.authorName}</strong></p>
+                            <p className="text-xs text-slate-600 py-2">{book.description}</p>
+                            <div className="text-lg font-black text-slate-900">₹{book.price}</div>
+                        </div>
+                    </div>
+
+                    {/* CHAPTERS INDEX */}
+                    <div className="bg-white p-6 rounded-xl shadow border border-gray-200 space-y-4 text-xs">
+                        <h3 className="font-bold text-sm text-slate-900 border-b pb-2">Available Chapters</h3>
+                        <div className="divide-y">
+                            {book.chapters && book.chapters.map(c => (
+                                <div key={c.id} className="py-3 flex items-center justify-between">
+                                    <div>
+                                        <span className="font-bold text-slate-800 me-2">Chapter {c.sequenceNumber}:</span>
+                                        <span className="text-slate-700">{c.title}</span>
+                                    </div>
+                                    <a
+                                        href={`/Reader/Reader/Watch?chapterId=${c.id}`}
+                                        className={`px-3 py-1.5 rounded font-bold text-[11px] transition ${c.isFreePreview ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-slate-900 text-white hover:bg-slate-800'}`}
+                                    >
+                                        {c.isFreePreview ? 'Read Preview' : 'Stream DRM'}
+                                    </a>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('catalog-details-root'));
+        root.render(<CatalogDetailsApp />);
+    </script>
+</body>
+</html>

@@ -1,0 +1,124 @@
+﻿@{
+    ViewData["Title"] = "Author & Publisher Profile Studio";
+    Layout = null;
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"]</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-slate-900 text-slate-100 font-sans">
+    <div id="author-profile-root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        function AuthorProfileApp() {
+            const [profile, setProfile] = useState(null);
+            const [bioInput, setBioInput] = useState('');
+            const [loading, setLoading] = useState(true);
+            const [saving, setSaving] = useState(false);
+
+            useEffect(() => {
+                fetchProfile();
+            }, []);
+
+            const fetchProfile = async () => {
+                try {
+                    const res = await fetch('/api/author/profile');
+                    if (res.ok) {
+                        const data = await res.json();
+                        setProfile(data);
+                        setBioInput(data.bio || '');
+                    }
+                } catch (e) {
+                    console.error("Profile fetch error:", e);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const handleUpdateBio = async (e) => {
+                e.preventDefault();
+                setSaving(true);
+                try {
+                    const res = await fetch('/api/author/profile/update-bio', {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(bioInput)
+                    });
+                    if (res.ok) {
+                        alert("Biography updated successfully!");
+                        fetchProfile();
+                    }
+                } catch (e) {
+                    alert("Failed to update bio.");
+                } finally {
+                    setSaving(false);
+                }
+            };
+
+            if (loading) return <div className="p-10 text-center text-xs text-slate-400">Loading Author Profile...</div>;
+
+            return (
+                <div className="max-w-4xl mx-auto p-6 space-y-6">
+                    <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 flex items-center justify-between shadow-xl">
+                        <div className="flex items-center gap-4">
+                            <div className="w-16 h-16 rounded-full bg-red-600 flex items-center justify-center text-2xl font-black text-white shadow">
+                                {profile?.fullName ? profile.fullName[0] : 'A'}
+                            </div>
+                            <div>
+                                <h1 className="text-xl font-bold text-white">{profile?.fullName}</h1>
+                                <p className="text-xs text-slate-400">{profile?.email}</p>
+                                <span className="inline-block mt-1 text-[10px] bg-red-950 text-red-400 font-bold px-2 py-0.5 rounded border border-red-800 uppercase">
+                                    Author Studio Verified
+                                </span>
+                            </div>
+                        </div>
+                        <a href="/Author/Book/ManageChapters" className="bg-red-600 hover:bg-red-700 text-white font-bold text-xs px-4 py-2 rounded-lg transition shadow">
+                            <i className="fa-solid fa-book-medical me-1.5"></i> Manage Books
+                        </a>
+                    </div>
+
+                    {/* STATS OVERVIEW */}
+                    <div className="grid grid-cols-2 gap-4 text-xs font-bold">
+                        <div className="bg-slate-800/80 p-4 rounded-xl border border-slate-700 text-center">
+                            <span className="text-3xl font-black text-red-500 block mb-1">{profile?.stats?.publishedBooks || 0}</span>
+                            <span className="text-slate-400 uppercase tracking-wider text-[10px]">Published Publications</span>
+                        </div>
+                        <div className="bg-slate-800/80 p-4 rounded-xl border border-slate-700 text-center">
+                            <span className="text-3xl font-black text-amber-500 block mb-1">{profile?.stats?.draftBooks || 0}</span>
+                            <span className="text-slate-400 uppercase tracking-wider text-[10px]">Draft Manuscripts</span>
+                        </div>
+                    </div>
+
+                    {/* BIO UPDATE FORM */}
+                    <form onSubmit={handleUpdateBio} className="bg-slate-800 p-6 rounded-xl border border-slate-700 space-y-3">
+                        <h3 className="font-bold text-sm text-slate-200 border-b border-slate-700 pb-2">Author Biography</h3>
+                        <textarea
+                            value={bioInput}
+                            onChange={(e) => setBioInput(e.target.value)}
+                            rows="4"
+                            placeholder="Write your professional author biography..."
+                            className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-xs text-slate-200 outline-none focus:border-red-500"
+                        ></textarea>
+                        <button type="submit" disabled={saving} className="bg-slate-700 hover:bg-slate-600 text-white font-bold text-xs px-4 py-2 rounded transition">
+                            {saving ? 'Updating...' : 'Save Biography'}
+                        </button>
+                    </form>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('author-profile-root'));
+        root.render(<AuthorProfileApp />);
+    </script>
+</body>
+</html>

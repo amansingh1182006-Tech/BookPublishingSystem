@@ -1,0 +1,308 @@
+﻿@{
+    ViewData["Title"] = "Protected DRM Reader & Reader Profile Setup";
+    Layout = null;
+    var currentBookId = Context.Request.Query["bookId"].ToString();
+    bool isAdminUser = User.IsInRole("Admin");
+}
+<!DOCTYPE html>
+<html lang="en" class="h-full w-full overflow-hidden">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"]</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        html, body, #drm-watch-app-root {
+            height: 100%;
+            width: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        .no-select {
+            user-select: none;
+            -webkit-user-select: none;
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 font-sans h-full w-full no-select">
+    <div id="drm-watch-app-root" class="h-full w-full flex flex-col"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+        const targetBookId = "@currentBookId";
+        const isAdmin = @(isAdminUser ? "true" : "false");
+
+        function WatchDRMApp() {
+            const [hasProfile, setHasProfile] = useState(isAdmin);
+            const [isLoading, setIsLoading] = useState(!isAdmin);
+            const [profile, setProfile] = useState({
+                custName: '',
+                mobileNo: '',
+                address1: '',
+                address2: '',
+                country: 'India',
+                state: '',
+                postalCode: '',
+                landmark: ''
+            });
+            const [message, setMessage] = useState('');
+            const [isSaving, setIsSaving] = useState(false);
+
+           useEffect(() => {
+            // 1. Guard Clause: Agar URL me bookId missing ya empty ho toh Home Page redirect karein
+            if (!targetBookId || targetBookId.trim() === '' || targetBookId === 'null' || targetBookId === 'undefined') {
+                window.location.href = '/';
+                return;
+            }
+
+            // 2. Admin Check Bypass: Admins ke liye direct DRM Stream allow karein
+            if (isAdmin) {
+                setHasProfile(true);
+                setIsLoading(false);
+                return;
+            }
+
+            // 3. Normal Readers ke liye Profile Status Check
+            fetch('/Reader/profile-status')
+                .then(res => res.ok ? res.json() : null)
+                .then(data => {
+                    if (data && data.hasProfile) {
+                        setHasProfile(true);
+                    } else if (data) {
+                        setHasProfile(false);
+                        if (data.profile) {
+                            setProfile({
+                                custName: data.profile.custName || '',
+                                mobileNo: data.profile.mobileNo || '',
+                                address1: data.profile.address1 || '',
+                                address2: data.profile.address2 || '',
+                                country: data.profile.country || 'India',
+                                state: data.profile.state || '',
+                                postalCode: data.profile.postalCode || '',
+                                landmark: data.profile.landmark || ''
+                            });
+                        }
+                    } else {
+                        setHasProfile(true);
+                    }
+                })
+                .catch(() => setHasProfile(true))
+                .finally(() => setIsLoading(false));
+        }, []);
+
+            const handleProfileSubmit = async (e) => {
+                e.preventDefault();
+                setIsSaving(true);
+                setMessage('');
+
+                try {
+                    const res = await fetch('/Reader/upsert-profile', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(profile)
+                    });
+
+                    if (res.ok) {
+                        setHasProfile(true);
+                    } else {
+                        const errData = await res.json();
+                        setMessage(errData.message || 'Profile save nahi ho saki.');
+                    }
+                } catch (err) {
+                    setMessage('Network Connection Error: ' + err.message);
+                } finally {
+                    setIsSaving(false);
+                }
+            };
+
+            if (isLoading) {
+                return (
+                    <div className="h-full w-full flex flex-col items-center justify-center text-slate-300 text-sm gap-3">
+                        <i className="fa-solid fa-circle-notch fa-spin text-3xl text-amber-500"></i>
+                        <span>Loading DRM Viewer...</span>
+                    </div>
+                );
+            }
+
+            // FULLSCREEN RESPONSIVE PDF STREAM FOR BOTH ADMIN & CUSTOMERS
+            if (hasProfile) {
+                return (
+                    <div className="h-full w-full flex flex-col bg-slate-900 overflow-hidden">
+                        {/* TOP NAV BAR */}
+                        <div className="bg-[#0d233a] text-white px-4 py-2 flex items-center justify-between border-b border-slate-700 shadow-md shrink-0">
+                            <div className="flex items-center gap-3">
+                                <button
+                                    onClick={() => window.location.href = '/'}
+                                    className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 border border-slate-700 transition cursor-pointer">
+                                    <i className="fa-solid fa-arrow-left"></i> Back to Store
+                                </button>
+                                <span className="text-xs font-bold text-amber-400 border-l border-slate-700 pl-3">
+                                    <i className="fa-solid fa-shield-halved me-1"></i> B. Jain DRM Protected Reader
+                                </span>
+                            </div>
+                            <div className="text-xs text-slate-400 font-mono">
+                                Book ID: {targetBookId}
+                            </div>
+                        </div>
+
+                        {/* FULL HEIGHT DRM PDF IFRAME STREAM CONTAINER */}
+                        <div className="flex-1 w-full bg-slate-950 overflow-hidden">
+                            {targetBookId ? (
+                                <iframe
+                                    src={`/Reader/stream-book/${targetBookId}`}
+                                    className="w-full h-full border-none block"
+                                    title="DRM Book Reader"
+                                />
+                            ) : (
+                                <div className="h-full flex flex-col items-center justify-center text-red-400 font-bold text-sm">
+                                    <i className="fa-solid fa-triangle-exclamation text-2xl block mb-2"></i>
+                                    Invalid Book ID requested.
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                );
+            }
+
+            // PROFILE SETUP FORM (ONLY FOR NON-ADMIN CUSTOMERS)
+            return (
+                <div className="h-full w-full flex items-center justify-center p-4 bg-slate-950 overflow-y-auto">
+                    <div className="w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-2xl p-6 md:p-8 shadow-2xl space-y-6 my-auto">
+                        <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+                            <div>
+                                <h2 className="text-lg font-black text-white flex items-center gap-2">
+                                    <i className="fa-solid fa-id-card text-red-500"></i> Reader Profile Setup
+                                </h2>
+                                <p className="text-xs text-slate-400 mt-0.5">Reader account access ke liye apni profile complete karein.</p>
+                            </div>
+                            <button onClick={() => window.location.href = '/'} className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer">
+                                <i className="fa-solid fa-house"></i> Home Page
+                            </button>
+                        </div>
+
+                        {message && (
+                            <div className="bg-red-500/10 border border-red-500/30 text-red-400 p-3 rounded-lg text-xs font-bold flex items-center gap-2">
+                                <i className="fa-solid fa-circle-exclamation text-base"></i>
+                                <span>{message}</span>
+                            </div>
+                        )}
+
+                        <form onSubmit={handleProfileSubmit} className="space-y-4 text-xs text-slate-300">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="font-bold block mb-1">Full Name *</label>
+                                    <input
+                                        type="text"
+                                        required
+                                        value={profile.custName}
+                                        onChange={e => setProfile({ ...profile, custName: e.target.value })}
+                                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white font-bold outline-none focus:border-red-500"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="font-bold block mb-1">Mobile Number *</label>
+                                    <input
+                                        type="text"
+                                        required
+                                        value={profile.mobileNo}
+                                        onChange={e => setProfile({ ...profile, mobileNo: e.target.value })}
+                                        placeholder="10-digit Mobile No."
+                                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white outline-none focus:border-red-500"
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="font-bold block mb-1">Address Line 1 *</label>
+                                <input
+                                    type="text"
+                                    required
+                                    value={profile.address1}
+                                    onChange={e => setProfile({ ...profile, address1: e.target.value })}
+                                    placeholder="House / Flat No., Street, Building"
+                                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white outline-none focus:border-red-500"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="font-bold block mb-1">Address Line 2 (Optional)</label>
+                                <input
+                                    type="text"
+                                    value={profile.address2 || ''}
+                                    onChange={e => setProfile({ ...profile, address2: e.target.value })}
+                                    placeholder="Area, Locality, Sector"
+                                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white outline-none focus:border-red-500"
+                                />
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                                <div>
+                                    <label className="font-bold block mb-1">Country *</label>
+                                    <input
+                                        type="text"
+                                        required
+                                        value={profile.country}
+                                        onChange={e => setProfile({ ...profile, country: e.target.value })}
+                                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white outline-none"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="font-bold block mb-1">State *</label>
+                                    <input
+                                        type="text"
+                                        required
+                                        value={profile.state}
+                                        onChange={e => setProfile({ ...profile, state: e.target.value })}
+                                        placeholder="State Name"
+                                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white outline-none focus:border-red-500"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="font-bold block mb-1">Postal Code *</label>
+                                    <input
+                                        type="text"
+                                        required
+                                        value={profile.postalCode}
+                                        onChange={e => setProfile({ ...profile, postalCode: e.target.value })}
+                                        placeholder="Pincode"
+                                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white font-mono outline-none focus:border-red-500"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="font-bold block mb-1">Landmark (Optional)</label>
+                                    <input
+                                        type="text"
+                                        value={profile.landmark || ''}
+                                        onChange={e => setProfile({ ...profile, landmark: e.target.value })}
+                                        placeholder="Nearby Landmark"
+                                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white outline-none focus:border-red-500"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="pt-4 flex justify-end">
+                                <button
+                                    type="submit"
+                                    disabled={isSaving}
+                                    className="bg-red-600 hover:bg-red-700 text-white font-bold px-6 py-2.5 rounded-lg text-xs transition flex items-center gap-2 cursor-pointer shadow-lg">
+                                    <i className="fa-solid fa-floppy-disk"></i>
+                                    {isSaving ? 'Saving Profile...' : 'Save Profile & Go To Reader'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('drm-watch-app-root'));
+        root.render(<WatchDRMApp />);
+    </script>
+</body>
+</html>

@@ -1,0 +1,50 @@
+﻿@{
+    ViewData["Title"] = "B. Jain Publishers - Online Book Store";
+    Layout = null;
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"]</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <!-- PDF.js Core Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .no-select {
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        .bjain-blue {
+            background-color: #0d233a;
+        }
+
+        .bjain-red {
+            background-color: #be1e2d;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-slate-800 font-sans antialiased no-select">
+    <div id="root"></div>
+
+    <!-- Scripts with explicit reactivity handling -->
+    <script type="text/babel" data-presets="react" src="/js/AddBookForm.js?v=@DateTime.Now.Ticks"></script>
+    <script type="text/babel" data-presets="react" src="/js/EditBookForm.js?v=@DateTime.Now.Ticks"></script>
+    <script type="text/babel" data-presets="react" src="/js/AddAuthorForm.js?v=@DateTime.Now.Ticks"></script>
+    <script type="text/babel" data-presets="react" src="/js/EditAuthorForm.js?v=@DateTime.Now.Ticks"></script>
+    <script type="text/babel" data-presets="react" src="/js/AddCategoryForm.js?v=@DateTime.Now.Ticks"></script>
+    <script type="text/babel" data-presets="react" src="/js/EditCategoryForm.js?v=@DateTime.Now.Ticks"></script>
+    <script type="text/babel" data-presets="react" src="/js/AddLanguageForm.js?v=@DateTime.Now.Ticks"></script>
+    <script type="text/babel" data-presets="react" src="/js/EditLanguageForm.js?v=@DateTime.Now.Ticks"></script>
+    <script type="text/babel" data-presets="react" src="/js/AddPlanForm.js?v=@DateTime.Now.Ticks"></script>
+    <script type="text/babel" data-presets="react" src="/js/app.js?v=@DateTime.Now.Ticks"></script>
+</body>
+</html>
