@@ -19,7 +19,11 @@ namespace Application.DTOs
         [Range(1, 10000, ErrorMessage = "No of Pages must be at least 1")]
         public int NoOfPages { get; set; } = 1;
 
+        // Manual Author Name (e.g. "Dr. Samuel Hahnemann")
         public string? AuthorName { get; set; }
+
+        // Selected Author ID from Dropdown/Master (Optional)
+        public string? AuthorId { get; set; }
 
         public string? Language { get; set; } = "English";
 
@@ -42,6 +46,8 @@ namespace Application.DTOs
         public string? Language { get; set; } = "English";
         public string? CategoryCode { get; set; }
         public string? Description { get; set; }
+        public string? AuthorName { get; set; }
+        public string? AuthorId { get; set; }
         public IFormFile? CoverImage { get; set; }
         public IFormFile? MainPdf { get; set; }
     }

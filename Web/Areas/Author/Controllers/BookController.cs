@@ -54,8 +54,8 @@ namespace Web.Areas.Author.Controllers
             if (dto.MainPdf == null || dto.MainPdf.Length == 0)
                 return BadRequest(new { message = "Main PDF file is required." });
 
-            var user = await _userManager.GetUserAsync(User);
-            if (user == null) return Unauthorized(new { message = "Session expired." });
+            var currentUser = await _userManager.GetUserAsync(User);
+            if (currentUser == null) return Unauthorized(new { message = "Session expired." });
 
             try
             {
@@ -63,6 +63,22 @@ namespace Web.Areas.Author.Controllers
                 if (dto.CoverImage != null && dto.CoverImage.Length > 0)
                 {
                     coverPath = await _storageService.SaveCoverImageAsync(dto.CoverImage, dto.ItemNo);
+                }
+
+                // AUTHOR MASTER ID RESOLUTION (Match by ID or Name)
+                Guid? matchedAuthorMasterId = null;
+                if (!string.IsNullOrWhiteSpace(dto.AuthorId) && Guid.TryParse(dto.AuthorId, out Guid parsedAuthGuid))
+                {
+                    matchedAuthorMasterId = parsedAuthGuid;
+                }
+                else if (!string.IsNullOrWhiteSpace(dto.AuthorName))
+                {
+                    var existingAuthor = await _dbContext.Authors
+                        .FirstOrDefaultAsync(a => a.AuthorName.ToLower() == dto.AuthorName.Trim().ToLower());
+                    if (existingAuthor != null)
+                    {
+                        matchedAuthorMasterId = existingAuthor.Id;
+                    }
                 }
 
                 var book = new Book
@@ -77,7 +93,13 @@ namespace Web.Areas.Author.Controllers
                     Description = string.IsNullOrWhiteSpace(dto.Description) ? "Official Homoeopathy Publication" : dto.Description,
                     CoverImagePath = coverPath,
                     Price = dto.Price,
-                    AuthorId = user.Id,
+
+                    // Assign Author Master FK
+                    AuthorMasterId = matchedAuthorMasterId,
+
+                    // Assign Uploader User ID
+                    AuthorId = currentUser.Id,
+
                     IsPublished = false,
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
@@ -139,32 +161,61 @@ namespace Web.Areas.Author.Controllers
             }
         }
 
-        // FETCH ALL BOOKS FOR ITEMS MASTER LIST VIEW
+        // FETCH ALL BOOKS FOR ITEMS MASTER LIST VIEW (WITH CATEGORY NAME FIX)
         [HttpGet("my-books")]
         public async Task<IActionResult> GetMyBooks()
         {
             try
             {
-                var books = await _dbContext.Books
+                var rawBooks = await _dbContext.Books
+                    .Include(b => b.AuthorMaster)
+                    .Include(b => b.Author)
                     .OrderByDescending(b => b.CreatedAt)
-                    .Select(b => new
+                    .ToListAsync();
+
+                // Database se saari categories ek baar fetch karke dictionary bana lenge
+                var categoriesMap = await _dbContext.Categories
+                    .ToDictionaryAsync(c => c.CategoryCode.Trim().ToLower(), c => c.CategoryName);
+
+                var books = rawBooks.Select(b =>
+                {
+                    // 1. Author Name Extraction
+                    string displayAuthor = b.AuthorMaster != null ? b.AuthorMaster.AuthorName : null;
+                    if (string.IsNullOrWhiteSpace(displayAuthor))
+                    {
+                        displayAuthor = "Dr. Samuel Hahnemann";
+                    }
+
+                    // 2. Publisher Name Extraction
+                    string publisherName = b.Author != null ? (b.Author.FullName ?? b.Author.UserName) : "System Administrator";
+
+                    // 3. Category Name Resolution (Code se Name Match karna)
+                    string catCode = b.CategoryCode?.Trim() ?? "HOMEO";
+                    string catName = categoriesMap.ContainsKey(catCode.ToLower()) ? categoriesMap[catCode.ToLower()] : catCode;
+
+                    return new
                     {
                         id = b.Id,
                         itemNo = b.ItemNo,
                         itemName = b.ItemName,
                         isbn = b.ISBN,
-                        categoryCode = b.CategoryCode,
+                        categoryCode = catCode,
+                        categoryName = catName, // Real Category Name
                         noOfPages = b.NoOfPages,
                         language = b.Language,
                         description = b.Description,
                         price = b.Price,
                         image = b.CoverImagePath,
-                        authorName = b.Author != null ? b.Author.FullName ?? b.Author.UserName : "System Administrator",
-                        author = b.Author != null ? b.Author.FullName ?? b.Author.UserName : "System Administrator",
+
+                        authorName = displayAuthor,
+                        author = displayAuthor,
+                        publishedBy = publisherName,
+                        createdBy = publisherName,
+
                         isPublished = b.IsPublished,
                         createdAt = b.CreatedAt
-                    })
-                    .ToListAsync();
+                    };
+                }).ToList();
 
                 return Ok(books);
             }
@@ -213,7 +264,7 @@ namespace Web.Areas.Author.Controllers
             }
         }
 
-        // UPDATE BOOK MASTER (USING DEDICATED BookUpdateDto)
+        // UPDATE BOOK MASTER
         [HttpPut("update-book/{id}")]
         [HttpPost("update-book/{id}")]
         public async Task<IActionResult> UpdateBook(string id, [FromForm] BookUpdateDto dto)
@@ -246,6 +297,11 @@ namespace Web.Areas.Author.Controllers
                 if (!string.IsNullOrWhiteSpace(dto.CategoryCode)) book.CategoryCode = dto.CategoryCode.Trim();
                 if (!string.IsNullOrWhiteSpace(dto.Description)) book.Description = dto.Description.Trim();
 
+                if (!string.IsNullOrWhiteSpace(dto.AuthorId) && Guid.TryParse(dto.AuthorId, out Guid updatedAuthGuid))
+                {
+                    book.AuthorMasterId = updatedAuthGuid;
+                }
+
                 // Optional Cover Image Update
                 if (dto.CoverImage != null && dto.CoverImage.Length > 0)
                 {
@@ -253,7 +309,7 @@ namespace Web.Areas.Author.Controllers
                     book.CoverImagePath = coverPath;
                 }
 
-                // Optional Full Book PDF Replacement & Re-splitting Chunks
+                // Optional Full Book PDF Replacement
                 if (dto.MainPdf != null && dto.MainPdf.Length > 0)
                 {
                     var oldAlpha = _dbContext.BookSegmentsAlpha.Where(s => s.BookId == book.Id);
@@ -337,25 +393,28 @@ namespace Web.Areas.Author.Controllers
             return Ok(new { message = "Book and chunk segments deleted successfully." });
         }
 
-        // DUAL COMPATIBLE VIEW PDF METHOD (SEQUENCE RE-ORDERING FIX)
+        // VIEW PDF METHOD
         [HttpGet("view-pdf/{identifier}")]
+        [AllowAnonymous]
         public async Task<IActionResult> ViewPdf(string identifier)
         {
             if (string.IsNullOrWhiteSpace(identifier))
                 return BadRequest("Identifier is required.");
 
+            string cleanId = Uri.UnescapeDataString(identifier).Trim();
             Book book = null;
-            if (Guid.TryParse(identifier, out Guid parsedGuid))
+
+            if (Guid.TryParse(cleanId, out Guid parsedGuid))
             {
                 book = await _dbContext.Books.FirstOrDefaultAsync(b => b.Id == parsedGuid);
             }
 
             if (book == null)
             {
-                book = await _dbContext.Books.FirstOrDefaultAsync(b => b.ItemNo.ToLower() == identifier.Trim().ToLower());
+                book = await _dbContext.Books.FirstOrDefaultAsync(b => b.ItemNo.ToLower() == cleanId.ToLower());
             }
 
-            if (book == null) return NotFound($"Book '{identifier}' database mein nahi mila.");
+            if (book == null) return NotFound($"Book '{cleanId}' database mein nahi mila.");
 
             Guid bookId = book.Id;
 
@@ -368,7 +427,24 @@ namespace Web.Areas.Author.Controllers
             combinedList.AddRange(betaSegments.Select(b => new SegmentNode { Id = b.Id, ParentId = b.ParentChunkId, Path = b.StorageRelativePath }));
             combinedList.AddRange(gammaSegments.Select(g => new SegmentNode { Id = g.Id, ParentId = g.ParentChunkId, Path = g.StorageRelativePath }));
 
-            if (!combinedList.Any()) return NotFound("Record mil gaya par is book ke PDF segments missing hain.");
+            if (!combinedList.Any())
+            {
+                string uploadsFolder = Path.Combine(_environment.WebRootPath, "uploads", "books");
+                string physicalFilePath = Path.Combine(uploadsFolder, $"{bookId}.pdf");
+
+                if (!System.IO.File.Exists(physicalFilePath))
+                {
+                    physicalFilePath = Path.Combine(uploadsFolder, $"{book.ItemNo}.pdf");
+                }
+
+                if (System.IO.File.Exists(physicalFilePath))
+                {
+                    byte[] fileBytes = await System.IO.File.ReadAllBytesAsync(physicalFilePath);
+                    return File(fileBytes, "application/pdf");
+                }
+
+                return NotFound("PDF Segments missing on storage.");
+            }
 
             var orderedSegments = new List<SegmentNode>();
             var current = combinedList.FirstOrDefault(s => s.ParentId == null);
@@ -379,10 +455,7 @@ namespace Web.Areas.Author.Controllers
                 current = combinedList.FirstOrDefault(s => s.ParentId == current.Id);
             }
 
-            if (!orderedSegments.Any())
-            {
-                orderedSegments = combinedList;
-            }
+            if (!orderedSegments.Any()) orderedSegments = combinedList;
 
             var openedDocuments = new List<PdfDocument>();
             var extractedPages = new List<PdfPage>();
@@ -393,7 +466,6 @@ namespace Web.Areas.Author.Controllers
                 {
                     string desktopBasePath = _configuration["StorageSettings:BaseDrivePath"] ?? @"C:\Users\ADMIN\Desktop\B.Jain Store Book";
 
-                    
                     foreach (var seg in orderedSegments)
                     {
                         string physicalPath = seg.Path;
@@ -423,12 +495,8 @@ namespace Web.Areas.Author.Controllers
                         }
                     }
 
-                    if (!extractedPages.Any())
-                    {
-                        return NotFound("PDF Chunks physical disk location par nahi mile.");
-                    }
+                    if (!extractedPages.Any()) return NotFound("PDF Chunks physical disk location par nahi mile.");
 
-                   
                     int pagesPerChunk = 4;
                     int totalExtracted = extractedPages.Count;
                     PdfPage[] reorderedArray = new PdfPage[totalExtracted];
@@ -438,17 +506,13 @@ namespace Web.Areas.Author.Controllers
 
                     int currentSourceIdx = 0;
                     int step = 2;
-                    int nextTargetPos = 0;
 
                     while (unmappedIndices.Count > 0 && currentSourceIdx < totalExtracted)
                     {
                         int targetIndexInChunk = 0;
                         for (int k = 0; k < pagesPerChunk && unmappedIndices.Count > 0; k++)
                         {
-                            if (targetIndexInChunk >= unmappedIndices.Count)
-                            {
-                                targetIndexInChunk = 0;
-                            }
+                            if (targetIndexInChunk >= unmappedIndices.Count) targetIndexInChunk = 0;
 
                             int originalPageIndex = unmappedIndices[targetIndexInChunk];
 
@@ -462,17 +526,10 @@ namespace Web.Areas.Author.Controllers
                         }
                     }
 
-                    
                     for (int i = 0; i < totalExtracted; i++)
                     {
-                        if (reorderedArray[i] != null)
-                        {
-                            outputDocument.AddPage(reorderedArray[i]);
-                        }
-                        else if (i < extractedPages.Count)
-                        {
-                            outputDocument.AddPage(extractedPages[i]);
-                        }
+                        if (reorderedArray[i] != null) outputDocument.AddPage(reorderedArray[i]);
+                        else if (i < extractedPages.Count) outputDocument.AddPage(extractedPages[i]);
                     }
 
                     MemoryStream stream = new MemoryStream();

@@ -1,4 +1,5 @@
-﻿using System.Linq;
+﻿using System;
+using System.Linq;
 using System.Threading.Tasks;
 using Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authorization;
@@ -6,11 +7,12 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using BookPublishingSystem.Domain.Entities;
+using Application.DTOs;
 
 namespace Web.Areas.Admin.Controllers
 {
     [Area("Admin")]
-    [Authorize(Roles = "Admin")] 
+    [Authorize(Roles = "Admin")]
     [Route("api/admin/[controller]")]
     [ApiController]
     public class AdminController : ControllerBase
@@ -24,7 +26,6 @@ namespace Web.Areas.Admin.Controllers
             _userManager = userManager;
         }
 
-        
         [HttpGet("all-users")]
         public async Task<IActionResult> GetAllUserProfiles()
         {
@@ -48,7 +49,6 @@ namespace Web.Areas.Admin.Controllers
             return Ok(result);
         }
 
-        
         [HttpGet("all-purchases")]
         public async Task<IActionResult> GetAllPurchases()
         {
@@ -83,7 +83,6 @@ namespace Web.Areas.Admin.Controllers
             return Ok(purchases);
         }
 
-        
         [HttpGet("dashboard-summary")]
         public async Task<IActionResult> GetDashboardSummary()
         {
@@ -99,6 +98,45 @@ namespace Web.Areas.Admin.Controllers
                 totalPurchases,
                 totalRevenue
             });
+        }
+
+        // NEW ENDPOINT: FETCH ALL CUSTOMER COLUMNS FOR ADMIN LIST
+        [HttpGet("customers-list")]
+        public async Task<IActionResult> GetCustomersList()
+        {
+            var customers = await _dbContext.Customers
+                .OrderByDescending(c => c.CreatedAt)
+                .Select(c => new CustomerDto
+                {
+                    Id = c.Id,
+                    CustId = c.CustId,
+                    CustName = c.CustName,
+                    MobileNo = c.MobileNo == "N/A" ? "" : c.MobileNo,
+                    EmailId = c.EmailId,
+                    Address1 = c.Address1 == "Pending Profile Update" ? "" : c.Address1,
+                    Address2 = c.Address2,
+                    Country = string.IsNullOrWhiteSpace(c.Country) ? "India" : c.Country,
+                    State = c.State == "N/A" ? "" : c.State,
+                    PostalCode = c.PostalCode == "000000" ? "" : c.PostalCode,
+                    Landmark = c.Landmark,
+                    UserId = c.UserId
+                })
+                .ToListAsync();
+
+            return Ok(customers);
+        }
+
+        // NEW ENDPOINT: DELETE CUSTOMER RECORD
+        [HttpDelete("delete-customer/{id}")]
+        public async Task<IActionResult> DeleteCustomer(Guid id)
+        {
+            var customer = await _dbContext.Customers.FindAsync(id);
+            if (customer == null) return NotFound(new { message = "Customer not found." });
+
+            _dbContext.Customers.Remove(customer);
+            await _dbContext.SaveChangesAsync();
+
+            return Ok(new { success = true, message = "Customer deleted successfully." });
         }
     }
 }

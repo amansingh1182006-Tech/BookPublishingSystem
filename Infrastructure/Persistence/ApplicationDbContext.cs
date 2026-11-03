@@ -44,6 +44,21 @@ namespace Infrastructure.Persistence
             builder.Entity<BookSegmentAlpha>().ToTable("BookSegmentAlpha");
             builder.Entity<BookSegmentBeta>().ToTable("BookSegmentBeta");
             builder.Entity<BookSegmentGamma>().ToTable("BookSegmentGamma");
+
+            builder.Entity<Customer>(entity =>
+            {
+                entity.ToTable("Customers");
+
+                entity.HasOne(c => c.User)
+                      .WithMany()
+                      .HasForeignKey(c => c.UserId)
+                      .OnDelete(DeleteBehavior.Restrict); 
+
+                entity.HasOne(c => c.Book)
+                      .WithMany()
+                      .HasForeignKey(c => c.BookId)
+                      .OnDelete(DeleteBehavior.Restrict);
+            });
         }
     }
 }

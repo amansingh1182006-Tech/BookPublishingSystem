@@ -90,6 +90,7 @@ function InternalEditAuthorForm({ editingAuthor, onSuccess, onCancel }) {
 // ----------------------------------------------------------------------
 // DRM PDF VIEWER (FAST MOUSE SCROLL & NAVIGABLE PAGINATION ENGINE)
 // ----------------------------------------------------------------------
+// SMART MULTI-ROLE DRM PDF VIEWER MODAL
 function SecurePdfViewerModal({ book, user, onClose }) {
     const canvasRef = useRef(null);
     const containerRef = useRef(null);
@@ -104,8 +105,9 @@ function SecurePdfViewerModal({ book, user, onClose }) {
     const [jumpPageInput, setJumpPageInput] = useState('1');
     const [pdfDoc, setPdfDoc] = useState(null);
 
+    // Dynamic Extraction for Both Object and Raw String IDs
     const realId = typeof book === 'object' && book !== null
-        ? (book.id || book.Id || book.itemNo || book.ItemNo)
+        ? (book.id || book.Id || book.itemNo || book.ItemNo || book.bookId)
         : book;
 
     const userEmail = user?.email || user?.Email || "reader@bjain.com";
@@ -116,7 +118,6 @@ function SecurePdfViewerModal({ book, user, onClose }) {
         }
     }, []);
 
-    // Fast Memory PDF Loader
     useEffect(() => {
         let isMounted = true;
         setLoading(true);
@@ -126,9 +127,13 @@ function SecurePdfViewerModal({ book, user, onClose }) {
             try {
                 if (!realId) throw new Error("Invalid Book Identifier!");
 
+                const encodedVal = encodeURIComponent(realId);
+
+                // Prioritize BookController Direct Route first (Works for Home Page and Admin Table)
                 const endpoints = [
-                    `/api/author/book/view-pdf/${realId}`,
-                    `/api/reader/reader/stream-book/${realId}`
+                    `/api/author/book/view-pdf/${encodedVal}`,
+                    `/api/reader/reader/stream-book/${encodedVal}`,
+                    `/api/reader/stream-book/${encodedVal}`
                 ];
 
                 let arrayBuffer = null;
@@ -139,7 +144,7 @@ function SecurePdfViewerModal({ book, user, onClose }) {
                         const res = await fetch(url, { headers: { 'Accept': 'application/pdf' } });
                         if (res.ok) {
                             arrayBuffer = await res.arrayBuffer();
-                            if (arrayBuffer.byteLength > 0) break;
+                            if (arrayBuffer && arrayBuffer.byteLength > 0) break;
                         } else {
                             lastStatus = res.status;
                         }
@@ -176,7 +181,6 @@ function SecurePdfViewerModal({ book, user, onClose }) {
         return () => { isMounted = false; };
     }, [realId]);
 
-    // On-Demand Fast Single-Canvas Page Render + DRM Watermark
     const renderPage = useCallback(async (num) => {
         if (!pdfDoc || !canvasRef.current) return;
 
@@ -198,7 +202,6 @@ function SecurePdfViewerModal({ book, user, onClose }) {
             renderTaskRef.current = page.render(renderContext);
             await renderTaskRef.current.promise;
 
-            // Security Watermark
             context.save();
             context.font = "bold 15px Arial";
             context.fillStyle = "rgba(190, 30, 45, 0.18)";
@@ -227,7 +230,6 @@ function SecurePdfViewerModal({ book, user, onClose }) {
         }
     }, [pdfDoc, pageNumber, renderPage]);
 
-    // Mouse Wheel Smooth Continuous Scroll Handler
     const handleWheelScroll = (e) => {
         if (isScrollingRef.current || loading) return;
 
@@ -246,34 +248,6 @@ function SecurePdfViewerModal({ book, user, onClose }) {
         }
     };
 
-    // DRM Protection & Keyboard Navigation
-    useEffect(() => {
-        const handleKeyDown = (e) => {
-            if (e.key === 'ArrowRight' || e.key === 'PageDown') {
-                setPageNumber(prev => Math.min(prev + 1, numPages));
-            } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
-                setPageNumber(prev => Math.max(prev - 1, 1));
-            } else if (
-                e.key === 'PrintScreen' ||
-                (e.ctrlKey && (e.key === 'p' || e.key === 's' || e.key === 'u' || e.key === 'P' || e.key === 'S' || e.key === 'U')) ||
-                e.key === 'F12'
-            ) {
-                e.preventDefault();
-                alert("DRM Active: Copying, Printing, and DevTools are restricted.");
-            }
-        };
-
-        const disableContextMenu = (e) => e.preventDefault();
-
-        document.addEventListener('contextmenu', disableContextMenu);
-        window.addEventListener('keydown', handleKeyDown);
-
-        return () => {
-            document.removeEventListener('contextmenu', disableContextMenu);
-            window.removeEventListener('keydown', handleKeyDown);
-        };
-    }, [numPages]);
-
     const handleJumpPage = (e) => {
         e.preventDefault();
         const p = parseInt(jumpPageInput, 10);
@@ -286,7 +260,6 @@ function SecurePdfViewerModal({ book, user, onClose }) {
 
     return (
         <div className="fixed inset-0 bg-slate-950/95 z-[100] flex flex-col select-none overflow-hidden">
-            {/* Navigation Header */}
             <div className="flex flex-wrap items-center justify-between bg-[#0d233a] px-6 py-3 border-b border-slate-800 shadow-lg text-white gap-3">
                 <div className="flex items-center gap-4">
                     <button onClick={onClose} className="bg-[#be1e2d] hover:bg-red-700 text-white font-bold px-3 py-1.5 rounded text-xs transition cursor-pointer">
@@ -302,7 +275,6 @@ function SecurePdfViewerModal({ book, user, onClose }) {
                     </div>
                 </div>
 
-                {/* Toolbar */}
                 <div className="flex items-center gap-2">
                     <button
                         onClick={() => setPageNumber(prev => Math.max(prev - 1, 1))}
@@ -336,7 +308,6 @@ function SecurePdfViewerModal({ book, user, onClose }) {
                 </div>
             </div>
 
-            {/* Scrollable Canvas Workspace */}
             <div
                 ref={containerRef}
                 onWheel={handleWheelScroll}
@@ -474,7 +445,7 @@ function App() {
     const [authSuccessMsg, setAuthSuccessMsg] = useState('');
     const [authLoading, setAuthLoading] = useState(false);
 
-    // BROWSER BACK BUTTON CONTROLLER (STOPS UNWANTED WEBSITE EXIT)
+    // BROWSER BACK BUTTON CONTROLLER
     useEffect(() => {
         window.history.replaceState({ page: 'home', activeTab: 'store' }, '');
 
@@ -658,7 +629,7 @@ function App() {
 
     const fetchCustomersMaster = async () => {
         try {
-            const res = await fetch('/api/customer/all');
+            const res = await fetch('/api/admin/admin/customers-list');
             if (res.ok) {
                 const data = await res.json();
                 setCustomersList(data.map(c => ({
@@ -696,6 +667,32 @@ function App() {
         }
     };
 
+    // AUTHOR NAME EXTRACTION HELPER FUNCTION (ACCURATELY PARSES AUTHOR NAME)
+    const getBookAuthorName = (b) => {
+        if (!b) return 'Dr. Samuel Hahnemann';
+        // Primary check for specific author properties
+        const possibleAuthor = b.authorName || b.AuthorName || b.author || b.Author || b.author_name || b.Author_Name;
+
+        // If author property exists and is not System Administrator
+        if (possibleAuthor && possibleAuthor !== 'System Administrator' && possibleAuthor.trim() !== '') {
+            return possibleAuthor;
+        }
+
+        // Check if author ID exists in authorsList
+        const authorId = b.authorId || b.AuthorId || b.authorCode || b.AuthorCode;
+        if (authorId && authorsList.length > 0) {
+            const foundAuthor = authorsList.find(a => String(a.id) === String(authorId) || String(a.name) === String(authorId));
+            if (foundAuthor) return foundAuthor.name;
+        }
+
+        return possibleAuthor || 'Dr. Samuel Hahnemann';
+    };
+
+    const getBookPublisherName = (b) => {
+        if (!b) return 'System Administrator';
+        return b.publishedBy || b.PublishedBy || b.createdBy || b.CreatedBy || b.publisherName || b.PublisherName || b.createdByName || 'System Administrator';
+    };
+
     const fetchAuthorBooks = async () => {
         try {
             let res = await fetch('/api/author/book/my-books');
@@ -708,20 +705,29 @@ function App() {
             }
 
             if (Array.isArray(data)) {
-                setMyAuthorBooks(data.map(b => ({
-                    id: b.id || b.Id || b.itemNo || b.ItemNo || 'N/A',
-                    itemNo: b.itemNo || b.ItemNo || b.id || 'N/A',
-                    itemName: b.itemName || b.ItemName || b.title || 'Untitled Book',
-                    categoryCode: b.categoryCode || b.CategoryCode || 'HOMEO',
-                    isbn: b.isbn || b.ISBN || b.Isbn || 'N/A',
-                    authorName: b.authorName || b.AuthorName || b.author || 'System Administrator',
-                    author: b.author || b.Author || b.authorName || 'System Administrator',
-                    language: b.language || b.Language || 'English',
-                    price: b.price !== undefined ? b.price : (b.Price !== undefined ? b.Price : 0),
-                    noOfPages: b.noOfPages || b.NoOfPages || 1,
-                    isPublished: b.isPublished !== undefined ? b.isPublished : (b.IsPublished !== undefined ? b.IsPublished : false),
-                    raw: b
-                })));
+                setMyAuthorBooks(data.map(b => {
+                    const actualAuthor = getBookAuthorName(b);
+                    const publisher = getBookPublisherName(b);
+
+                    return {
+                        id: b.id || b.Id || b.itemNo || b.ItemNo || 'N/A',
+                        itemNo: b.itemNo || b.ItemNo || b.id || 'N/A',
+                        itemName: b.itemName || b.ItemName || b.title || 'Untitled Book',
+                        categoryCode: b.categoryCode || b.CategoryCode || 'HOMEO',
+                        isbn: b.isbn || b.ISBN || b.Isbn || 'N/A',
+                        authorName: actualAuthor,
+                        publishedBy: publisher,
+                        language: b.language || b.Language || 'English',
+                        price: b.price !== undefined ? b.price : (b.Price !== undefined ? b.Price : 0),
+                        noOfPages: b.noOfPages || b.NoOfPages || 1,
+                        isPublished: b.isPublished !== undefined ? b.isPublished : (b.IsPublished !== undefined ? b.IsPublished : false),
+                        raw: {
+                            ...b,
+                            extractedAuthorName: actualAuthor,
+                            extractedPublisherName: publisher
+                        }
+                    };
+                }));
             }
         } catch (e) {
             console.error("Fetch author books error:", e);
@@ -744,6 +750,7 @@ function App() {
         fetchLanguagesMaster();
         fetchKeywordsMaster();
         fetchPlansMaster();
+        fetchAuthorsMaster();
 
         fetch('/api/account/me')
             .then(res => res.ok ? res.json() : null)
@@ -992,7 +999,6 @@ function App() {
         changeNavState({ authorPageMode: 'edit-author-page' });
     };
 
-    // 100% RELIABLE UNIVERSAL DELETE HANDLER WITH MULTI-METHOD RETRIES
     const confirmDeleteSelectedMaster = async () => {
         try {
             const targetItems = deleteConfirmModal.ids && deleteConfirmModal.ids.length > 0
@@ -1029,7 +1035,7 @@ function App() {
                 } else if (selectedMaster === 'keywords') {
                     endpoints = [`/api/keyword/delete/${encodedVal}`, `/api/keyword/${encodedVal}`];
                 } else if (selectedMaster === 'customers') {
-                    endpoints = [`/api/customer/delete/${encodedVal}`, `/api/customer/${encodedVal}`];
+                    endpoints = [`/api/admin/admin/delete-customer/${encodedVal}`, `/api/customer/delete/${encodedVal}`];
                 }
 
                 let deletedSuccessfully = false;
@@ -1263,7 +1269,7 @@ function App() {
                 return myAuthorBooks.map(b => ({
                     id: b.id || b.itemNo,
                     name: b.itemName,
-                    desc: `Category: ${b.categoryCode} | ISBN: ${b.isbn} | Language: ${b.language} | Author: ${b.authorName} | Price: ₹${b.price} | Pages: ${b.noOfPages}`,
+                    desc: `Category: ${b.categoryCode} | ISBN: ${b.isbn} | Author: ${b.authorName} | Published By: ${b.publishedBy} | Language: ${b.language} | Price: ₹${b.price} | Pages: ${b.noOfPages}`,
                     isPublished: b.isPublished,
                     raw: b.raw || b
                 }));
@@ -1304,9 +1310,14 @@ function App() {
                 }));
             case 'customers':
                 return customersList.map(c => ({
-                    id: c.id || c.custId,
-                    name: c.custName || c.fullName || 'Reader User',
-                    desc: `Mobile: ${c.mobileNo || 'N/A'} | Email: ${c.emailId || c.email || 'N/A'} | Address: ${c.address1 || 'N/A'}`,
+                    id: c.id || c.custId || c.CustId,
+                    name: c.custName || c.CustName || 'Reader User',
+                    mobileNo: c.mobileNo || c.MobileNo || '-',
+                    emailId: c.emailId || c.EmailId || '-',
+                    address: [c.address1 || c.Address1, c.address2 || c.Address2, c.landmark || c.Landmark].filter(Boolean).join(', ') || '-',
+                    state: c.state || c.State || '-',
+                    country: c.country || c.Country || 'India',
+                    postalCode: c.postalCode || c.PostalCode || '-',
                     raw: c
                 }));
             default:
@@ -1691,21 +1702,7 @@ function App() {
                                         window.history.back();
                                     }}
                                 />
-                            ) : (
-                                <InternalEditAuthorForm
-                                    editingAuthor={editingAuthor}
-                                    onSuccess={(msg) => {
-                                        triggerToast(msg);
-                                        setEditingAuthor(null);
-                                        fetchAuthorsMaster();
-                                        window.history.back();
-                                    }}
-                                    onCancel={() => {
-                                        setEditingAuthor(null);
-                                        window.history.back();
-                                    }}
-                                />
-                            )
+                            ) : null
                         ) : (
                             <div className="w-full bg-white p-6 rounded-lg border border-gray-200 shadow-sm space-y-4">
                                 <h3 className="text-base font-bold text-[#0d233a] border-b pb-2 capitalize flex items-center justify-between">
@@ -1715,7 +1712,7 @@ function App() {
 
                                 <div className="overflow-x-auto w-full">
                                     <table className="w-full text-left text-slate-800 text-xs">
-                                        <thead className="bg-slate-100 text-slate-600 uppercase border-b">
+                                        <thead className="bg-slate-100 text-slate-600 uppercase border-b font-bold">
                                             <tr>
                                                 <th className="p-3 w-10 text-center">
                                                     <input
@@ -1750,11 +1747,21 @@ function App() {
                                                     </th>
                                                 )}
 
-                                                {selectedMaster === 'items' ? (
+                                                {selectedMaster === 'customers' ? (
+                                                    <>
+                                                        <th className="p-3">Mobile Number</th>
+                                                        <th className="p-3">Email ID</th>
+                                                        <th className="p-3">Address</th>
+                                                        <th className="p-3">State</th>
+                                                        <th className="p-3">Country</th>
+                                                        <th className="p-3">Postal / Pincode</th>
+                                                    </>
+                                                ) : selectedMaster === 'items' ? (
                                                     <>
                                                         <th className="p-3">Category</th>
                                                         <th className="p-3">ISBN</th>
                                                         <th className="p-3">Author Name</th>
+                                                        <th className="p-3">Published By</th>
                                                         <th className="p-3">Language</th>
                                                         <th className="p-3">Price (₹)</th>
                                                         <th className="p-3">Pages</th>
@@ -1804,16 +1811,40 @@ function App() {
                                                             <td className="p-3 font-bold text-slate-900">{item.name}</td>
                                                         )}
 
-                                                        {selectedMaster === 'items' && item.raw ? (
+                                                        {selectedMaster === 'customers' ? (
                                                             <>
-                                                                <td className="p-3 font-bold text-amber-700">
-                                                                    {item.raw.categoryCode || item.raw.CategoryCode || 'HOMEO'}
+                                                                <td className="p-3 text-slate-700">{item.mobileNo}</td>
+                                                                <td className="p-3 text-slate-700">{item.emailId}</td>
+                                                                <td className="p-3 text-slate-700 max-w-xs truncate" title={item.address}>{item.address}</td>
+                                                                <td className="p-3 text-slate-700">{item.state}</td>
+                                                                <td className="p-3 text-slate-700">{item.country}</td>
+                                                                <td className="p-3 font-mono text-slate-700">{item.postalCode}</td>
+                                                            </>
+                                                        ) : selectedMaster === 'items' && item.raw ? (
+                                                                <><td className="p-3 font-bold text-amber-700">
+                                                                    {(() => {
+                                                                        // Direct API Response se categoryName read karo
+                                                                        if (item.raw.categoryName) return item.raw.categoryName;
+
+                                                                        // Dynamic Fallback: categoriesList state se match karo
+                                                                        const catCode = item.raw.categoryCode || item.raw.CategoryCode;
+                                                                        const foundCat = categoriesList.find(c =>
+                                                                            String(c.categoryCode).toLowerCase() === String(catCode).toLowerCase() ||
+                                                                            String(c.id).toLowerCase() === String(catCode).toLowerCase()
+                                                                        );
+                                                                        return foundCat ? foundCat.categoryName : (catCode || 'General');
+                                                                    })()}
                                                                 </td>
                                                                 <td className="p-3 font-mono text-slate-600">
                                                                     {item.raw.isbn || item.raw.ISBN || item.raw.Isbn || 'N/A'}
                                                                 </td>
+                                                                {/* STRICT AUTHOR NAME RENDER */}
                                                                 <td className="p-3 font-bold text-blue-700">
-                                                                    {item.raw.authorName || item.raw.AuthorName || item.raw.author || item.raw.Author || 'System Administrator'}
+                                                                    {item.raw.extractedAuthorName || item.raw.authorName || item.raw.AuthorName || item.raw.author || item.raw.Author || 'Dr. Samuel Hahnemann'}
+                                                                </td>
+                                                                {/* PUBLISHED BY / CREATED BY RENDER */}
+                                                                <td className="p-3 font-bold text-slate-700">
+                                                                    {item.raw.extractedPublisherName || item.raw.createdBy || item.raw.CreatedBy || item.raw.publisherName || item.raw.PublisherName || 'System Administrator'}
                                                                 </td>
                                                                 <td className="p-3 font-medium text-slate-700">
                                                                     {item.raw.language || item.raw.Language || 'English'}
@@ -1882,7 +1913,7 @@ function App() {
                                                     {b.categoryCode || b.CategoryCode || 'HOMEO'}
                                                 </span>
                                                 <h3 className="font-bold text-slate-900 text-sm line-clamp-2 mt-1">{b.itemName || b.ItemName}</h3>
-                                                <p className="text-slate-500 text-[11px]">by {b.author || b.Author || b.authorName || b.AuthorName}</p>
+                                                <p className="text-slate-500 text-[11px]">by {getBookAuthorName(b)}</p>
                                             </div>
 
                                             <div className="space-y-2 pt-2 border-t">
@@ -2026,7 +2057,7 @@ function App() {
                                             onChange={e => setSelectedRoleInput(e.target.value)}
                                             className="w-full border border-gray-300 rounded px-3 py-2 font-bold text-[#0d233a] bg-gray-50 outline-none">
                                             <option value="Author">Author</option>
-                                            <option value="Publisher">Publisher</option>
+                                         
                                             <option value="Reader">Reader</option>
                                         </select>
                                     </div>
