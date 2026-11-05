@@ -31,7 +31,7 @@
             }
         } catch (err) {
             alert("Connection error: " + err.message);
-        } fontFinally {
+        } finally {
             setIsUpdating(false);
         }
     };

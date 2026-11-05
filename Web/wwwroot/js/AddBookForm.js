@@ -30,9 +30,9 @@ function AddBookForm({
         const cleanVal = val.replace(/[^a-zA-Z0-9]/g, '');
         if (cleanVal.length >= 5) {
             const last5 = cleanVal.slice(-5).toUpperCase();
-            setBookCodeInput(`HOM_${last5}`);
+            setBookCodeInput(`${last5}`);
         } else if (cleanVal.length > 0) {
-            setBookCodeInput(`HOM_${cleanVal.toUpperCase()}`);
+            setBookCodeInput(`${cleanVal.toUpperCase()}`);
         }
     };
 
@@ -112,7 +112,7 @@ function AddBookForm({
                             required
                             value={bookCodeInput}
                             onChange={e => setBookCodeInput(e.target.value)}
-                            placeholder="HOM_84100"
+                            placeholder="84100"
                             className="w-full border rounded px-3 py-2 uppercase font-bold text-blue-700 bg-slate-50 outline-none focus:border-blue-600"
                         />
                     </div>

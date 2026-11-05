@@ -1,4 +1,5 @@
 ﻿using BookPublishingSystem.Domain.Entities;
+using Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using System.Threading;
 using System.Threading.Tasks;
@@ -18,6 +19,8 @@ namespace Application.Interfaces
          DbSet<Customer> Customers { get; set; }
          DbSet<Plan> Plans { get; set; }
          DbSet<UserSubscription> UserSubscriptions { get; set; }
+         DbSet<UserReadingProgress> UserReadingProgress { get; set; }
+         DbSet<UserSession> UserSessions { get; set; }
 
         Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
     }

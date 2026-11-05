@@ -1,5 +1,6 @@
 ﻿using Application.DTOs;
 using BookPublishingSystem.Domain.Entities;
+using Domain.Entities;
 using Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
@@ -13,13 +14,14 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Security.Claims;
 using System.Threading.Tasks;
 
 namespace Web.Areas.Reader.Controllers
 {
     [Area("Reader")]
-    [Route("Reader")] // Main Route setup
-    public class ReaderController : Controller // <-- Note: Change from ControllerBase to Controller
+    [Route("Reader")] 
+    public class ReaderController : Controller 
     {
         private readonly ApplicationDbContext _dbContext;
         private readonly UserManager<ApplicationUser> _userManager;
@@ -39,7 +41,7 @@ namespace Web.Areas.Reader.Controllers
         [HttpGet("Watch")]
         public IActionResult Watch()
         {
-            return View(); // Now View() will work perfectly without red lines!
+            return View();
         }
 
         // GET: /Reader/profile-status
@@ -51,7 +53,7 @@ namespace Web.Areas.Reader.Controllers
 
             var customer = await _dbContext.Customers.FirstOrDefaultAsync(c => c.UserId == user.Id);
 
-            // Profile incompletely setup hone par (default registration data) hasProfile = false return karenge
+            
             bool isProfileComplete = customer != null
                 && !string.IsNullOrWhiteSpace(customer.MobileNo)
                 && customer.MobileNo != "N/A"
@@ -121,7 +123,7 @@ namespace Web.Areas.Reader.Controllers
 
             if (customer == null)
             {
-                // Fallback for BookId Foreign Key
+               
                 var defaultBook = await _dbContext.Books.FirstOrDefaultAsync();
                 Guid assignedBookId = defaultBook != null ? defaultBook.Id : Guid.NewGuid();
 
@@ -165,7 +167,6 @@ namespace Web.Areas.Reader.Controllers
 
             await _dbContext.SaveChangesAsync();
 
-            // Circular Reference JsonException Se Bachne Ke Liye Flat Response Return Karein
             return Ok(new
             {
                 success = true,
@@ -198,7 +199,7 @@ namespace Web.Areas.Reader.Controllers
                 return NotFound(new { message = "Book record not found in database." });
             }
 
-            // 1. Sync Reader Access (Customer plan bypass for testing & smooth reading)
+            
             var user = await _userManager.GetUserAsync(User);
             if (user != null)
             {
@@ -295,6 +296,85 @@ namespace Web.Areas.Reader.Controllers
             {
                 foreach (var doc in openedDocuments) doc.Dispose();
             }
+        }
+
+        // POST: /Reader/api/save-progress
+        [HttpPost("api/save-progress")]
+        public async Task<IActionResult> SaveProgress([FromBody] ReadingProgressDto dto)
+        {
+            // Try getting identity user
+            var user = await _userManager.GetUserAsync(User);
+
+            // Fallback search by ClaimIdentifier if User object is null
+            string userId = user?.Id ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+            if (string.IsNullOrEmpty(userId))
+            {
+                // Try fallback with existing Logged-in Customer record
+                var lastCust = await _dbContext.Customers.OrderByDescending(c => c.CreatedAt).FirstOrDefaultAsync();
+                if (lastCust != null) userId = lastCust.UserId;
+            }
+
+            if (string.IsNullOrEmpty(userId)) return Unauthorized(new { message = "User identity missing." });
+
+            if (dto == null || dto.BookId == Guid.Empty)
+            {
+                return BadRequest(new { message = "Invalid Book ID provided." });
+            }
+
+            var progress = await _dbContext.UserReadingProgress
+                .FirstOrDefaultAsync(p => p.UserId == userId && p.BookId == dto.BookId);
+
+            if (progress == null)
+            {
+                progress = new UserReadingProgress
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = userId,
+                    BookId = dto.BookId,
+                    LastReadPage = dto.LastReadPage > 0 ? dto.LastReadPage : 1,
+                    TotalPages = dto.TotalPages > 0 ? dto.TotalPages : 1,
+                    LastReadAt = DateTime.UtcNow
+                };
+                _dbContext.UserReadingProgress.Add(progress);
+            }
+            else
+            {
+                progress.LastReadPage = dto.LastReadPage;
+                if (dto.TotalPages > 0) progress.TotalPages = dto.TotalPages;
+                progress.LastReadAt = DateTime.UtcNow;
+            }
+
+            await _dbContext.SaveChangesAsync();
+            return Ok(new { success = true, message = "Reading progress saved to My Library." });
+        }
+
+        // GET: /api/reader/my-library OR /Reader/api/my-library
+        [HttpGet("api/my-library")]
+        [HttpGet("/api/reader/my-library")]
+        public async Task<IActionResult> GetMyLibrary()
+        {
+            var user = await _userManager.GetUserAsync(User);
+            if (user == null) return Unauthorized(new { message = "User session invalid." });
+
+            var library = await _dbContext.UserReadingProgress
+                .Where(p => p.UserId == user.Id)
+                .OrderByDescending(p => p.LastReadAt)
+                .Select(p => new
+                {
+                    bookId = p.BookId,
+                    itemName = p.Book != null ? p.Book.ItemName : "eBook Document",
+                    authorName = p.Book != null && p.Book.AuthorMaster != null ? p.Book.AuthorMaster.AuthorName : "B. Jain Author",
+                    categoryCode = p.Book != null ? p.Book.CategoryCode : "HOMEO",
+                    coverImage = p.Book != null ? p.Book.CoverImagePath : "/images/default-cover.png",
+                    lastReadPage = p.LastReadPage,
+                    totalPages = p.TotalPages,
+                    progressPercentage = p.TotalPages > 0 ? (int)((double)p.LastReadPage / p.TotalPages * 100) : 0,
+                    lastReadAt = p.LastReadAt
+                })
+                .ToListAsync();
+
+            return Ok(library);
         }
     }
 }

@@ -1,6 +1,6 @@
 ﻿const { useState, useEffect, useCallback, useRef } = React;
 
-// DEDICATED EDIT AUTHOR FORM COMPONENT
+
 function InternalEditAuthorForm({ editingAuthor, onSuccess, onCancel }) {
     const [editAuthorName, setEditAuthorName] = useState(
         editingAuthor ? (editingAuthor.authorName || editingAuthor.AuthorName || editingAuthor.name || '') : ''
@@ -90,7 +90,7 @@ function InternalEditAuthorForm({ editingAuthor, onSuccess, onCancel }) {
 // ----------------------------------------------------------------------
 // DRM PDF VIEWER (FAST MOUSE SCROLL & NAVIGABLE PAGINATION ENGINE)
 // ----------------------------------------------------------------------
-// SMART MULTI-ROLE DRM PDF VIEWER MODAL
+
 function SecurePdfViewerModal({ book, user, onClose }) {
     const canvasRef = useRef(null);
     const containerRef = useRef(null);
@@ -105,7 +105,7 @@ function SecurePdfViewerModal({ book, user, onClose }) {
     const [jumpPageInput, setJumpPageInput] = useState('1');
     const [pdfDoc, setPdfDoc] = useState(null);
 
-    // Dynamic Extraction for Both Object and Raw String IDs
+   
     const realId = typeof book === 'object' && book !== null
         ? (book.id || book.Id || book.itemNo || book.ItemNo || book.bookId)
         : book;
@@ -129,7 +129,7 @@ function SecurePdfViewerModal({ book, user, onClose }) {
 
                 const encodedVal = encodeURIComponent(realId);
 
-                // Prioritize BookController Direct Route first (Works for Home Page and Admin Table)
+               
                 const endpoints = [
                     `/api/author/book/view-pdf/${encodedVal}`,
                     `/api/reader/reader/stream-book/${encodedVal}`,
@@ -445,7 +445,37 @@ function App() {
     const [authSuccessMsg, setAuthSuccessMsg] = useState('');
     const [authLoading, setAuthLoading] = useState(false);
 
-    // BROWSER BACK BUTTON CONTROLLER
+    
+    const saveReadingProgressToBackend = (bookObj, pageNum = 1) => {
+        if (!bookObj) return;
+
+        const targetBookId = bookObj.id || bookObj.Id || bookObj.bookId || bookObj.itemNo;
+        const totalPg = bookObj.noOfPages || bookObj.NoOfPages || 100;
+
+        if (!targetBookId) return;
+
+        fetch('/Reader/api/save-progress', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                bookId: targetBookId,
+                lastReadPage: pageNum,
+                totalPages: totalPg
+            })
+        })
+            .then(res => res.ok ? res.json() : fetch('/api/reader/save-progress', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    bookId: targetBookId,
+                    lastReadPage: pageNum,
+                    totalPages: totalPg
+                })
+            }))
+            .catch(err => console.warn("Auto save progress skipped:", err));
+    };
+
+    
     useEffect(() => {
         window.history.replaceState({ page: 'home', activeTab: 'store' }, '');
 
@@ -557,6 +587,7 @@ function App() {
         }
         window.history.pushState({ modal: 'reader' }, '');
         setSelectedBookForDrm(bookObj);
+        saveReadingProgressToBackend(bookObj, 1);
     };
 
     const handleClosePdfModal = () => {
@@ -580,10 +611,11 @@ function App() {
                 const data = await res.json();
                 setCategoriesList(data.map(c => {
                     const rawCode = c.categoryCode || c.CategoryCode || c.id || c.Id || c.code;
+                    const rawName = c.categoryName || c.CategoryName || c.name || rawCode;
                     return {
                         id: rawCode,
                         categoryCode: rawCode,
-                        categoryName: c.categoryName || c.CategoryName || c.name || rawCode,
+                        categoryName: rawName,
                         description: c.description || c.Description || 'System Category',
                         raw: c
                     };
@@ -667,18 +699,14 @@ function App() {
         }
     };
 
-    // AUTHOR NAME EXTRACTION HELPER FUNCTION (ACCURATELY PARSES AUTHOR NAME)
     const getBookAuthorName = (b) => {
         if (!b) return 'Dr. Samuel Hahnemann';
-        // Primary check for specific author properties
         const possibleAuthor = b.authorName || b.AuthorName || b.author || b.Author || b.author_name || b.Author_Name;
 
-        // If author property exists and is not System Administrator
         if (possibleAuthor && possibleAuthor !== 'System Administrator' && possibleAuthor.trim() !== '') {
             return possibleAuthor;
         }
 
-        // Check if author ID exists in authorsList
         const authorId = b.authorId || b.AuthorId || b.authorCode || b.AuthorCode;
         if (authorId && authorsList.length > 0) {
             const foundAuthor = authorsList.find(a => String(a.id) === String(authorId) || String(a.name) === String(authorId));
@@ -686,6 +714,29 @@ function App() {
         }
 
         return possibleAuthor || 'Dr. Samuel Hahnemann';
+    };
+    const getBookCategoryName = (b) => {
+        if (!b) return 'General';
+
+        
+        const directName = b.categoryName || b.CategoryName || b.category_name || b.Category_Name;
+        if (directName && directName.trim() !== '') {
+            return directName;
+        }
+
+        
+        const catCode = b.categoryCode || b.CategoryCode || b.category || b.Category;
+        if (catCode && categoriesList.length > 0) {
+            const foundCategory = categoriesList.find(c =>
+                String(c.id).toLowerCase() === String(catCode).toLowerCase() ||
+                String(c.categoryCode).toLowerCase() === String(catCode).toLowerCase()
+            );
+            if (foundCategory && foundCategory.categoryName) {
+                return foundCategory.categoryName;
+            }
+        }
+
+        return catCode || 'General';
     };
 
     const getBookPublisherName = (b) => {
@@ -708,12 +759,13 @@ function App() {
                 setMyAuthorBooks(data.map(b => {
                     const actualAuthor = getBookAuthorName(b);
                     const publisher = getBookPublisherName(b);
+                    const actualCategory = getBookCategoryName(b); 
 
                     return {
                         id: b.id || b.Id || b.itemNo || b.ItemNo || 'N/A',
                         itemNo: b.itemNo || b.ItemNo || b.id || 'N/A',
                         itemName: b.itemName || b.ItemName || b.title || 'Untitled Book',
-                        categoryCode: b.categoryCode || b.CategoryCode || 'HOMEO',
+                        categoryCode: actualCategory, 
                         isbn: b.isbn || b.ISBN || b.Isbn || 'N/A',
                         authorName: actualAuthor,
                         publishedBy: publisher,
@@ -724,7 +776,8 @@ function App() {
                         raw: {
                             ...b,
                             extractedAuthorName: actualAuthor,
-                            extractedPublisherName: publisher
+                            extractedPublisherName: publisher,
+                            extractedCategoryName: actualCategory
                         }
                     };
                 }));
@@ -740,6 +793,7 @@ function App() {
             return;
         }
 
+        saveReadingProgressToBackend(bookObj, 1);
         window.history.pushState({ modal: 'reader' }, '');
         setSelectedBookForDrm(bookObj);
     };
@@ -751,6 +805,30 @@ function App() {
         fetchKeywordsMaster();
         fetchPlansMaster();
         fetchAuthorsMaster();
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const resumeBookId = urlParams.get('readBookId');
+        const resumePage = urlParams.get('page');
+
+        if (resumeBookId) {
+            fetch('/api/reader/catalog/all-books')
+                .then(res => res.ok ? res.json() : [])
+                .then(allBooks => {
+                    const targetBook = allBooks.find(b =>
+                        String(b.id) === String(resumeBookId) ||
+                        String(b.Id) === String(resumeBookId) ||
+                        String(b.itemNo) === String(resumeBookId) ||
+                        String(b.bookId) === String(resumeBookId)
+                    );
+
+                    if (targetBook) {
+                        targetBook.initialPage = resumePage ? parseInt(resumePage, 10) : 1;
+                        setSelectedBookForDrm(targetBook);
+                        window.history.replaceState({}, document.title, window.location.pathname);
+                    }
+                })
+                .catch(err => console.warn("Failed to auto resume book:", err));
+        }
 
         fetch('/api/account/me')
             .then(res => res.ok ? res.json() : null)
@@ -1380,37 +1458,41 @@ function App() {
                 </div>
             )}
 
-            <header className="bg-[#0d233a] text-white sticky top-0 z-50 shadow-md w-full">
-                <div className="w-full px-4 md:px-8 py-2.5 flex items-center justify-between gap-2 md:gap-4">
-                    <div className="flex items-center gap-2 md:gap-3 shrink-0">
-                        <div onClick={() => changeNavState({ activeTab: 'store' })} className="bg-white p-1 md:p-1.5 rounded shadow flex items-center gap-2 cursor-pointer">
-                            <div className="w-7 h-7 md:w-8 md:h-8 rounded bg-[#be1e2d] flex items-center justify-center font-black text-white text-lg md:text-xl shrink-0">BJ</div>
-                            <div className="text-left leading-none pr-1">
-                                <div className="text-[#0d233a] font-extrabold text-xs md:text-sm uppercase">B. Jain Group</div>
-                                <div className="text-[8px] md:text-[9px] text-[#be1e2d] font-bold uppercase tracking-widest">Publishers</div>
-                            </div>
-                        </div>
+            
+            <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm w-full">
+                <div className="w-full px-4 md:px-8 py-3 flex items-center justify-between gap-4">
+
+                    <div onClick={() => changeNavState({ activeTab: 'store' })} className="cursor-pointer hover:opacity-90 transition">
+                        <img
+                            src="/images/Screenshot 2026-11-05 104704.png"
+                            alt="B. Jain Logo"
+                            className="h-9 md:h-11 object-contain rounded bg-white px-2 py-1 shadow"
+                        />
                     </div>
-                    <div className="hidden sm:flex flex-1 max-w-3xl items-center rounded-md overflow-hidden bg-white text-slate-800">
+
+                    {/* SEARCH BAR */}
+                    <div className="hidden md:flex flex-1 max-w-xl items-center rounded-full border border-gray-300 bg-slate-50 px-3 py-1.5 focus-within:border-red-500 focus-within:bg-white transition">
                         <input
                             type="text"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            placeholder="Search B. Jain publications by Item Name, category, or ISBN..."
-                            className="w-full px-3 py-2 text-xs md:text-sm outline-none text-slate-800"
+                            placeholder="Search publications..."
+                            className="w-full px-2 text-xs md:text-sm bg-transparent outline-none text-slate-800"
                         />
-                        <button className="bg-[#be1e2d] text-white px-4 py-2 font-bold"><i className="fa-solid fa-magnifying-glass text-sm"></i></button>
+                        <button className="text-slate-500 hover:text-red-600 px-2 font-bold"><i className="fa-solid fa-magnifying-glass text-sm"></i></button>
                     </div>
-                    <div className="flex items-center gap-3 text-xs shrink-0">
+
+                    {/* AUTH / USER PROFILE */}
+                    <div className="flex items-center gap-4 text-xs shrink-0">
                         {user.isLoggedIn ? (
                             <div className="relative">
-                                <button onClick={() => setProfileDropdown(!profileDropdown)} className="flex items-center gap-2.5 p-1.5 rounded-lg bg-[#163554] border border-slate-600 hover:border-amber-400 transition text-left">
-                                    <div className="w-8 h-8 rounded bg-red-600 flex items-center justify-center text-white font-extrabold text-xs shadow">
+                                <button onClick={() => setProfileDropdown(!profileDropdown)} className="flex items-center gap-2 p-1.5 rounded-lg border border-gray-300 hover:border-red-500 transition text-left">
+                                    <div className="w-8 h-8 rounded-full bg-[#e31b23] flex items-center justify-center text-white font-extrabold text-xs shadow">
                                         {user.fullName ? user.fullName[0].toUpperCase() : 'U'}
                                     </div>
                                     <div className="hidden md:block">
-                                        <div className="text-xs font-bold text-white">{user.fullName}</div>
-                                        <div className="text-[9px] font-black uppercase text-red-400">{user.role} ACCOUNT</div>
+                                        <div className="text-xs font-bold text-slate-800">{user.fullName}</div>
+                                        <div className="text-[9px] font-black uppercase text-red-600">{user.role} ACCOUNT</div>
                                     </div>
                                 </button>
                                 {profileDropdown && (
@@ -1425,14 +1507,16 @@ function App() {
                             <button
                                 type="button"
                                 onClick={() => openAuthModal('login')}
-                                className="bg-[#be1e2d] hover:bg-red-700 text-white px-3.5 py-1.5 rounded-md font-bold text-xs shadow transition cursor-pointer flex items-center gap-1.5">
+                                className="bg-[#e31b23] hover:bg-red-700 text-white px-4 py-2 rounded-full font-bold text-xs shadow transition cursor-pointer flex items-center gap-1.5">
                                 <i className="fa-regular fa-user"></i>
                                 <span>Sign In / Register</span>
                             </button>
                         )}
                     </div>
                 </div>
-                <div className="bg-[#163554] text-xs px-4 md:px-8 py-1.5 border-t border-slate-700/50 flex items-center gap-6">
+
+                {/* SUB NAV BAR */}
+                <div className="bg-slate-900 text-xs px-4 md:px-8 py-2 border-t border-slate-800 flex items-center gap-6">
                     <button
                         onClick={() => changeNavState({ activeTab: 'store' })}
                         className={`font-bold flex items-center gap-1.5 ${activeTab === 'store' ? 'text-amber-400 border-b-2 border-amber-400 pb-0.5' : 'text-gray-200 hover:text-amber-400'}`}>
@@ -1460,7 +1544,7 @@ function App() {
             <div className="w-full px-4 md:px-8 py-6 flex-1 space-y-6">
                 {activeTab === 'admin' && isAdmin && (
                     <div className="w-full space-y-6">
-                        <div className="w-full bg-[#0d233a] text-white p-6 rounded-lg shadow border-l-8 border-red-600 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                        <div className="w-full bg-slate-900 text-white p-6 rounded-lg shadow border-l-8 border-red-600 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                             <div>
                                 <h1 className="text-2xl font-black flex items-center gap-2">
                                     <i className="fa-solid fa-shield-halved text-red-500"></i> Admin Dashboard
@@ -1470,7 +1554,7 @@ function App() {
                             <div className="relative">
                                 <button
                                     onClick={() => setMasterDropdownOpen(!masterDropdownOpen)}
-                                    className="bg-[#be1e2d] hover:bg-red-700 text-white font-black px-5 py-2.5 rounded shadow text-xs flex items-center gap-2 transition cursor-pointer">
+                                    className="bg-[#e31b23] hover:bg-red-700 text-white font-black px-5 py-2.5 rounded shadow text-xs flex items-center gap-2 transition cursor-pointer">
                                     <i className="fa-solid fa-sliders"></i> Actions List <i className="fa-solid fa-chevron-down text-[10px]"></i>
                                 </button>
                                 {masterDropdownOpen && (
@@ -1498,7 +1582,7 @@ function App() {
                                                     });
                                                     setMasterDropdownOpen(false);
                                                 }}
-                                                className={`w-full text-left px-4 py-2.5 hover:bg-red-50 flex items-center justify-between font-bold cursor-pointer ${selectedMaster === m.key ? 'text-[#be1e2d] bg-red-50/50' : 'text-slate-700'}`}>
+                                                className={`w-full text-left px-4 py-2.5 hover:bg-red-50 flex items-center justify-between font-bold cursor-pointer ${selectedMaster === m.key ? 'text-[#e31b23] bg-red-50/50' : 'text-slate-700'}`}>
                                                 <span className="flex items-center gap-2"><i className={`fa-solid ${m.icon} text-slate-400`}></i> {m.label}</span>
                                                 {selectedMaster === m.key && <i className="fa-solid fa-check text-red-600"></i>}
                                             </button>
@@ -1511,7 +1595,7 @@ function App() {
                         <div className="w-full bg-white p-4 rounded-lg border border-gray-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
                             <div className="flex items-center gap-3">
                                 <span className="text-xs font-black uppercase text-slate-500 flex items-center gap-1">
-                                    <i className="fa-solid fa-list-check text-[#be1e2d]"></i> {currentHeaderConfig.title}
+                                    <i className="fa-solid fa-list-check text-[#e31b23]"></i> {currentHeaderConfig.title}
                                 </span>
 
                                 <button
@@ -1581,6 +1665,9 @@ function App() {
                                     categoriesList={categoriesList}
                                     languagesList={languagesList}
                                     authorsList={authorsList}
+                                    onOpenAddCategoryModal={() => setShowAddCategoryModal(true)}
+                                    onOpenAddLanguageModal={() => setShowAddLanguageModal(true)}
+                                    onOpenAddAuthorModal={() => setShowAddAuthorModal(true)}
                                     setShowAddCategoryModal={setShowAddCategoryModal}
                                     setShowAddLanguageModal={setShowAddLanguageModal}
                                     setShowAddAuthorModal={setShowAddAuthorModal}
@@ -1706,20 +1793,21 @@ function App() {
                         ) : (
                             <div className="w-full bg-white p-6 rounded-lg border border-gray-200 shadow-sm space-y-4">
                                 <h3 className="text-base font-bold text-[#0d233a] border-b pb-2 capitalize flex items-center justify-between">
-                                    <span><i className="fa-solid fa-list text-[#be1e2d] me-2"></i>{selectedMaster} List View ({currentMasterData.length})</span>
+                                    <span><i className="fa-solid fa-list text-[#e31b23] me-2"></i>{selectedMaster} List View ({currentMasterData.length})</span>
                                     <span className="text-xs text-slate-500">Showing Top {rowsPerPage} Rows</span>
                                 </h3>
 
-                                <div className="overflow-x-auto w-full">
-                                    <table className="w-full text-left text-slate-800 text-xs">
-                                        <thead className="bg-slate-100 text-slate-600 uppercase border-b font-bold">
+                                                                    
+                                <div className="overflow-x-auto overflow-y-auto w-full max-h-[500px] border border-gray-200 rounded-lg shadow-inner">
+                                    <table className="w-full text-left text-slate-800 text-xs relative border-collapse">
+                                        <thead className="bg-slate-100 text-slate-600 uppercase border-b font-bold sticky top-0 z-20 shadow-sm">
                                             <tr>
                                                 <th className="p-3 w-10 text-center">
                                                     <input
                                                         type="checkbox"
                                                         checked={isAllSelected}
                                                         onChange={(e) => handleSelectAllMasterRows(e, currentMasterData.slice(0, rowsPerPage))}
-                                                        className="w-4 h-4 cursor-pointer accent-[#be1e2d]"
+                                                        className="w-4 h-4 cursor-pointer accent-[#e31b23]"
                                                     />
                                                 </th>
 
@@ -1778,7 +1866,7 @@ function App() {
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y">
-                                            {currentMasterData.slice(0, rowsPerPage).map((item, index) => {
+                                               {currentMasterData.map((item, index) => {
                                                 const isChecked = selectedMasterIds.includes(item.id);
 
                                                 return (
@@ -1800,7 +1888,7 @@ function App() {
                                                                 type="checkbox"
                                                                 checked={isChecked}
                                                                 onChange={() => handleSelectSingleMasterRow(item.id)}
-                                                                className="w-4 h-4 cursor-pointer accent-[#be1e2d]"
+                                                                className="w-4 h-4 cursor-pointer accent-[#e31b23]"
                                                             />
                                                         </td>
 
@@ -1821,28 +1909,16 @@ function App() {
                                                                 <td className="p-3 font-mono text-slate-700">{item.postalCode}</td>
                                                             </>
                                                         ) : selectedMaster === 'items' && item.raw ? (
-                                                                <><td className="p-3 font-bold text-amber-700">
-                                                                    {(() => {
-                                                                        // Direct API Response se categoryName read karo
-                                                                        if (item.raw.categoryName) return item.raw.categoryName;
-
-                                                                        // Dynamic Fallback: categoriesList state se match karo
-                                                                        const catCode = item.raw.categoryCode || item.raw.CategoryCode;
-                                                                        const foundCat = categoriesList.find(c =>
-                                                                            String(c.categoryCode).toLowerCase() === String(catCode).toLowerCase() ||
-                                                                            String(c.id).toLowerCase() === String(catCode).toLowerCase()
-                                                                        );
-                                                                        return foundCat ? foundCat.categoryName : (catCode || 'General');
-                                                                    })()}
-                                                                </td>
+                                                            <>
+                                                                    <td className="p-3 font-bold text-amber-700">
+                                                                        {getBookCategoryName(item.raw)}
+                                                                    </td>
                                                                 <td className="p-3 font-mono text-slate-600">
                                                                     {item.raw.isbn || item.raw.ISBN || item.raw.Isbn || 'N/A'}
                                                                 </td>
-                                                                {/* STRICT AUTHOR NAME RENDER */}
                                                                 <td className="p-3 font-bold text-blue-700">
                                                                     {item.raw.extractedAuthorName || item.raw.authorName || item.raw.AuthorName || item.raw.author || item.raw.Author || 'Dr. Samuel Hahnemann'}
                                                                 </td>
-                                                                {/* PUBLISHED BY / CREATED BY RENDER */}
                                                                 <td className="p-3 font-bold text-slate-700">
                                                                     {item.raw.extractedPublisherName || item.raw.createdBy || item.raw.CreatedBy || item.raw.publisherName || item.raw.PublisherName || 'System Administrator'}
                                                                 </td>
@@ -1876,7 +1952,7 @@ function App() {
                                                                 </>
                                                             )}
 
-                                                            <button onClick={(e) => { e.stopPropagation(); setDeleteConfirmModal({ show: true, id: item.id, ids: [], title: item.name, type: selectedMaster }); }} className="text-[#be1e2d] hover:underline font-bold cursor-pointer">
+                                                            <button onClick={(e) => { e.stopPropagation(); setDeleteConfirmModal({ show: true, id: item.id, ids: [], title: item.name, type: selectedMaster }); }} className="text-[#e31b23] hover:underline font-bold cursor-pointer">
                                                                 <i className="fa-solid fa-trash me-1"></i> Delete
                                                             </button>
                                                         </td>
@@ -1892,41 +1968,103 @@ function App() {
                 )}
 
                 {activeTab === 'store' && (
-                    <main className="w-full space-y-6">
-                        <div className="bg-gradient-to-r from-[#0d233a] to-[#163554] text-white p-6 rounded-lg shadow border-l-8 border-[#be1e2d]">
-                            <h1 className="text-2xl font-black">B. Jain Group eBook Store</h1>
-                            <p className="text-xs text-gray-300">Browse, buy and read eBooks in a secure, protected reader.</p>
+                    <main className="w-full space-y-8">
+
+                        
+                        <div className="w-full bg-[#e31b23] text-white rounded-2xl shadow-xl overflow-hidden flex flex-col lg:flex-row items-center justify-between p-6 md:p-10 gap-8">
+
+                            
+                            <div className="flex items-end justify-center gap-1.5 md:gap-2.5 shrink-0 bg-white/5 p-4 rounded-xl border border-white/10 backdrop-blur-sm">
+
+                                <div className="w-9 md:w-11 h-44 md:h-56 bg-slate-900 border-l-4 border-slate-700 rounded-sm shadow-2xl flex flex-col justify-between p-1 text-[8px] text-amber-200 font-serif font-bold text-center">
+                                    <span className="rotate-90 origin-left translate-x-3 translate-y-12 truncate w-28 uppercase tracking-tighter">Boger Repertory</span>
+                                </div>
+
+                                <div className="w-9 md:w-11 h-44 md:h-56 bg-emerald-950 border-l-4 border-amber-500 rounded-sm shadow-2xl flex flex-col justify-between p-1 text-[8px] text-white font-serif font-bold text-center">
+                                    <span className="rotate-90 origin-left translate-x-3 translate-y-12 truncate w-28 uppercase tracking-tighter">Materia Medica</span>
+                                </div>
+
+                                <div className="w-9 md:w-11 h-44 md:h-56 bg-red-950 border-l-4 border-amber-400 rounded-sm shadow-2xl flex flex-col justify-between p-1 text-[8px] text-amber-300 font-serif font-bold text-center">
+                                    <span className="rotate-90 origin-left translate-x-3 translate-y-12 truncate w-28 uppercase tracking-tighter">Essentials Tiwari</span>
+                                </div>
+
+                                <div className="w-9 md:w-11 h-44 md:h-56 bg-[#c21807] border-l-4 border-amber-300 rounded-sm shadow-2xl flex flex-col justify-between p-1 text-[8px] text-white font-serif font-bold text-center">
+                                    <span className="rotate-90 origin-left translate-x-3 translate-y-12 truncate w-28 uppercase tracking-tighter">Guiding Symptoms</span>
+                                </div>
+
+                                <div className="w-9 md:w-11 h-44 md:h-56 bg-amber-600 border-l-4 border-amber-200 rounded-sm shadow-2xl flex flex-col justify-between p-1 text-[8px] text-slate-900 font-serif font-bold text-center">
+                                    <span className="rotate-90 origin-left translate-x-3 translate-y-12 truncate w-28 uppercase tracking-tighter">Clinical Synthesis</span>
+                                </div>
+
+                                <div className="w-9 md:w-11 h-44 md:h-56 bg-blue-900 border-l-4 border-amber-400 rounded-sm shadow-2xl flex flex-col justify-between p-1 text-[8px] text-amber-200 font-serif font-bold text-center">
+                                    <span className="rotate-90 origin-left translate-x-3 translate-y-12 truncate w-28 uppercase tracking-tighter">Lotus Materia</span>
+                                </div>
+
+                                <div className="w-9 md:w-11 h-44 md:h-56 bg-amber-100 border-l-4 border-amber-700 rounded-sm shadow-2xl flex flex-col justify-between p-1 text-[8px] text-slate-900 font-serif font-bold text-center">
+                                    <span className="rotate-90 origin-left translate-x-3 translate-y-12 truncate w-28 uppercase tracking-tighter">Kent Repertory</span>
+                                </div>
+                            </div>
+
+                            
+                            <div className="flex-1 flex flex-col items-center justify-center text-center space-y-3">
+
+                                <div className="inline-flex items-center gap-1.5 bg-amber-400 text-slate-900 font-extrabold text-[10px] md:text-xs px-4 py-1.5 rounded-full uppercase tracking-wider shadow-md">
+                                    <i className="fa-solid fa-award"></i> More than 50 Years Of Serving Homoeopathy...
+                                </div>
+
+                                <div className="space-y-1 pt-2">
+                                    <div className="w-20 h-20 md:w-28 md:h-28 mx-auto bg-white rounded-full flex items-center justify-center text-[#e31b23] font-serif font-black text-5xl md:text-7xl shadow-xl leading-none">
+                                        b
+                                    </div>
+                                    <h1 className="text-5xl md:text-7xl font-black font-serif tracking-tight text-white drop-shadow-md">
+                                        B JAIN
+                                    </h1>
+                                    <h2 className="text-sm md:text-xl font-sans font-bold text-amber-200 tracking-widest uppercase">
+                                        PUBLISHERS PVT. LTD.
+                                    </h2>
+                                </div>
+
+                                <p className="text-base md:text-2xl font-serif italic text-white pt-2 font-medium">
+                                    Serving Homeopathy Since 1966
+                                </p>
+                            </div>
                         </div>
 
                         {loadingBooks ? (
                             <p className="text-center text-xs py-8">Loading Publications...</p>
                         ) : (
-                            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 w-full">
-                                {filteredStoreBooks.map(b => (
-                                    <div key={b.id || b.Id} className="bg-white border rounded-lg p-4 flex gap-4 hover:shadow-lg transition">
-                                        <div className="w-28 h-40 bg-gray-100 rounded border overflow-hidden shrink-0">
-                                            <img src={b.image || b.Image || '/images/default-cover.png'} alt={b.itemName || b.ItemName} className="w-full h-full object-cover" />
-                                        </div>
-                                        <div className="flex-1 flex flex-col justify-between text-xs">
-                                            <div>
-                                                <span className="bg-amber-100 text-amber-900 text-[9px] font-bold px-2 py-0.5 rounded border border-amber-300 uppercase me-1">
-                                                    {b.categoryCode || b.CategoryCode || 'HOMEO'}
-                                                </span>
-                                                <h3 className="font-bold text-slate-900 text-sm line-clamp-2 mt-1">{b.itemName || b.ItemName}</h3>
-                                                <p className="text-slate-500 text-[11px]">by {getBookAuthorName(b)}</p>
-                                            </div>
+                            <div className="space-y-4">
+                                <h2 className="text-xl font-bold text-slate-900 border-b pb-2 flex items-center gap-2">
+                                    <i className="fa-solid fa-book-bookmark text-[#e31b23]"></i> Catalog Publications
+                                </h2>
 
-                                            <div className="space-y-2 pt-2 border-t">
-                                                <div className="font-black text-slate-900 text-base">₹{b.price !== undefined ? b.price : b.Price}</div>
-                                                <button
-                                                    onClick={() => handleReadAccess(b)}
-                                                    className="w-full bg-[#0d233a] hover:bg-[#be1e2d] text-white font-bold py-1.5 rounded text-xs shadow flex items-center justify-center gap-1 cursor-pointer">
-                                                    <i className="fa-solid fa-book-open"></i> Read Access
-                                                </button>
+                                <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 w-full">
+                                    {filteredStoreBooks.map(b => (
+                                        <div key={b.id || b.Id} className="bg-white border rounded-lg p-4 flex gap-4 hover:shadow-lg transition">
+                                            <div className="w-28 h-40 bg-gray-100 rounded border overflow-hidden shrink-0">
+                                                <img src={b.image || b.Image || '/images/default-cover.png'} alt={b.itemName || b.ItemName} className="w-full h-full object-cover" />
+                                            </div>
+                                            <div className="flex-1 flex flex-col justify-between text-xs">
+                                                <div>
+                                                    <span className="bg-amber-100 text-amber-900 text-[9px] font-bold px-2 py-0.5 rounded border border-amber-300 uppercase me-1">
+                                                        {b.categoryCode || b.CategoryCode || 'HOMEO'}
+                                                    </span>
+                                                    <h3 className="font-bold text-slate-900 text-sm line-clamp-2 mt-1">{b.itemName || b.ItemName}</h3>
+                                                    <p className="text-slate-500 text-[11px]">by {getBookAuthorName(b)}</p>
+                                                </div>
+
+                                                <div className="space-y-2 pt-2 border-t">
+                                                    <div className="font-black text-slate-900 text-base">₹{b.price !== undefined ? b.price : b.Price}</div>
+                                                    <button
+                                                        onClick={() => handleReadAccess(b)}
+                                                        className="w-full bg-[#e31b23] hover:bg-red-800 text-white font-bold py-1.5 rounded text-xs shadow flex items-center justify-center gap-1 cursor-pointer">
+                                                        <i className="fa-solid fa-book-open"></i> Read Access
+                                                    </button>
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
-                                ))}
+                                    ))}
+                                </div>
                             </div>
                         )}
                     </main>
@@ -1942,10 +2080,103 @@ function App() {
                 />
             )}
 
+            {/* QUICK ADD CATEGORY MODAL */}
+            {showAddCategoryModal && (
+                <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-[90] flex items-center justify-center p-4">
+                    <div className="bg-white rounded-lg w-full max-w-md p-6 shadow-2xl relative space-y-4 border-t-4 border-amber-500">
+                        <button onClick={() => setShowAddCategoryModal(false)} className="absolute top-3 right-3 text-gray-400 hover:text-slate-800 cursor-pointer">
+                            <i className="fa-solid fa-xmark text-lg"></i>
+                        </button>
+                        <h3 className="text-base font-bold text-[#0d233a] flex items-center gap-2">
+                            <i className="fa-solid fa-layer-group text-amber-500"></i> Quick Add Category
+                        </h3>
+                        <form onSubmit={handleSaveQuickCategory} className="space-y-4 text-xs">
+                            <div>
+                                <label className="font-bold text-slate-700 block mb-1">Category Name *</label>
+                                <input
+                                    type="text"
+                                    required
+                                    value={quickCategoryName}
+                                    onChange={e => setQuickCategoryName(e.target.value)}
+                                    placeholder="e.g. Homoeopathy"
+                                    className="w-full border border-gray-300 rounded px-3 py-2 outline-none focus:border-amber-500"
+                                />
+                            </div>
+                            <div className="flex justify-end gap-2 pt-2">
+                                <button type="button" onClick={() => setShowAddCategoryModal(false)} className="px-4 py-2 bg-gray-200 text-slate-700 font-bold rounded cursor-pointer">Cancel</button>
+                                <button type="submit" className="px-4 py-2 bg-amber-500 text-white font-bold rounded shadow cursor-pointer hover:bg-amber-600">Save Category</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* QUICK ADD LANGUAGE MODAL */}
+            {showAddLanguageModal && (
+                <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-[90] flex items-center justify-center p-4">
+                    <div className="bg-white rounded-lg w-full max-w-md p-6 shadow-2xl relative space-y-4 border-t-4 border-indigo-600">
+                        <button onClick={() => setShowAddLanguageModal(false)} className="absolute top-3 right-3 text-gray-400 hover:text-slate-800 cursor-pointer">
+                            <i className="fa-solid fa-xmark text-lg"></i>
+                        </button>
+                        <h3 className="text-base font-bold text-[#0d233a] flex items-center gap-2">
+                            <i className="fa-solid fa-language text-indigo-600"></i> Quick Add Language
+                        </h3>
+                        <form onSubmit={handleSaveQuickLanguage} className="space-y-4 text-xs">
+                            <div>
+                                <label className="font-bold text-slate-700 block mb-1">Language Name *</label>
+                                <input
+                                    type="text"
+                                    required
+                                    value={quickLanguageName}
+                                    onChange={e => setQuickLanguageName(e.target.value)}
+                                    placeholder="e.g. German"
+                                    className="w-full border border-gray-300 rounded px-3 py-2 outline-none focus:border-indigo-600"
+                                />
+                            </div>
+                            <div className="flex justify-end gap-2 pt-2">
+                                <button type="button" onClick={() => setShowAddLanguageModal(false)} className="px-4 py-2 bg-gray-200 text-slate-700 font-bold rounded cursor-pointer">Cancel</button>
+                                <button type="submit" className="px-4 py-2 bg-indigo-600 text-white font-bold rounded shadow cursor-pointer hover:bg-indigo-700">Save Language</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* QUICK ADD AUTHOR MODAL */}
+            {showAddAuthorModal && (
+                <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-[90] flex items-center justify-center p-4">
+                    <div className="bg-white rounded-lg w-full max-w-md p-6 shadow-2xl relative space-y-4 border-t-4 border-blue-600">
+                        <button onClick={() => setShowAddAuthorModal(false)} className="absolute top-3 right-3 text-gray-400 hover:text-slate-800 cursor-pointer">
+                            <i className="fa-solid fa-xmark text-lg"></i>
+                        </button>
+                        <h3 className="text-base font-bold text-[#0d233a] flex items-center gap-2">
+                            <i className="fa-solid fa-user-pen text-blue-600"></i> Quick Add Author
+                        </h3>
+                        <form onSubmit={handleSaveQuickAuthor} className="space-y-4 text-xs">
+                            <div>
+                                <label className="font-bold text-slate-700 block mb-1">Author Full Name *</label>
+                                <input
+                                    type="text"
+                                    required
+                                    value={quickAuthorName}
+                                    onChange={e => setQuickAuthorName(e.target.value)}
+                                    placeholder="e.g. Dr. William Boericke"
+                                    className="w-full border border-gray-300 rounded px-3 py-2 outline-none focus:border-blue-600"
+                                />
+                            </div>
+                            <div className="flex justify-end gap-2 pt-2">
+                                <button type="button" onClick={() => setShowAddAuthorModal(false)} className="px-4 py-2 bg-gray-200 text-slate-700 font-bold rounded cursor-pointer">Cancel</button>
+                                <button type="submit" className="px-4 py-2 bg-blue-600 text-white font-bold rounded shadow cursor-pointer hover:bg-blue-700">Save Author</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
             {/* AUTHENTICATION MODAL (SIGN IN / REGISTER) */}
             {isAuthOpen && (
                 <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-lg w-full max-w-md p-6 shadow-2xl relative space-y-4 border-t-4 border-[#be1e2d]">
+                    <div className="bg-white rounded-lg w-full max-w-md p-6 shadow-2xl relative space-y-4 border-t-4 border-[#e31b23]">
                         <button onClick={() => setIsAuthOpen(false)} className="absolute top-3 right-3 text-gray-400 hover:text-slate-800 cursor-pointer">
                             <i className="fa-solid fa-xmark text-lg"></i>
                         </button>
@@ -2008,7 +2239,7 @@ function App() {
                                 <button
                                     type="submit"
                                     disabled={authLoading}
-                                    className="w-full bg-[#be1e2d] hover:bg-red-700 text-white font-bold py-2.5 rounded text-xs shadow transition cursor-pointer">
+                                    className="w-full bg-[#e31b23] hover:bg-red-700 text-white font-bold py-2.5 rounded text-xs shadow transition cursor-pointer">
                                     {authLoading ? 'Updating Password...' : 'Reset Password'}
                                 </button>
                             </form>
@@ -2057,7 +2288,7 @@ function App() {
                                             onChange={e => setSelectedRoleInput(e.target.value)}
                                             className="w-full border border-gray-300 rounded px-3 py-2 font-bold text-[#0d233a] bg-gray-50 outline-none">
                                             <option value="Author">Author</option>
-                                         
+                                            <option value="Publisher">Publisher</option>
                                             <option value="Reader">Reader</option>
                                         </select>
                                     </div>
@@ -2079,7 +2310,7 @@ function App() {
                                         <button
                                             type="button"
                                             onClick={() => { setAuthMode('register'); setAuthError(''); setAuthSuccessMsg(''); }}
-                                            className="text-[#be1e2d] font-bold hover:underline ms-1 cursor-pointer">
+                                            className="text-[#e31b23] font-bold hover:underline ms-1 cursor-pointer">
                                             Register Here
                                         </button>
                                     </div>

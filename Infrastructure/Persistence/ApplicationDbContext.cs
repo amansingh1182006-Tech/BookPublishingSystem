@@ -1,5 +1,6 @@
 ﻿using Application.Interfaces;
 using BookPublishingSystem.Domain.Entities;
+using Domain.Entities;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 
@@ -25,6 +26,8 @@ namespace Infrastructure.Persistence
         public DbSet<BookSegmentGamma> BookSegmentsGamma { get; set; }
         public DbSet<Plan> Plans { get; set; }
         public DbSet<UserSubscription> UserSubscriptions { get; set; }
+        public DbSet<UserReadingProgress> UserReadingProgress { get; set; }
+        public DbSet<UserSession> UserSessions { get; set; }
 
         protected override void OnModelCreating(ModelBuilder builder)
         {
@@ -58,6 +61,16 @@ namespace Infrastructure.Persistence
                       .WithMany()
                       .HasForeignKey(c => c.BookId)
                       .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            builder.Entity<UserReadingProgress>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+
+                entity.HasOne(e => e.Book)
+                      .WithMany()
+                      .HasForeignKey(e => e.BookId)
+                      .OnDelete(DeleteBehavior.NoAction);
             });
         }
     }

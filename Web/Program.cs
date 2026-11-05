@@ -8,9 +8,14 @@ using Infrastructure.Persistence.Seeders;
 using Infrastructure.Services;
 using Infrastructure.Storage;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.StaticFiles;
+using Serilog;
 using Web.Middlewares;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Host.UseSerilog((context, configuration) =>
+    configuration.ReadFrom.Configuration(context.Configuration));
 
 // Add Infrastructure & Application Services
 builder.Services.AddInfrastructureServices(builder.Configuration);
@@ -105,7 +110,23 @@ app.UseHttpsRedirection();
 
 // IMPORTANT FIX: Static Files and Default Document Middleware Order
 app.UseDefaultFiles();
-app.UseStaticFiles(); // React Build Assets & Storage Files
+// Static Files Options WITH ContentType Provider & Caching Control
+var provider = new FileExtensionContentTypeProvider();
+provider.Mappings[".jpg"] = "image/jpeg";
+provider.Mappings[".jpeg"] = "image/jpeg";
+provider.Mappings[".png"] = "image/png";
+provider.Mappings[".webp"] = "image/webp";
+
+app.UseStaticFiles(new StaticFileOptions
+{
+    ContentTypeProvider = provider,
+    OnPrepareResponse = ctx =>
+    {
+        // Disable aggressive caching for wwwroot/images during development
+        ctx.Context.Response.Headers.Append("Cache-Control", "no-cache, no-store");
+        ctx.Context.Response.Headers.Append("Expires", "-1");
+    }
+});
 
 // Routing & Authorization Middleware Order
 app.UseRouting();

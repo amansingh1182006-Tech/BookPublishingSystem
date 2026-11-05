@@ -464,7 +464,7 @@ namespace Web.Areas.Author.Controllers
             {
                 using (PdfDocument outputDocument = new PdfDocument())
                 {
-                    string desktopBasePath = _configuration["StorageSettings:BaseDrivePath"] ?? @"C:\Users\ADMIN\Desktop\B.Jain Store Book";
+                    string desktopBasePath = _configuration["StorageSettings:BaseDrivePath"] ?? @"C:\RadarBooks\B.Jain Store Book";
 
                     foreach (var seg in orderedSegments)
                     {
