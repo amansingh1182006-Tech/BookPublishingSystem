@@ -25,7 +25,7 @@ namespace Infrastructure.Storage
             string configuredPath = configuration["StorageSettings:BaseDrivePath"];
             if (string.IsNullOrWhiteSpace(configuredPath))
             {
-                configuredPath = @"C:\Users\ADMIN\Desktop\B.Jain Store Book";
+                configuredPath = @"C:\RadarBooks\B.Jain Store Book";
             }
 
             _baseStoragePath = Path.Combine(configuredPath, "Books");
