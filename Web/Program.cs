@@ -17,11 +17,11 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Host.UseSerilog((context, configuration) =>
     configuration.ReadFrom.Configuration(context.Configuration));
 
-// Add Infrastructure & Application Services
+
 builder.Services.AddInfrastructureServices(builder.Configuration);
 builder.Services.AddApplicationServices();
 
-// Add ASP.NET Core Identity
+
 builder.Services.AddIdentity<ApplicationUser, ApplicationRole>(options =>
 {
     options.Password.RequireDigit = true;
@@ -34,11 +34,11 @@ builder.Services.AddIdentity<ApplicationUser, ApplicationRole>(options =>
 
 builder.Services.AddScoped<IUserClaimsPrincipalFactory<ApplicationUser>, CustomClaimsPrincipalFactory>();
 
-// Custom Storage & DRM Services
+
 builder.Services.AddScoped<IStorageService, LocalSecureStorageService>();
 builder.Services.AddScoped<IChapterStreamService, DRMStreamService>();
 
-// Custom Policy Configuration (Admin, Author, Reader Policies)
+
 builder.Services.AddAuthorizationBuilder()
     .AddPolicy("AdminOnly", policy => policy.RequireRole("Admin"))
     .AddPolicy("CanManageOwnBook", policy =>
@@ -52,7 +52,7 @@ builder.Services.AddControllersWithViews();
 
 var app = builder.Build();
 
-// Automatic Database & Identity Tables Initialization
+
 using (var scope = app.Services.CreateScope())
 {
     var services = scope.ServiceProvider;
@@ -60,7 +60,7 @@ using (var scope = app.Services.CreateScope())
     {
         var context = services.GetRequiredService<ApplicationDbContext>();
 
-        // Ensure SQL Server tables exist
+        
         await context.Database.EnsureCreatedAsync();
 
         var roleManager = services.GetRequiredService<RoleManager<ApplicationRole>>();
@@ -80,7 +80,7 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
-// Seed Database System Roles
+
 using (var scope = app.Services.CreateScope())
 {
     var services = scope.ServiceProvider;
@@ -96,7 +96,7 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
-// Middleware Pipeline Injection
+
 app.UseMiddleware<SecurityHeadersMiddleware>();
 app.UseMiddleware<AntiScreenshotMiddleware>();
 
@@ -108,9 +108,9 @@ if (!app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-// IMPORTANT FIX: Static Files and Default Document Middleware Order
+
 app.UseDefaultFiles();
-// Static Files Options WITH ContentType Provider & Caching Control
+
 var provider = new FileExtensionContentTypeProvider();
 provider.Mappings[".jpg"] = "image/jpeg";
 provider.Mappings[".jpeg"] = "image/jpeg";
@@ -122,19 +122,20 @@ app.UseStaticFiles(new StaticFileOptions
     ContentTypeProvider = provider,
     OnPrepareResponse = ctx =>
     {
-        // Disable aggressive caching for wwwroot/images during development
+        
         ctx.Context.Response.Headers.Append("Cache-Control", "no-cache, no-store");
         ctx.Context.Response.Headers.Append("Expires", "-1");
     }
 });
 
-// Routing & Authorization Middleware Order
+
 app.UseRouting();
 app.UseAuthentication();
+app.UseMiddleware<SingleDeviceSessionMiddleware>();
 app.UseAuthorization();
 
-// Controllers & React SPA Fallback Route
-app.MapControllers(); // For API Controllers (/api/account, /api/admin, etc.)
+
+app.MapControllers(); 
 
 app.MapControllerRoute(
     name: "areas",
@@ -144,7 +145,7 @@ app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Home}/{action=Index}/{id?}");
 
-// Direct React App Fallback ( For React single page application route resolve )
+
 app.MapFallbackToFile("index.html");
 
 app.Run();

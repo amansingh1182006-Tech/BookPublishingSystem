@@ -213,7 +213,7 @@ namespace Web.Areas.Reader.Controllers
                 }
             }
 
-            // 2. Load DRM Segments across Alpha, Beta, Gamma Tables
+            
             var alphaSegments = await _dbContext.BookSegmentsAlpha.Where(s => s.BookId == bookId).ToListAsync();
             var betaSegments = await _dbContext.BookSegmentsBeta.Where(s => s.BookId == bookId).ToListAsync();
             var gammaSegments = await _dbContext.BookSegmentsGamma.Where(s => s.BookId == bookId).ToListAsync();
@@ -223,7 +223,7 @@ namespace Web.Areas.Reader.Controllers
             combinedList.AddRange(betaSegments.Select(b => new SegmentNode { Id = b.Id, ParentId = b.ParentChunkId, Path = b.StorageRelativePath }));
             combinedList.AddRange(gammaSegments.Select(g => new SegmentNode { Id = g.Id, ParentId = g.ParentChunkId, Path = g.StorageRelativePath }));
 
-            // 3. Fallback Option A: Check Physical PDF File in wwwroot/uploads/books/
+            
             if (!combinedList.Any())
             {
                 string uploadsFolder = Path.Combine(_environment.WebRootPath, "uploads", "books");
@@ -235,7 +235,7 @@ namespace Web.Areas.Reader.Controllers
                     return File(fileBytes, "application/pdf");
                 }
 
-                // 4. Fallback Option B: Instant Dynamic PDF Stream (Prevents 404 Popup Error)
+                
                 using (MemoryStream ms = new MemoryStream())
                 {
                     PdfDocument tempDoc = new PdfDocument();
@@ -255,7 +255,7 @@ namespace Web.Areas.Reader.Controllers
                 }
             }
 
-            // 5. Order & Stitch Chunks if segments exist
+            
             var orderedSegments = new List<SegmentNode>();
             var current = combinedList.FirstOrDefault(s => s.ParentId == null);
 
@@ -302,15 +302,15 @@ namespace Web.Areas.Reader.Controllers
         [HttpPost("api/save-progress")]
         public async Task<IActionResult> SaveProgress([FromBody] ReadingProgressDto dto)
         {
-            // Try getting identity user
+            
             var user = await _userManager.GetUserAsync(User);
 
-            // Fallback search by ClaimIdentifier if User object is null
+            
             string userId = user?.Id ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
 
             if (string.IsNullOrEmpty(userId))
             {
-                // Try fallback with existing Logged-in Customer record
+                
                 var lastCust = await _dbContext.Customers.OrderByDescending(c => c.CreatedAt).FirstOrDefaultAsync();
                 if (lastCust != null) userId = lastCust.UserId;
             }

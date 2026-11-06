@@ -33,7 +33,7 @@ public class LanguageController : ControllerBase
         return Ok(languages);
     }
 
-    // POST: api/language/create (Auto System Generated Code)
+    // POST: api/language/create 
     [HttpPost("create")]
     public async Task<IActionResult> CreateLanguage([FromBody] LanguageCreateDto dto)
     {
@@ -42,7 +42,7 @@ public class LanguageController : ControllerBase
             return BadRequest(new { message = "Language Name is required." });
         }
 
-        // AUTO SYSTEM GENERATED LANGUAGE CODE
+        
         string code = $"LANG_{Guid.NewGuid().ToString("N").Substring(0, 6).ToUpper()}";
 
         var newLanguage = new Language

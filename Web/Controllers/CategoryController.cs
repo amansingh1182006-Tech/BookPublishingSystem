@@ -33,7 +33,7 @@ public class CategoryController : ControllerBase
         return Ok(categories);
     }
 
-    // POST: api/category/create (Auto-generated Code)
+    // POST: api/category/create 
     [HttpPost("create")]
     public async Task<IActionResult> CreateCategory([FromBody] CategoryCreateDto dto)
     {
@@ -65,7 +65,7 @@ public class CategoryController : ControllerBase
         });
     }
 
-    // PUT: api/category/update/{code} (Update Category Details)
+    // PUT: api/category/update/{code} 
     [HttpPut("update/{code}")]
     public async Task<IActionResult> UpdateCategory(string code, [FromBody] CategoryCreateDto dto)
     {

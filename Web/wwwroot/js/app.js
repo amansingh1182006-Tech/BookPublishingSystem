@@ -1,5 +1,24 @@
 ﻿const { useState, useEffect, useCallback, useRef } = React;
 
+(function () {
+    const originalFetch = window.fetch;
+    window.fetch = async function () {
+        const response = await originalFetch.apply(this, arguments);
+        if (response.status === 401) {
+            const clone = response.clone();
+            try {
+                const data = await clone.json();
+                if (data.error === "SessionExpired") {
+                    alert(data.message || "Your Account is Login in Another Device.");
+                    localStorage.removeItem('isExplicitLogin');
+                    window.location.reload();
+                }
+            } catch (e) { }
+        }
+        return response;
+    };
+})();
+
 
 function InternalEditAuthorForm({ editingAuthor, onSuccess, onCancel }) {
     const [editAuthorName, setEditAuthorName] = useState(
@@ -1269,6 +1288,9 @@ function App() {
                 } else {
                     const assignedRole = data.roles && data.roles.length > 0 ? data.roles[0] : 'Reader';
                     localStorage.setItem('isExplicitLogin', 'true');
+                    if (data.sessionToken) {
+                        localStorage.setItem('sessionToken', data.sessionToken);
+                    }
                     setUser({
                         isLoggedIn: true,
                         fullName: data.fullName || emailInput.split('@')[0],

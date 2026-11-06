@@ -34,7 +34,7 @@ public class KeywordController : ControllerBase
         return Ok(keywords);
     }
 
-    // POST: api/keyword/create (Auto System Generated Code)
+    // POST: api/keyword/create 
     [HttpPost("create")]
     public async Task<IActionResult> CreateKeyword([FromBody] KeywordCreateDto dto)
     {

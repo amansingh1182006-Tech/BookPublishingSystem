@@ -1,10 +1,12 @@
 ﻿using BookPublishingSystem.Application.DTOs;
 using BookPublishingSystem.Domain.Entities;
+using Domain.Entities;
 using Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 using Web.Models;
 
 namespace Web.Controllers
@@ -18,8 +20,11 @@ namespace Web.Controllers
         private readonly RoleManager<ApplicationRole> _roleManager;
         private readonly ApplicationDbContext _dbContext;
 
-        public AccountController(UserManager<ApplicationUser> userManager, SignInManager<ApplicationUser> signInManager, RoleManager<ApplicationRole> roleManager, ApplicationDbContext dbContext)
-            
+        public AccountController(
+            UserManager<ApplicationUser> userManager,
+            SignInManager<ApplicationUser> signInManager,
+            RoleManager<ApplicationRole> roleManager,
+            ApplicationDbContext dbContext)
         {
             _userManager = userManager;
             _signInManager = signInManager;
@@ -54,10 +59,8 @@ namespace Web.Controllers
             }
             await _userManager.AddToRoleAsync(user, roleName);
 
-           
             if (roleName.Equals("Author", StringComparison.OrdinalIgnoreCase) || roleName.Equals("Publisher", StringComparison.OrdinalIgnoreCase))
             {
-                string genAuthorCode = $"ATH-{DateTime.UtcNow:yyMM}-{new Random().Next(100, 999)}";
                 var authorMaster = new Author
                 {
                     Id = Guid.NewGuid(),
@@ -66,12 +69,9 @@ namespace Web.Controllers
                 };
                 _dbContext.Authors.Add(authorMaster);
             }
-            
             else if (roleName.Equals("Reader", StringComparison.OrdinalIgnoreCase))
             {
                 string genCustId = $"CUST-{DateTime.UtcNow:yyMM}-{new Random().Next(1000, 9999)}";
-
-               
                 var defaultBook = await _dbContext.Books.FirstOrDefaultAsync();
                 Guid assignedBookId = defaultBook != null ? defaultBook.Id : Guid.NewGuid();
 
@@ -89,10 +89,10 @@ namespace Web.Controllers
                     Country = "India",
                     Landmark = string.Empty,
                     UserId = user.Id,
-                    BookId = assignedBookId,             
-                    PlanType = "ProfileOnly",          
-                    AmountPaid = 0.00m,                 
-                    TransactionId = "REGISTER-INIT",     
+                    BookId = assignedBookId,
+                    PlanType = "ProfileOnly",
+                    AmountPaid = 0.00m,
+                    TransactionId = "REGISTER-INIT",
                     PurchasedAt = DateTime.UtcNow,
                     CreatedAt = DateTime.UtcNow
                 };
@@ -100,9 +100,7 @@ namespace Web.Controllers
                 _dbContext.Customers.Add(customerMaster);
             }
 
-            
             await _dbContext.SaveChangesAsync();
-
             return Ok(new { message = "Registration successful! Record synced to Master list.", email = user.Email });
         }
 
@@ -118,15 +116,49 @@ namespace Web.Controllers
                 return Unauthorized(new { message = "Invalid email or password." });
             }
 
-            var result = await _signInManager.PasswordSignInAsync(
-                user.UserName!, model.Password, model.RememberMe, lockoutOnFailure: false);
+            var result = await _signInManager.CheckPasswordSignInAsync(user, model.Password, false);
 
             if (result.Succeeded)
             {
-                var roles = await _userManager.GetRolesAsync(user);
+                
+                var activeSessions = await _dbContext.Set<UserSession>()
+                    .Where(s => s.UserId == user.Id && s.IsActive)
+                    .ToListAsync();
 
-                // Role-based Clean Navigation Routing
-                string redirectUrl = "/"; // Customer/Reader by default Home Page par aayenge
+                foreach (var session in activeSessions)
+                {
+                    session.IsActive = false;
+                }
+
+                
+                string newSessionToken = Guid.NewGuid().ToString();
+                string? ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
+
+                var newSession = new UserSession
+                {
+                    UserId = user.Id,
+                    SessionToken = newSessionToken,
+                    IpAddress = ipAddress,
+                    LoginTime = DateTime.UtcNow,
+                    LastActiveTime = DateTime.UtcNow,
+                    IsActive = true
+                };
+
+                _dbContext.Set<UserSession>().Add(newSession);
+                await _dbContext.SaveChangesAsync();
+
+                
+                await _userManager.UpdateSecurityStampAsync(user);
+
+                var claims = new List<Claim>
+                {
+                    new Claim("SessionToken", newSessionToken)
+                };
+
+                await _signInManager.SignInWithClaimsAsync(user, model.RememberMe, claims);
+
+                var roles = await _userManager.GetRolesAsync(user);
+                string redirectUrl = "/";
 
                 if (roles.Contains("Admin"))
                 {
@@ -144,7 +176,8 @@ namespace Web.Controllers
                     email = user.Email,
                     fullName = user.FullName,
                     roles = roles,
-                    redirectUrl = redirectUrl // Direct Home Page redirect path
+                    redirectUrl = redirectUrl,
+                    sessionToken = newSessionToken
                 });
             }
 
@@ -195,7 +228,6 @@ namespace Web.Controllers
                 return NotFound(new { message = "Is Email ID ke sath koi account registered nahi hai." });
             }
 
-            
             var resetToken = await _userManager.GeneratePasswordResetTokenAsync(user);
             var result = await _userManager.ResetPasswordAsync(user, resetToken, model.NewPassword.Trim());
 
@@ -221,14 +253,12 @@ namespace Web.Controllers
 
             object? roleDetails = null;
 
-           
             if (mainRole == "Admin")
             {
                 var allUsers = await _dbContext.Users
                     .Select(u => new { u.Id, u.FullName, u.Email, u.CreatedAt })
                     .ToListAsync();
 
-                
                 var allPurchases = await _dbContext.Customers
                     .Include(p => p.User)
                     .Include(p => p.Book)
@@ -247,7 +277,7 @@ namespace Web.Controllers
                             p.Book.ItemNo,
                             p.Book.ISBN,
                             p.Book.ItemName,
-                            Title = p.Book.ItemName, 
+                            Title = p.Book.ItemName,
                             p.Book.Price
                         } : null
                     })
@@ -262,7 +292,6 @@ namespace Web.Controllers
                     purchases = allPurchases
                 };
             }
-           
             else if (mainRole == "Author" || mainRole == "Publisher")
             {
                 var myBooks = await _dbContext.Books
@@ -291,10 +320,8 @@ namespace Web.Controllers
                     books = myBooks
                 };
             }
-           
             else if (mainRole == "Reader")
             {
-                
                 var myPurchases = await _dbContext.Customers
                     .Include(p => p.Book)
                     .Where(p => p.UserId == user.Id)
@@ -331,6 +358,24 @@ namespace Web.Controllers
         [HttpPost("logout")]
         public async Task<IActionResult> Logout()
         {
+            if (User.Identity?.IsAuthenticated == true)
+            {
+                var userId = _userManager.GetUserId(User);
+                var tokenClaim = User.FindFirstValue("SessionToken");
+
+                if (!string.IsNullOrEmpty(userId) && !string.IsNullOrEmpty(tokenClaim))
+                {
+                    var currentSession = await _dbContext.Set<UserSession>()
+                        .FirstOrDefaultAsync(s => s.UserId == userId && s.SessionToken == tokenClaim);
+
+                    if (currentSession != null)
+                    {
+                        currentSession.IsActive = false;
+                        await _dbContext.SaveChangesAsync();
+                    }
+                }
+            }
+
             await _signInManager.SignOutAsync();
             return Ok(new { message = "Logout successful" });
         }

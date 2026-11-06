@@ -65,7 +65,7 @@ namespace Web.Areas.Author.Controllers
                     coverPath = await _storageService.SaveCoverImageAsync(dto.CoverImage, dto.ItemNo);
                 }
 
-                // AUTHOR MASTER ID RESOLUTION (Match by ID or Name)
+                
                 Guid? matchedAuthorMasterId = null;
                 if (!string.IsNullOrWhiteSpace(dto.AuthorId) && Guid.TryParse(dto.AuthorId, out Guid parsedAuthGuid))
                 {
@@ -94,10 +94,10 @@ namespace Web.Areas.Author.Controllers
                     CoverImagePath = coverPath,
                     Price = dto.Price,
 
-                    // Assign Author Master FK
+                    
                     AuthorMasterId = matchedAuthorMasterId,
 
-                    // Assign Uploader User ID
+                    
                     AuthorId = currentUser.Id,
 
                     IsPublished = false,
@@ -161,7 +161,7 @@ namespace Web.Areas.Author.Controllers
             }
         }
 
-        // FETCH ALL BOOKS FOR ITEMS MASTER LIST VIEW (WITH CATEGORY NAME FIX)
+        // FETCH ALL BOOKS FOR ITEMS MASTER LIST VIEW 
         [HttpGet("my-books")]
         public async Task<IActionResult> GetMyBooks()
         {
@@ -173,23 +173,23 @@ namespace Web.Areas.Author.Controllers
                     .OrderByDescending(b => b.CreatedAt)
                     .ToListAsync();
 
-                // Database se saari categories ek baar fetch karke dictionary bana lenge
+                
                 var categoriesMap = await _dbContext.Categories
                     .ToDictionaryAsync(c => c.CategoryCode.Trim().ToLower(), c => c.CategoryName);
 
                 var books = rawBooks.Select(b =>
                 {
-                    // 1. Author Name Extraction
+                    
                     string displayAuthor = b.AuthorMaster != null ? b.AuthorMaster.AuthorName : null;
                     if (string.IsNullOrWhiteSpace(displayAuthor))
                     {
                         displayAuthor = "Dr. Samuel Hahnemann";
                     }
 
-                    // 2. Publisher Name Extraction
+                   
                     string publisherName = b.Author != null ? (b.Author.FullName ?? b.Author.UserName) : "System Administrator";
 
-                    // 3. Category Name Resolution (Code se Name Match karna)
+                    
                     string catCode = b.CategoryCode?.Trim() ?? "HOMEO";
                     string catName = categoriesMap.ContainsKey(catCode.ToLower()) ? categoriesMap[catCode.ToLower()] : catCode;
 
@@ -200,7 +200,7 @@ namespace Web.Areas.Author.Controllers
                         itemName = b.ItemName,
                         isbn = b.ISBN,
                         categoryCode = catCode,
-                        categoryName = catName, // Real Category Name
+                        categoryName = catName, 
                         noOfPages = b.NoOfPages,
                         language = b.Language,
                         description = b.Description,
@@ -289,7 +289,7 @@ namespace Web.Areas.Author.Controllers
                 if (book == null)
                     return NotFound(new { success = false, message = $"Book '{id}' database mein nahi mila." });
 
-                // Apply DTO updates
+                
                 if (!string.IsNullOrWhiteSpace(dto.ItemName)) book.ItemName = dto.ItemName.Trim();
                 if (dto.Price >= 0) book.Price = dto.Price;
                 if (dto.NoOfPages > 0) book.NoOfPages = dto.NoOfPages;
@@ -302,14 +302,14 @@ namespace Web.Areas.Author.Controllers
                     book.AuthorMasterId = updatedAuthGuid;
                 }
 
-                // Optional Cover Image Update
+               
                 if (dto.CoverImage != null && dto.CoverImage.Length > 0)
                 {
                     string coverPath = await _storageService.SaveCoverImageAsync(dto.CoverImage, book.ItemNo);
                     book.CoverImagePath = coverPath;
                 }
 
-                // Optional Full Book PDF Replacement
+                
                 if (dto.MainPdf != null && dto.MainPdf.Length > 0)
                 {
                     var oldAlpha = _dbContext.BookSegmentsAlpha.Where(s => s.BookId == book.Id);
