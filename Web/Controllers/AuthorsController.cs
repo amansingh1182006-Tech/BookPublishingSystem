@@ -89,7 +89,49 @@ namespace Web.Controllers
             });
         }
 
-        
+        [HttpPost("bulk-upload-grid")]
+        public async Task<IActionResult> BulkUploadAuthors([FromBody] List<BulkAuthorRowDto> authors)
+        {
+            if (authors == null || !authors.Any())
+            {
+                return BadRequest(new { success = false, message = "Not Provide Author Name" });
+            }
+
+            int successCount = 0;
+
+            foreach (var item in authors)
+            {
+                if (string.IsNullOrWhiteSpace(item.AuthorName)) continue;
+
+                string trimmedName = item.AuthorName.Trim();
+
+                bool exists = await _dbContext.Authors
+                    .AnyAsync(a => a.AuthorName.ToLower() == trimmedName.ToLower());
+
+                if (!exists)
+                {
+                    var author = new Author
+                    {
+                        Id = Guid.NewGuid(),
+                        AuthorName = trimmedName,
+                        CreatedAt = DateTime.UtcNow
+                    };
+
+                    _dbContext.Authors.Add(author);
+                    successCount++;
+                }
+            }
+
+            await _dbContext.SaveChangesAsync();
+
+            return Ok(new
+            {
+                success = true,
+                message = $"{successCount} Authors successfully bulk aaded"
+            });
+        }
+
+
         [HttpPut("update/{id:guid}")]
         public async Task<IActionResult> UpdateAuthor(Guid id, [FromBody] AuthorDto dto)
         {

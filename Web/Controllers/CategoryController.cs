@@ -65,6 +65,51 @@ public class CategoryController : ControllerBase
         });
     }
 
+    [HttpPost("bulk-upload-grid")]
+    public async Task<IActionResult> BulkUploadCategories([FromBody] List<BulkCategoryRowDto> categories)
+    {
+        if (categories == null || !categories.Any())
+        {
+            return BadRequest(new { success = false, message = "Not Provide Any Catories Name." });
+        }
+
+        int successCount = 0;
+        foreach (var item in categories)
+        {
+            if (string.IsNullOrWhiteSpace(item.CategoryName)) continue;
+
+            string trimmedName = item.CategoryName.Trim();
+
+            bool exists = await _context.Categories
+                .AnyAsync(c => c.CategoryName.ToLower() == trimmedName.ToLower());
+
+            if (!exists)
+            {
+                string code = $"CAT_{Guid.NewGuid().ToString("N").Substring(0, 6).ToUpper()}";
+
+                var newCategory = new Category
+                {
+                    CategoryCode = code,
+                    CategoryName = trimmedName,
+                    Description = string.IsNullOrWhiteSpace(item.Description) ? "Bulk Uploaded Category" : item.Description.Trim(),
+                    IsActive = true,
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                _context.Categories.Add(newCategory);
+                successCount++;
+            }
+        }
+
+        await _context.SaveChangesAsync();
+
+        return Ok(new
+        {
+            success = true,
+            message = $"{successCount} Categories successfully Aaded!"
+        });
+    }
+
     // PUT: api/category/update/{code} 
     [HttpPut("update/{code}")]
     public async Task<IActionResult> UpdateCategory(string code, [FromBody] CategoryCreateDto dto)

@@ -161,7 +161,128 @@ namespace Web.Areas.Author.Controllers
             }
         }
 
-        // FETCH ALL BOOKS FOR ITEMS MASTER LIST VIEW 
+        [HttpPost("bulk-upload-grid")]
+        public async Task<IActionResult> BulkUploadGrid([FromForm] BulkGridUploadRequest request)
+        {
+            if (request == null || request.Books == null || !request.Books.Any())
+                return BadRequest(new { success = false, message = "Koi book data provide nahi kiya gaya." });
+
+            var currentUser = await _userManager.GetUserAsync(User);
+            if (currentUser == null)
+                return Unauthorized(new { success = false, message = "Session expire ho gaya hai." });
+
+            int successCount = 0;
+            var errorLogs = new List<string>();
+
+            for (int i = 0; i < request.Books.Count; i++)
+            {
+                var row = request.Books[i];
+                if (string.IsNullOrWhiteSpace(row.ItemName)) continue;
+
+                try
+                {
+                    Guid? matchedAuthorMasterId = null;
+                    if (!string.IsNullOrWhiteSpace(row.AuthorName))
+                    {
+                        var existingAuthor = await _dbContext.Authors
+                            .FirstOrDefaultAsync(a => a.AuthorName.ToLower() == row.AuthorName.Trim().ToLower());
+                        if (existingAuthor != null) matchedAuthorMasterId = existingAuthor.Id;
+                    }
+
+                    string itemNo = !string.IsNullOrWhiteSpace(row.ItemNo)
+                        ? row.ItemNo.Trim().ToUpper()
+                        : $"BK-{DateTime.UtcNow:yyMM}-{new Random().Next(1000, 9999)}";
+
+                    string coverPath = "/images/default-cover.png";
+                    if (row.CoverImage != null && row.CoverImage.Length > 0)
+                    {
+                        coverPath = await _storageService.SaveCoverImageAsync(row.CoverImage, itemNo);
+                    }
+
+                    var book = new Book
+                    {
+                        Id = Guid.NewGuid(),
+                        ItemNo = itemNo,
+                        ISBN = string.IsNullOrWhiteSpace(row.ISBN) ? "N/A" : row.ISBN.Trim(),
+                        ItemName = row.ItemName.Trim(),
+                        CategoryCode = string.IsNullOrWhiteSpace(row.CategoryCode) ? "HOMEO" : row.CategoryCode.Trim(),
+                        NoOfPages = row.NoOfPages <= 0 ? 100 : row.NoOfPages,
+                        Language = string.IsNullOrWhiteSpace(row.Language) ? "English" : row.Language.Trim(),
+                        Description = "Interactive Grid Bulk Uploaded Book",
+                        CoverImagePath = coverPath,
+                        Price = row.Price,
+                        AuthorMasterId = matchedAuthorMasterId,
+                        AuthorId = currentUser.Id,
+                        IsPublished = false, 
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow
+                    };
+
+                    _dbContext.Books.Add(book);
+
+                    if (row.MainPdf != null && row.MainPdf.Length > 0)
+                    {
+                        var chunkInfos = _storageService.ProcessAndSplitPdfInterleaved(row.MainPdf, itemNo, 4);
+
+                        foreach (var info in chunkInfos)
+                        {
+                            if (info.TableTarget == "Alpha")
+                            {
+                                _dbContext.BookSegmentsAlpha.Add(new BookSegmentAlpha
+                                {
+                                    Id = info.ChunkId,
+                                    BookId = book.Id,
+                                    ParentChunkId = info.ParentChunkId,
+                                    StorageRelativePath = info.StorageRelativePath,
+                                    CreatedAt = DateTime.UtcNow
+                                });
+                            }
+                            else if (info.TableTarget == "Beta")
+                            {
+                                _dbContext.BookSegmentsBeta.Add(new BookSegmentBeta
+                                {
+                                    Id = info.ChunkId,
+                                    BookId = book.Id,
+                                    ParentChunkId = info.ParentChunkId,
+                                    StorageRelativePath = info.StorageRelativePath,
+                                    CreatedAt = DateTime.UtcNow
+                                });
+                            }
+                            else
+                            {
+                                _dbContext.BookSegmentsGamma.Add(new BookSegmentGamma
+                                {
+                                    Id = info.ChunkId,
+                                    BookId = book.Id,
+                                    ParentChunkId = info.ParentChunkId,
+                                    StorageRelativePath = info.StorageRelativePath,
+                                    CreatedAt = DateTime.UtcNow
+                                });
+                            }
+                        }
+                    }
+
+                    successCount++;
+                }
+                catch (Exception exRow)
+                {
+                    errorLogs.Add($"Row {i + 1} ({row.ItemName}) error: {exRow.Message}");
+                }
+            }
+
+            await _dbContext.SaveChangesAsync();
+
+            return Ok(new
+            {
+                success = true,
+                message = $"{successCount} Books pending approval list me save ho gayi hain!",
+                errors = errorLogs
+            });
+        }
+
+
+
+        
         [HttpGet("my-books")]
         public async Task<IActionResult> GetMyBooks()
         {
@@ -225,7 +346,7 @@ namespace Web.Areas.Author.Controllers
             }
         }
 
-        // APPROVE BOOK DRAFT FOR STORE PUBLISHING
+        
         [HttpPost("approve-book/{id}")]
         public async Task<IActionResult> ApproveBook(string id)
         {
@@ -264,7 +385,7 @@ namespace Web.Areas.Author.Controllers
             }
         }
 
-        // UPDATE BOOK MASTER
+        
         [HttpPut("update-book/{id}")]
         [HttpPost("update-book/{id}")]
         public async Task<IActionResult> UpdateBook(string id, [FromForm] BookUpdateDto dto)
@@ -372,28 +493,66 @@ namespace Web.Areas.Author.Controllers
             }
         }
 
-        // DELETE BOOK MASTER
-        [HttpDelete("delete-book/{id:guid}")]
-        public async Task<IActionResult> DeleteBook(Guid id)
+        
+        [HttpDelete("delete-book/{id}")]
+        [HttpPost("delete-book/{id}")]
+        public async Task<IActionResult> DeleteBook(string id)
         {
-            var book = await _dbContext.Books.FindAsync(id);
-            if (book == null) return NotFound(new { message = "Book not found." });
+            try
+            {
+                if (string.IsNullOrWhiteSpace(id))
+                {
+                    return BadRequest(new { success = false, message = "Invalid Book Identifier." });
+                }
 
-            var alpha = _dbContext.BookSegmentsAlpha.Where(s => s.BookId == id);
-            var beta = _dbContext.BookSegmentsBeta.Where(s => s.BookId == id);
-            var gamma = _dbContext.BookSegmentsGamma.Where(s => s.BookId == id);
+                string cleanId = Uri.UnescapeDataString(id).Trim();
+                Book book = null;
 
-            _dbContext.BookSegmentsAlpha.RemoveRange(alpha);
-            _dbContext.BookSegmentsBeta.RemoveRange(beta);
-            _dbContext.BookSegmentsGamma.RemoveRange(gamma);
+                
+                if (Guid.TryParse(cleanId, out Guid parsedGuid))
+                {
+                    book = await _dbContext.Books.FindAsync(parsedGuid);
+                }
 
-            _dbContext.Books.Remove(book);
-            await _dbContext.SaveChangesAsync();
+                
+                if (book == null)
+                {
+                    book = await _dbContext.Books.FirstOrDefaultAsync(b => b.ItemNo.ToLower() == cleanId.ToLower());
+                }
 
-            return Ok(new { message = "Book and chunk segments deleted successfully." });
+                if (book == null)
+                {
+                    return NotFound(new { success = false, message = $"Book '{cleanId}' database mein nahi mila." });
+                }
+
+                Guid targetBookId = book.Id;
+
+                
+                var alpha = await _dbContext.BookSegmentsAlpha.Where(s => s.BookId == targetBookId).ToListAsync();
+                var beta = await _dbContext.BookSegmentsBeta.Where(s => s.BookId == targetBookId).ToListAsync();
+                var gamma = await _dbContext.BookSegmentsGamma.Where(s => s.BookId == targetBookId).ToListAsync();
+
+               
+                if (alpha.Any()) _dbContext.BookSegmentsAlpha.RemoveRange(alpha);
+                if (beta.Any()) _dbContext.BookSegmentsBeta.RemoveRange(beta);
+                if (gamma.Any()) _dbContext.BookSegmentsGamma.RemoveRange(gamma);
+
+                
+                _dbContext.Books.Remove(book);
+
+                
+                await _dbContext.SaveChangesAsync();
+
+                return Ok(new { success = true, message = $"Book '{book.ItemName}' and its segments deleted successfully!" });
+            }
+            catch (Exception ex)
+            {
+                var innerMsg = ex.InnerException != null ? ex.InnerException.Message : ex.Message;
+                return StatusCode(500, new { success = false, message = $"Delete Error: {innerMsg}" });
+            }
         }
 
-        // VIEW PDF METHOD
+        
         [HttpGet("view-pdf/{identifier}")]
         [AllowAnonymous]
         public async Task<IActionResult> ViewPdf(string identifier)

@@ -382,6 +382,7 @@ function App() {
     const [showAddCategoryModal, setShowAddCategoryModal] = useState(false);
     const [showAddLanguageModal, setShowAddLanguageModal] = useState(false);
     const [showAddAuthorModal, setShowAddAuthorModal] = useState(false);
+    const [showBulkUploadModal, setShowBulkUploadModal] = useState(false);
 
     const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
 
@@ -1109,7 +1110,9 @@ function App() {
                 let endpoints = [];
 
                 if (selectedMaster === 'items') {
-                    endpoints = [`/api/author/book/delete-book/${encodedVal}`];
+                    endpoints = [
+                        `/api/author/book/delete-book/${encodedVal}`
+                    ];
                 } else if (selectedMaster === 'plans') {
                     endpoints = [`/api/plan/delete/${encodedVal}`, `/api/plan/${encodedVal}`];
                 } else if (selectedMaster === 'authors') {
@@ -1640,6 +1643,42 @@ function App() {
                                     className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3.5 py-1.5 rounded shadow flex items-center gap-1.5 transition cursor-pointer">
                                     <i className="fa-solid fa-plus"></i> {currentHeaderConfig.buttonText}
                                 </button>
+                                {/* BULK UPLOAD BUTTONS FOR ALL MASTERS */}
+                                {selectedMaster === 'items' && (
+                                    <button
+                                        type="button"
+                                        onClick={() => changeNavState({ bookPageMode: 'bulk-grid-page' })}
+                                        className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs px-3.5 py-1.5 rounded shadow flex items-center gap-1.5 transition cursor-pointer">
+                                        <i className="fa-solid fa-file-excel"></i> Bulk Upload Books
+                                    </button>
+                                )}
+
+                                {selectedMaster === 'authors' && (
+                                    <button
+                                        type="button"
+                                        onClick={() => changeNavState({ authorPageMode: 'bulk-author-grid-page' })}
+                                        className="bg-blue-700 hover:bg-blue-800 text-white font-bold text-xs px-3.5 py-1.5 rounded shadow flex items-center gap-1.5 transition cursor-pointer">
+                                        <i className="fa-solid fa-file-excel"></i> Bulk Upload Authors
+                                    </button>
+                                )}
+
+                                {selectedMaster === 'categories' && (
+                                    <button
+                                        type="button"
+                                        onClick={() => changeNavState({ categoryPageMode: 'bulk-category-grid-page' })}
+                                        className="bg-amber-700 hover:bg-amber-800 text-white font-bold text-xs px-3.5 py-1.5 rounded shadow flex items-center gap-1.5 transition cursor-pointer">
+                                        <i className="fa-solid fa-file-excel"></i> Bulk Upload Categories
+                                    </button>
+                                )}
+
+                                {selectedMaster === 'languages' && (
+                                    <button
+                                        type="button"
+                                        onClick={() => changeNavState({ languagePageMode: 'bulk-language-grid-page' })}
+                                        className="bg-indigo-700 hover:bg-indigo-800 text-white font-bold text-xs px-3.5 py-1.5 rounded shadow flex items-center gap-1.5 transition cursor-pointer">
+                                        <i className="fa-solid fa-file-excel"></i> Bulk Upload Languages
+                                    </button>
+                                )}
 
                                 {selectedMasterIds.length > 0 && (
                                     <button
@@ -1702,6 +1741,35 @@ function App() {
                                     onCancel={() => window.history.back()}
                                 />
                             ) : null
+                        ) : selectedMaster === 'items' && bookPageMode === 'bulk-grid-page' ? (
+                            <div className="w-full bg-white p-6 rounded-lg shadow-md border border-slate-200 space-y-4">
+                                <div className="flex items-center justify-between border-b pb-3">
+                                    <div className="flex items-center gap-3">
+                                        <button
+                                            type="button"
+                                            onClick={() => changeNavState({ bookPageMode: 'list' })}
+                                            className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold p-2.5 rounded-full text-sm cursor-pointer flex items-center justify-center transition shadow-sm">
+                                            <i className="fa-solid fa-arrow-left"></i>
+                                        </button>
+                                        <h3 className="text-xl font-bold text-[#0d233a] flex items-center gap-2">
+                                            <i className="fa-solid fa-table-cells text-emerald-600"></i> Excel-Style Bulk Upload Page
+                                        </h3>
+                                    </div>
+                                </div>
+
+                                <BulkGridFormContainer
+                                    categoriesList={categoriesList}
+                                    languagesList={languagesList}
+                                    authorsList={authorsList}
+                                    onSuccess={async (msg) => {
+                                        triggerToast(msg);
+                                        await fetchAuthorBooks();
+                                        await fetchStoreBooks();
+                                        changeNavState({ bookPageMode: 'list' });
+                                    }}
+                                    onCancel={() => changeNavState({ bookPageMode: 'list' })}
+                                />
+                            </div>
                         ) : selectedMaster === 'items' && bookPageMode === 'edit-book-page' ? (
                             EditBookFormComp ? (
                                 <EditBookFormComp
@@ -1758,6 +1826,30 @@ function App() {
                                     }}
                                 />
                             ) : null
+                        ) : selectedMaster === 'categories' && categoryPageMode === 'bulk-category-grid-page' ? (
+                            <div className="w-full bg-white p-6 rounded-lg shadow-md border border-slate-200 space-y-4">
+                                <div className="flex items-center justify-between border-b pb-3">
+                                    <div className="flex items-center gap-3">
+                                       <button
+                                          type="button"
+                                          onClick={() => changeNavState({ categoryPageMode: 'list' })}
+                                          className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold p-2.5 rounded-full text-sm cursor-pointer transition shadow-sm">
+                                          <i className="fa-solid fa-arrow-left"></i>
+                                       </button>
+                                       <h3 className="text-xl font-bold text-[#0d233a] flex items-center gap-2">
+                                           <i className="fa-solid fa-layer-group text-amber-600"></i> Bulk Upload Categories
+                                       </h3>
+                                    </div>
+                                </div>
+                                <BulkCategoryGridContainer
+                                    onSuccess={async (msg) => {
+                                        triggerToast(msg);
+                                         await fetchCategories();
+                                          changeNavState({ categoryPageMode: 'list' });
+                                    }}
+                                     onCancel={() => changeNavState({ categoryPageMode: 'list' })}
+                                  />
+                            </div>
                         ) : selectedMaster === 'languages' && languagePageMode === 'add-language-page' ? (
                             AddLanguageFormComp ? (
                                 <AddLanguageFormComp
@@ -1785,6 +1877,30 @@ function App() {
                                     }}
                                 />
                             ) : null
+                        ) : selectedMaster === 'languages' && languagePageMode === 'bulk-language-grid-page' ? (
+                            <div className="w-full bg-white p-6 rounded-lg shadow-md border border-slate-200 space-y-4">
+                                <div className="flex items-center justify-between border-b pb-3">
+                                      <div className="flex items-center gap-3">
+                                          <button
+                                              type="button"
+                                              onClick={() => changeNavState({ languagePageMode: 'list' })}
+                                              className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold p-2.5 rounded-full text-sm cursor-pointer transition shadow-sm">
+                                              <i className="fa-solid fa-arrow-left"></i>
+                                          </button>
+                                          <h3 className="text-xl font-bold text-[#0d233a] flex items-center gap-2">
+                                             <i className="fa-solid fa-language text-indigo-600"></i> Bulk Upload Languages
+                                          </h3>
+                                      </div>
+                                </div>
+                                <BulkLanguageGridContainer
+                                    onSuccess={async (msg) => {
+                                        triggerToast(msg);
+                                        await fetchLanguagesMaster();
+                                        changeNavState({ languagePageMode: 'list' });
+                                    }}
+                                    onCancel={() => changeNavState({ languagePageMode: 'list' })}
+                                />
+                            </div>
                         ) : selectedMaster === 'authors' && authorPageMode === 'add-author-page' ? (
                             AddAuthorFormComp ? (
                                 <AddAuthorFormComp
@@ -1812,6 +1928,30 @@ function App() {
                                     }}
                                 />
                             ) : null
+                        ) : selectedMaster === 'authors' && authorPageMode === 'bulk-author-grid-page' ? (
+                            <div className="w-full bg-white p-6 rounded-lg shadow-md border border-slate-200 space-y-4">
+                               <div className="flex items-center justify-between border-b pb-3">
+                                   <div className="flex items-center gap-3">
+                                       <button
+                                           type="button"
+                                           onClick={() => changeNavState({ authorPageMode: 'list' })}
+                                           className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold p-2.5 rounded-full text-sm cursor-pointer transition shadow-sm">
+                                           <i className="fa-solid fa-arrow-left"></i>
+                                       </button>
+                                       <h3 className="text-xl font-bold text-[#0d233a] flex items-center gap-2">
+                                          <i className="fa-solid fa-user-pen text-blue-600"></i> Bulk Upload Authors
+                                       </h3>
+                                   </div>
+                               </div>
+                               <BulkAuthorGridContainer
+                                  onSuccess={async (msg) => {
+                                     triggerToast(msg);
+                                     await fetchAuthorsMaster();
+                                     changeNavState({ authorPageMode: 'list' });
+                                  }}
+                                  onCancel={() => changeNavState({ authorPageMode: 'list' })}
+                               />
+                            </div>
                         ) : (
                             <div className="w-full bg-white p-6 rounded-lg border border-gray-200 shadow-sm space-y-4">
                                 <h3 className="text-base font-bold text-[#0d233a] border-b pb-2 capitalize flex items-center justify-between">
@@ -2195,6 +2335,44 @@ function App() {
                 </div>
             )}
 
+            {/* INTERACTIVE EXCEL GRID BULK UPLOAD MODAL */}
+            {showBulkUploadModal && (
+                <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[95] flex items-center justify-center p-2 md:p-6 select-none">
+                    <div className="bg-white rounded-xl w-full max-w-7xl max-h-[92vh] flex flex-col shadow-2xl relative border-t-8 border-emerald-600 overflow-hidden">
+
+                        {/* MODAL HEADER */}
+                        <div className="flex items-center justify-between px-6 py-4 bg-slate-900 text-white border-b border-slate-800">
+                            <div className="flex items-center gap-3">
+                                <i className="fa-solid fa-table-cells text-emerald-400 text-2xl"></i>
+                                <div>
+                                    <h3 className="text-base font-bold text-white">Excel-Style Interactive Bulk Upload Sheet</h3>
+                                    <p className="text-[11px] text-slate-400">Directly fill multiple books in the table grid & click upload all.</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setShowBulkUploadModal(false)} className="text-slate-400 hover:text-white cursor-pointer text-xl">
+                                <i className="fa-solid fa-xmark"></i>
+                            </button>
+                        </div>
+
+                        {/* GRID TABLE BODY CONTAINER */}
+                        <div className="flex-1 overflow-auto p-4 bg-slate-50">
+                            <BulkGridFormContainer
+                                categoriesList={categoriesList}
+                                languagesList={languagesList}
+                                authorsList={authorsList}
+                                onSuccess={async (msg) => {
+                                    triggerToast(msg);
+                                    setShowBulkUploadModal(false);
+                                    await fetchAuthorBooks();
+                                    await fetchStoreBooks();
+                                }}
+                                onCancel={() => setShowBulkUploadModal(false)}
+                            />
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* AUTHENTICATION MODAL (SIGN IN / REGISTER) */}
             {isAuthOpen && (
                 <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -2391,6 +2569,534 @@ function App() {
         </div>
     );
 }
+
+function BulkGridFormContainer({ categoriesList, languagesList, authorsList, onSuccess, onCancel }) {
+    const createEmptyRow = () => ({
+        itemNo: '',
+        isbn: '',
+        itemName: '',
+        categoryCode: categoriesList.length > 0 ? (categoriesList[0].categoryCode || categoriesList[0].CategoryCode) : '',
+        authorName: authorsList.length > 0 ? authorsList[0].name : '',
+        language: languagesList.length > 0 ? (languagesList[0].name || languagesList[0].languageName) : 'English',
+        price: '',
+        noOfPages: '',
+        mainPdf: null,
+        coverImage: null
+    });
+
+    const [rows, setRows] = React.useState([createEmptyRow()]);
+    const [isUploading, setIsUploading] = React.useState(false);
+
+    const handleRowChange = (index, field, value) => {
+        const updated = [...rows];
+        updated[index][field] = value;
+        setRows(updated);
+    };
+
+    const handleAddRow = () => {
+        setRows([...rows, createEmptyRow()]);
+    };
+
+    const handleRemoveRow = (index) => {
+        if (rows.length <= 1) {
+            alert("At least 1 row honi chahiye.");
+            return;
+        }
+        setRows(rows.filter((_, i) => i !== index));
+    };
+
+    const handleSubmitGrid = async (e) => {
+        e.preventDefault();
+
+        const validRows = rows.filter(r => r.itemName && r.itemName.trim().length > 0);
+        if (validRows.length === 0) {
+            alert("Kripya kam se kam 1 book ka Book Name fill karein!");
+            return;
+        }
+
+        setIsUploading(true);
+        const formData = new FormData();
+
+        validRows.forEach((r, idx) => {
+            formData.append(`Books[${idx}].ItemNo`, r.itemNo ? r.itemNo.trim() : '');
+            formData.append(`Books[${idx}].ISBN`, r.isbn ? r.isbn.trim() : 'N/A');
+            formData.append(`Books[${idx}].ItemName`, r.itemName.trim());
+            formData.append(`Books[${idx}].CategoryCode`, r.categoryCode);
+            formData.append(`Books[${idx}].AuthorName`, r.authorName);
+            formData.append(`Books[${idx}].Language`, r.language);
+            formData.append(`Books[${idx}].Price`, r.price || '0');
+            formData.append(`Books[${idx}].NoOfPages`, r.noOfPages || '1');
+            if (r.mainPdf) formData.append(`Books[${idx}].MainPdf`, r.mainPdf);
+            if (r.coverImage) formData.append(`Books[${idx}].CoverImage`, r.coverImage);
+        });
+
+        try {
+            const res = await fetch('/api/author/book/bulk-upload-grid', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                onSuccess(data.message);
+            } else {
+                alert(data.message || "Bulk Grid Upload Failed.");
+            }
+        } catch (err) {
+            alert("Error: " + err.message);
+        } finally {
+            setIsUploading(false);
+        }
+    };
+
+    return (
+        <form onSubmit={handleSubmitGrid} className="space-y-4 text-xs">
+            <div className="overflow-x-auto border border-slate-300 rounded-lg shadow-sm bg-white">
+                <table className="w-full text-left text-xs border-collapse">
+                    <thead className="bg-slate-100 text-slate-700 font-bold uppercase border-b border-slate-300 sticky top-0 z-10">
+                        <tr>
+                            <th className="p-2 w-10 text-center">#</th>
+                            <th className="p-2 min-w-[120px]">Item Code</th>
+                            <th className="p-2 min-w-[130px]">ISBN</th>
+                            <th className="p-2 min-w-[200px]">Book Name *</th>
+                            <th className="p-2 min-w-[150px]">Category *</th>
+                            <th className="p-2 min-w-[150px]">Author Name</th>
+                            <th className="p-2 min-w-[110px]">Language</th>
+                            <th className="p-2 min-w-[90px]">Price (₹) *</th>
+                            <th className="p-2 min-w-[80px]">Pages *</th>
+                            <th className="p-2 min-w-[160px]">PDF File *</th>
+                            <th className="p-2 min-w-[160px]">Cover Image</th>
+                            <th className="p-2 w-12 text-center">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                        {rows.map((row, idx) => (
+                            <tr key={idx} className="hover:bg-slate-50">
+                                <td className="p-2 text-center font-bold text-slate-500">{idx + 1}</td>
+                                <td className="p-1">
+                                    <input
+                                        type="text"
+                                        placeholder="Optional Code"
+                                        value={row.itemNo}
+                                        onChange={e => handleRowChange(idx, 'itemNo', e.target.value)}
+                                        className="w-full border rounded px-2 py-1 font-mono uppercase bg-slate-50"
+                                    />
+                                </td>
+                                <td className="p-1">
+                                    <input
+                                        type="text"
+                                        placeholder="978-XXXXX"
+                                        value={row.isbn}
+                                        onChange={e => handleRowChange(idx, 'isbn', e.target.value)}
+                                        className="w-full border rounded px-2 py-1"
+                                    />
+                                </td>
+                                <td className="p-1">
+                                    <input
+                                        type="text"
+                                        required
+                                        placeholder="Enter New Book Name *"
+                                        value={row.itemName}
+                                        onChange={e => handleRowChange(idx, 'itemName', e.target.value)}
+                                        className="w-full border rounded px-2 py-1 font-bold text-slate-800 focus:border-emerald-600 outline-none"
+                                    />
+                                </td>
+                                <td className="p-1">
+                                    <select
+                                        value={row.categoryCode}
+                                        onChange={e => handleRowChange(idx, 'categoryCode', e.target.value)}
+                                        className="w-full border rounded px-2 py-1 font-semibold">
+                                        {categoriesList.map(c => (
+                                            <option key={c.categoryCode || c.CategoryCode} value={c.categoryCode || c.CategoryCode}>
+                                                {c.categoryName || c.CategoryName}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </td>
+                                <td className="p-1">
+                                    <select
+                                        value={row.authorName}
+                                        onChange={e => handleRowChange(idx, 'authorName', e.target.value)}
+                                        className="w-full border rounded px-2 py-1">
+                                        {authorsList.map(a => (
+                                            <option key={a.id || a.name} value={a.name}>
+                                                {a.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </td>
+                                <td className="p-1">
+                                    <select
+                                        value={row.language}
+                                        onChange={e => handleRowChange(idx, 'language', e.target.value)}
+                                        className="w-full border rounded px-2 py-1">
+                                        {languagesList.map(l => (
+                                            <option key={l.id || l.name} value={l.name || l.languageName}>
+                                                {l.name || l.languageName}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </td>
+                                <td className="p-1">
+                                    <input
+                                        type="number"
+                                        required
+                                        placeholder="499"
+                                        value={row.price}
+                                        onChange={e => handleRowChange(idx, 'price', e.target.value)}
+                                        className="w-full border rounded px-2 py-1 font-bold text-emerald-700 text-center"
+                                    />
+                                </td>
+                                <td className="p-1">
+                                    <input
+                                        type="number"
+                                        required
+                                        placeholder="100"
+                                        value={row.noOfPages}
+                                        onChange={e => handleRowChange(idx, 'noOfPages', e.target.value)}
+                                        className="w-full border rounded px-2 py-1 text-center"
+                                    />
+                                </td>
+                                <td className="p-1">
+                                    <input
+                                        type="file"
+                                        required
+                                        accept="application/pdf"
+                                        onChange={e => handleRowChange(idx, 'mainPdf', e.target.files[0])}
+                                        className="w-full text-[10px]"
+                                    />
+                                </td>
+                                <td className="p-1">
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        onChange={e => handleRowChange(idx, 'coverImage', e.target.files[0])}
+                                        className="w-full text-[10px]"
+                                    />
+                                </td>
+                                <td className="p-1 text-center">
+                                    <button
+                                        type="button"
+                                        onClick={() => handleRemoveRow(idx)}
+                                        className="text-red-500 hover:text-red-700 p-1 font-bold cursor-pointer"
+                                        title="Delete Row">
+                                        <i className="fa-solid fa-trash-can"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+
+            <div className="flex items-center justify-between pt-2">
+                <button
+                    type="button"
+                    onClick={handleAddRow}
+                    className="bg-slate-800 hover:bg-slate-900 text-white font-bold px-4 py-2 rounded shadow text-xs cursor-pointer flex items-center gap-1.5">
+                    <i className="fa-solid fa-plus text-emerald-400"></i> Add Another Book Row
+                </button>
+
+                <div className="flex items-center gap-3">
+                    <button
+                        type="button"
+                        onClick={onCancel}
+                        className="bg-gray-200 hover:bg-gray-300 text-slate-700 font-bold px-5 py-2 rounded text-xs cursor-pointer">
+                        Cancel
+                    </button>
+                    <button
+                        type="submit"
+                        disabled={isUploading}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-6 py-2 rounded shadow text-xs cursor-pointer flex items-center gap-2">
+                        <i className="fa-solid fa-cloud-arrow-up"></i>
+                        {isUploading ? 'Uploading All Books...' : 'Upload All Books'}
+                    </button>
+                </div>
+            </div>
+        </form>
+    );
+}
+
+// ==========================================
+// BULK AUTHOR GRID CONTAINER
+// ==========================================
+function BulkAuthorGridContainer({ onSuccess, onCancel }) {
+    const [rows, setRows] = React.useState([{ authorName: '' }]);
+    const [isUploading, setIsUploading] = React.useState(false);
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        const valid = rows.filter(r => r.authorName.trim());
+        if (!valid.length) return alert("Kam se kam 1 Author Name zaroori hai.");
+
+        setIsUploading(true);
+        try {
+            const res = await fetch('/api/authors/bulk-upload-grid', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(valid)
+            });
+            const data = await res.json();
+            if (res.ok && data.success) onSuccess(data.message);
+            else alert(data.message || "Bulk Upload Failed.");
+        } catch (err) {
+            alert("Error: " + err.message);
+        } finally {
+            setIsUploading(false);
+        }
+    };
+
+    return (
+        <form onSubmit={handleSubmit} className="space-y-4 text-xs">
+            <div className="border border-slate-300 rounded bg-white overflow-hidden shadow-sm">
+                <table className="w-full text-left border-collapse">
+                    <thead className="bg-slate-100 border-b border-slate-300 p-2 font-bold uppercase text-slate-700">
+                        <tr>
+                            <th className="p-2 w-12 text-center">#</th>
+                            <th className="p-2">Author Name *</th>
+                            <th className="p-2 w-16 text-center">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                        {rows.map((r, i) => (
+                            <tr key={i} className="hover:bg-slate-50">
+                                <td className="p-2 text-center font-bold text-slate-500">{i + 1}</td>
+                                <td className="p-1">
+                                    <input
+                                        type="text"
+                                        required
+                                        placeholder="e.g. Dr. Samuel Hahnemann"
+                                        value={r.authorName}
+                                        onChange={e => {
+                                            const updated = [...rows];
+                                            updated[i].authorName = e.target.value;
+                                            setRows(updated);
+                                        }}
+                                        className="w-full border rounded px-3 py-1.5 font-bold text-slate-800 outline-none focus:border-blue-500"
+                                    />
+                                </td>
+                                <td className="p-1 text-center">
+                                    <button
+                                        type="button"
+                                        onClick={() => setRows(rows.length > 1 ? rows.filter((_, idx) => idx !== i) : rows)}
+                                        className="text-red-500 hover:text-red-700 font-bold p-1 cursor-pointer">
+                                        <i className="fa-solid fa-trash-can"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+            <div className="flex justify-between items-center pt-2">
+                <button
+                    type="button"
+                    onClick={() => setRows([...rows, { authorName: '' }])}
+                    className="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded font-bold shadow text-xs cursor-pointer flex items-center gap-1.5">
+                    <i className="fa-solid fa-plus text-blue-400"></i> Add Another Row
+                </button>
+                <div className="flex gap-2">
+                    <button type="button" onClick={onCancel} className="bg-gray-200 hover:bg-gray-300 text-slate-700 px-4 py-2 rounded font-bold text-xs cursor-pointer">Cancel</button>
+                    <button type="submit" disabled={isUploading} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded font-bold shadow text-xs cursor-pointer">
+                        {isUploading ? 'Uploading...' : 'Upload All Authors'}
+                    </button>
+                </div>
+            </div>
+        </form>
+    );
+}
+
+// ==========================================
+// BULK CATEGORY GRID CONTAINER
+// ==========================================
+function BulkCategoryGridContainer({ onSuccess, onCancel }) {
+    const [rows, setRows] = React.useState([{ categoryName: '', description: '' }]);
+    const [isUploading, setIsUploading] = React.useState(false);
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        const valid = rows.filter(r => r.categoryName.trim());
+        if (!valid.length) return alert("Kam se kam 1 Category Name zaroori hai.");
+
+        setIsUploading(true);
+        try {
+            const res = await fetch('/api/category/bulk-upload-grid', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(valid)
+            });
+            const data = await res.json();
+            if (res.ok && data.success) onSuccess(data.message);
+            else alert(data.message || "Bulk Upload Failed.");
+        } catch (err) {
+            alert("Error: " + err.message);
+        } finally {
+            setIsUploading(false);
+        }
+    };
+
+    return (
+        <form onSubmit={handleSubmit} className="space-y-4 text-xs">
+            <div className="border border-slate-300 rounded bg-white overflow-hidden shadow-sm">
+                <table className="w-full text-left border-collapse">
+                    <thead className="bg-slate-100 border-b border-slate-300 p-2 font-bold uppercase text-slate-700">
+                        <tr>
+                            <th className="p-2 w-12 text-center">#</th>
+                            <th className="p-2 min-w-[200px]">Category Name *</th>
+                            <th className="p-2 min-w-[300px]">Description</th>
+                            <th className="p-2 w-16 text-center">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                        {rows.map((r, i) => (
+                            <tr key={i} className="hover:bg-slate-50">
+                                <td className="p-2 text-center font-bold text-slate-500">{i + 1}</td>
+                                <td className="p-1">
+                                    <input
+                                        type="text"
+                                        required
+                                        placeholder="e.g. Homoeopathy"
+                                        value={r.categoryName}
+                                        onChange={e => {
+                                            const updated = [...rows];
+                                            updated[i].categoryName = e.target.value;
+                                            setRows(updated);
+                                        }}
+                                        className="w-full border rounded px-3 py-1.5 font-bold text-amber-900 outline-none focus:border-amber-500"
+                                    />
+                                </td>
+                                <td className="p-1">
+                                    <input
+                                        type="text"
+                                        placeholder="Optional Category Description"
+                                        value={r.description}
+                                        onChange={e => {
+                                            const updated = [...rows];
+                                            updated[i].description = e.target.value;
+                                            setRows(updated);
+                                        }}
+                                        className="w-full border rounded px-3 py-1.5 outline-none"
+                                    />
+                                </td>
+                                <td className="p-1 text-center">
+                                    <button
+                                        type="button"
+                                        onClick={() => setRows(rows.length > 1 ? rows.filter((_, idx) => idx !== i) : rows)}
+                                        className="text-red-500 hover:text-red-700 font-bold p-1 cursor-pointer">
+                                        <i className="fa-solid fa-trash-can"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+            <div className="flex justify-between items-center pt-2">
+                <button
+                    type="button"
+                    onClick={() => setRows([...rows, { categoryName: '', description: '' }])}
+                    className="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded font-bold shadow text-xs cursor-pointer flex items-center gap-1.5">
+                    <i className="fa-solid fa-plus text-amber-400"></i> Add Another Row
+                </button>
+                <div className="flex gap-2">
+                    <button type="button" onClick={onCancel} className="bg-gray-200 hover:bg-gray-300 text-slate-700 px-4 py-2 rounded font-bold text-xs cursor-pointer">Cancel</button>
+                    <button type="submit" disabled={isUploading} className="bg-amber-600 hover:bg-amber-700 text-white px-6 py-2 rounded font-bold shadow text-xs cursor-pointer">
+                        {isUploading ? 'Uploading...' : 'Upload All Categories'}
+                    </button>
+                </div>
+            </div>
+        </form>
+    );
+}
+
+// ==========================================
+// BULK LANGUAGE GRID CONTAINER
+// ==========================================
+function BulkLanguageGridContainer({ onSuccess, onCancel }) {
+    const [rows, setRows] = React.useState([{ languageName: '' }]);
+    const [isUploading, setIsUploading] = React.useState(false);
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        const valid = rows.filter(r => r.languageName.trim());
+        if (!valid.length) return alert("Kam se kam 1 Language Name zaroori hai.");
+
+        setIsUploading(true);
+        try {
+            const res = await fetch('/api/language/bulk-upload-grid', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(valid)
+            });
+            const data = await res.json();
+            if (res.ok && data.success) onSuccess(data.message);
+            else alert(data.message || "Bulk Upload Failed.");
+        } catch (err) {
+            alert("Error: " + err.message);
+        } finally {
+            setIsUploading(false);
+        }
+    };
+
+    return (
+        <form onSubmit={handleSubmit} className="space-y-4 text-xs">
+            <div className="border border-slate-300 rounded bg-white overflow-hidden shadow-sm">
+                <table className="w-full text-left border-collapse">
+                    <thead className="bg-slate-100 border-b border-slate-300 p-2 font-bold uppercase text-slate-700">
+                        <tr>
+                            <th className="p-2 w-12 text-center">#</th>
+                            <th className="p-2">Language Name *</th>
+                            <th className="p-2 w-16 text-center">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                        {rows.map((r, i) => (
+                            <tr key={i} className="hover:bg-slate-50">
+                                <td className="p-2 text-center font-bold text-slate-500">{i + 1}</td>
+                                <td className="p-1">
+                                    <input
+                                        type="text"
+                                        required
+                                        placeholder="e.g. German"
+                                        value={r.languageName}
+                                        onChange={e => {
+                                            const updated = [...rows];
+                                            updated[i].languageName = e.target.value;
+                                            setRows(updated);
+                                        }}
+                                        className="w-full border rounded px-3 py-1.5 font-bold text-indigo-900 outline-none focus:border-indigo-500"
+                                    />
+                                </td>
+                                <td className="p-1 text-center">
+                                    <button
+                                        type="button"
+                                        onClick={() => setRows(rows.length > 1 ? rows.filter((_, idx) => idx !== i) : rows)}
+                                        className="text-red-500 hover:text-red-700 font-bold p-1 cursor-pointer">
+                                        <i className="fa-solid fa-trash-can"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+            <div className="flex justify-between items-center pt-2">
+                <button
+                    type="button"
+                    onClick={() => setRows([...rows, { languageName: '' }])}
+                    className="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded font-bold shadow text-xs cursor-pointer flex items-center gap-1.5">
+                    <i className="fa-solid fa-plus text-indigo-400"></i> Add Another Row
+                </button>
+                <div className="flex gap-2">
+                    <button type="button" onClick={onCancel} className="bg-gray-200 hover:bg-gray-300 text-slate-700 px-4 py-2 rounded font-bold text-xs cursor-pointer">Cancel</button>
+                    <button type="submit" disabled={isUploading} className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded font-bold shadow text-xs cursor-pointer">
+                        {isUploading ? 'Uploading...' : 'Upload All Languages'}
+                    </button>
+                </div>
+            </div>
+        </form>
+    );
+}
+
 
 const containerElement = document.getElementById('root') || document.getElementById('main-app-container');
 if (containerElement) {
