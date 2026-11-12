@@ -1098,88 +1098,91 @@ function App() {
     };
 
     const confirmDeleteSelectedMaster = async () => {
-        try {
-            const targetItems = deleteConfirmModal.ids && deleteConfirmModal.ids.length > 0
-                ? deleteConfirmModal.ids
-                : [deleteConfirmModal.id];
+        // 1. Identify Target Identifiers
+        let targetItems = [];
+        if (deleteConfirmModal.id) {
+            targetItems = [deleteConfirmModal.id];
+        } else if (deleteConfirmModal.ids && deleteConfirmModal.ids.length > 0) {
+            targetItems = deleteConfirmModal.ids;
+        }
 
-            let successCount = 0;
+        if (!targetItems.length) {
+            setDeleteConfirmModal({ show: false, id: null, ids: [], title: '', type: '' });
+            setSelectedMasterIds([]);
+            return;
+        }
 
-            for (const targetVal of targetItems) {
-                const encodedVal = encodeURIComponent(targetVal);
-                let endpoints = [];
+        let successCount = 0;
 
-                if (selectedMaster === 'items') {
-                    endpoints = [
-                        `/api/author/book/delete-book/${encodedVal}`
-                    ];
-                } else if (selectedMaster === 'plans') {
-                    endpoints = [`/api/plan/delete/${encodedVal}`, `/api/plan/${encodedVal}`];
-                } else if (selectedMaster === 'authors') {
-                    endpoints = [`/api/authors/delete/${encodedVal}`, `/api/authors/${encodedVal}`];
-                } else if (selectedMaster === 'categories') {
-                    endpoints = [
-                        `/api/category/delete/${encodedVal}`,
-                        `/api/category/${encodedVal}`,
-                        `/api/category/delete-category/${encodedVal}`,
-                        `/api/category/delete?code=${encodedVal}`,
-                        `/api/category/delete?id=${encodedVal}`
-                    ];
-                } else if (selectedMaster === 'languages') {
-                    endpoints = [
-                        `/api/language/delete/${encodedVal}`,
-                        `/api/language/${encodedVal}`,
-                        `/api/language/delete-language/${encodedVal}`,
-                        `/api/language/delete?id=${encodedVal}`
-                    ];
-                } else if (selectedMaster === 'keywords') {
-                    endpoints = [`/api/keyword/delete/${encodedVal}`, `/api/keyword/${encodedVal}`];
-                } else if (selectedMaster === 'customers') {
-                    endpoints = [`/api/admin/admin/delete-customer/${encodedVal}`, `/api/customer/delete/${encodedVal}`];
-                }
+        for (const targetVal of targetItems) {
+            if (!targetVal) continue;
 
-                let deletedSuccessfully = false;
+            const cleanVal = String(targetVal).trim();
+            const encodedVal = encodeURIComponent(cleanVal);
+            let endpoints = [];
 
-                for (const url of endpoints) {
-                    try {
-                        let res = await fetch(url, { method: 'DELETE' });
-                        if (!res.ok) {
-                            res = await fetch(url, { method: 'POST' });
-                        }
-                        if (res.ok) {
-                            deletedSuccessfully = true;
-                            break;
-                        }
-                    } catch (e) {
-                        console.warn(`Delete failed for ${url}:`, e);
+            if (selectedMaster === 'items') {
+                endpoints = [
+                    `/api/author/book/delete-book/${encodedVal}`,
+                    `/api/author/book/delete/${encodedVal}`,
+                    `/api/author/Book/delete-book/${encodedVal}`
+                ];
+            } else if (selectedMaster === 'plans') {
+                endpoints = [`/api/plan/delete/${encodedVal}`];
+            } else if (selectedMaster === 'authors') {
+                endpoints = [`/api/authors/delete/${encodedVal}`];
+            } else if (selectedMaster === 'categories') {
+                endpoints = [`/api/category/delete/${encodedVal}`];
+            } else if (selectedMaster === 'languages') {
+                endpoints = [`/api/language/delete/${encodedVal}`];
+            } else if (selectedMaster === 'keywords') {
+                endpoints = [`/api/keyword/delete/${encodedVal}`];
+            } else if (selectedMaster === 'customers') {
+                endpoints = [`/api/admin/admin/delete-customer/${encodedVal}`];
+            }
+
+            let deletedSuccessfully = false;
+
+            for (const url of endpoints) {
+                try {
+                    let res = await fetch(url, { method: 'DELETE' });
+                    if (!res.ok) {
+                        res = await fetch(url, { method: 'POST' });
                     }
-                }
-
-                if (deletedSuccessfully) {
-                    successCount++;
+                    if (res.ok) {
+                        deletedSuccessfully = true;
+                        break;
+                    }
+                } catch (e) {
+                    console.warn(`Delete request error for ${url}:`, e);
                 }
             }
 
-            if (successCount > 0) {
-                triggerToast(`${successCount} record(s) deleted successfully!`);
-                setDeleteConfirmModal({ show: false, id: null, ids: [], title: '', type: '' });
-                setSelectedMasterIds([]);
-
-                if (selectedMaster === 'items') { await fetchAuthorBooks(); await fetchStoreBooks(); }
-                else if (selectedMaster === 'plans') await fetchPlansMaster();
-                else if (selectedMaster === 'authors') await fetchAuthorsMaster();
-                else if (selectedMaster === 'categories') await fetchCategories();
-                else if (selectedMaster === 'languages') await fetchLanguagesMaster();
-                else if (selectedMaster === 'keywords') await fetchKeywordsMaster();
-                else if (selectedMaster === 'customers') await fetchCustomersMaster();
-            } else {
-                triggerToast("Failed to delete selected record(s). Check API route constraints.", 'error');
+            if (deletedSuccessfully) {
+                successCount++;
             }
-        } catch (err) {
-            triggerToast("Error deleting record(s): " + err.message, 'error');
+        }
+
+        // ALWAYS FORCE RESET ALL MODAL & SELECTION STATES
+        setDeleteConfirmModal({ show: false, id: null, ids: [], title: '', type: '' });
+        setSelectedMasterIds([]);
+
+        if (successCount > 0) {
+            triggerToast(`${successCount} record(s) deleted successfully!`);
+
+            if (selectedMaster === 'items') {
+                await fetchAuthorBooks();
+                await fetchStoreBooks();
+            } else if (selectedMaster === 'plans') await fetchPlansMaster();
+            else if (selectedMaster === 'authors') await fetchAuthorsMaster();
+            else if (selectedMaster === 'categories') await fetchCategories();
+            else if (selectedMaster === 'languages') await fetchLanguagesMaster();
+            else if (selectedMaster === 'keywords') await fetchKeywordsMaster();
+            else if (selectedMaster === 'customers') await fetchCustomersMaster();
+        } else {
+            triggerToast("Failed to delete selected record(s). Check API route constraints.", 'error');
         }
     };
-
     const handleAddCustomer = async (e) => {
         e.preventDefault();
         if (!custNameInput || !custEmailInput) return triggerToast("Customer Name & Email are required.", 'error');
@@ -1369,13 +1372,19 @@ function App() {
     const getMasterRenderData = () => {
         switch (selectedMaster) {
             case 'items':
-                return myAuthorBooks.map(b => ({
-                    id: b.id || b.itemNo,
-                    name: b.itemName,
-                    desc: `Category: ${b.categoryCode} | ISBN: ${b.isbn} | Author: ${b.authorName} | Published By: ${b.publishedBy} | Language: ${b.language} | Price: ₹${b.price} | Pages: ${b.noOfPages}`,
-                    isPublished: b.isPublished,
-                    raw: b.raw || b
-                }));
+                return myAuthorBooks.map(b => {
+                    // Strict GUID / ItemNo Mapping (Never pass Book Name as ID)
+                    const recordId = b.id || b.Id || (b.raw ? (b.raw.id || b.raw.Id || b.raw.itemNo) : b.itemNo);
+                    const recordName = b.itemName || (b.raw ? b.raw.itemName : 'Book');
+
+                    return {
+                        id: recordId,
+                        name: recordName,
+                        desc: `Category: ${b.categoryCode} | ISBN: ${b.isbn} | Author: ${b.authorName} | Published By: ${b.publishedBy} | Language: ${b.language} | Price: ₹${b.price} | Pages: ${b.noOfPages}`,
+                        isPublished: b.isPublished,
+                        raw: b.raw || b
+                    };
+                });
             case 'plans':
                 return plansList.map(p => ({
                     id: p.id || p.Id,
@@ -1430,6 +1439,8 @@ function App() {
 
     const getMasterHeaderConfig = () => {
         switch (selectedMaster) {
+            case 'vendors':
+                return { title: 'VENDOR MASTER DIRECTORY', buttonText: 'Add Vendor' };
             case 'plans':
                 return { title: 'SUBSCRIPTION PLAN LIST', buttonText: 'Add New Plan' };
             case 'authors':
@@ -1471,6 +1482,7 @@ function App() {
     const EditLanguageFormComp = typeof window.EditLanguageForm !== 'undefined' ? window.EditLanguageForm : (typeof EditLanguageForm !== 'undefined' ? EditLanguageForm : null);
     const ExternalEditAuthorFormComp = typeof window.EditAuthorForm !== 'undefined' ? window.EditAuthorForm : (typeof EditAuthorForm !== 'undefined' ? EditAuthorForm : null);
     const AddPlanFormComp = typeof window.AddPlanForm !== 'undefined' ? window.AddPlanForm : (typeof AddPlanForm !== 'undefined' ? AddPlanForm : null);
+    const VendorMasterComp = typeof window.VendorMaster !== 'undefined' ? window.VendorMaster : (typeof VendorMaster !== 'undefined' ? VendorMaster : null);
 
     return (
         <div className="min-h-screen flex flex-col bg-gray-100 text-slate-800 w-full overflow-x-hidden relative">
@@ -1588,11 +1600,13 @@ function App() {
                                         {[
                                             { key: 'items', label: 'Items Master ', icon: 'fa-box' },
                                             { key: 'plans', label: 'Plans Master ', icon: 'fa-credit-card' },
+                                            { key: 'bundles', label: 'Bundle Master ', icon: 'fa-layer-group' },
                                             { key: 'authors', label: 'Authors ', icon: 'fa-user-pen' },
                                             { key: 'categories', label: 'Categories ', icon: 'fa-layer-group' },
                                             { key: 'languages', label: 'Languages ', icon: 'fa-language' },
                                             { key: 'keywords', label: 'Keywords ', icon: 'fa-key' },
-                                            { key: 'customers', label: 'Customers ', icon: 'fa-users' }
+                                            { key: 'customers', label: 'Customers ', icon: 'fa-users' },
+                                            { key: 'vendors', label: 'Vendor Master ', icon: 'fa-user-gear' }
                                         ].map(m => (
                                             <button
                                                 key={m.key}
@@ -1720,7 +1734,14 @@ function App() {
                             </div>
                         </div>
 
-                        {selectedMaster === 'items' && bookPageMode === 'add-book-page' ? (
+                        {(selectedMaster === 'vendors') ? (
+                            VendorMasterComp ? (
+                                <VendorMasterComp
+                                    booksList={storeBooks}
+                                    triggerToast={triggerToast}
+                                />
+                            ) : <div>Vendor Master Component Not Loaded</div>
+                        ) : (selectedMaster === 'items' && bookPageMode === 'add-book-page') ? (
                             AddBookFormComp ? (
                                 <AddBookFormComp
                                     categoriesList={categoriesList}
@@ -1770,48 +1791,45 @@ function App() {
                                     onCancel={() => changeNavState({ bookPageMode: 'list' })}
                                 />
                             </div>
-                        ) : selectedMaster === 'items' && bookPageMode === 'edit-book-page' ? (
-                            EditBookFormComp ? (
-                                <EditBookFormComp
-                                    editingBook={editingBook}
-                                    languagesList={languagesList}
-                                    onSuccess={(msg) => {
-                                        triggerToast(msg);
-                                        setEditingBook(null);
-                                        fetchAuthorBooks();
-                                        fetchStoreBooks();
-                                        window.history.back();
-                                    }}
-                                    onCancel={() => {
-                                        setEditingBook(null);
-                                        window.history.back();
-                                    }}
-                                />
-                            ) : null
-                        ) : selectedMaster === 'plans' && planPageMode === 'add-plan-page' ? (
-                            AddPlanFormComp ? (
-                                <AddPlanFormComp
-                                    onSuccess={(msg) => {
-                                        triggerToast(msg);
-                                        fetchPlansMaster();
-                                        window.history.back();
-                                    }}
-                                    onCancel={() => window.history.back()}
-                                />
-                            ) : null
-                        ) : selectedMaster === 'categories' && categoryPageMode === 'add-category-page' ? (
-                            AddCategoryFormComp ? (
-                                <AddCategoryFormComp
-                                    onSuccess={(msg) => {
-                                        triggerToast(msg);
-                                        fetchCategories();
-                                        window.history.back();
-                                    }}
-                                    onCancel={() => window.history.back()}
-                                />
-                            ) : null
-                        ) : selectedMaster === 'categories' && categoryPageMode === 'edit-category-page' ? (
-                            EditCategoryFormComp ? (
+                                ) : selectedMaster === 'items' && bookPageMode === 'edit-book-page' ? (
+                                    EditBookFormComp ? (
+                                        <EditBookFormComp
+                                            editingBook={editingBook}
+                                            languagesList={languagesList}
+                                            onSuccess={(msg) => {
+                                                triggerToast(msg);
+                                                setEditingBook(null);
+                                                fetchAuthorBooks();
+                                                fetchStoreBooks();
+                                                window.history.back();
+                                            }}
+                                            onCancel={() => {
+                                                setEditingBook(null);
+                                                window.history.back();
+                                            }}
+                                        />
+                                    ) : null
+                                ) : selectedMaster === 'plans' ? (
+                                    <PlanMaster triggerToast={triggerToast} />
+                                ) : selectedMaster === 'bundles' ? (
+                                    typeof window.BundleMaster !== 'undefined' ? (
+                                        <window.BundleMaster triggerToast={triggerToast} />
+                                    ) : (
+                                        <BundleMaster triggerToast={triggerToast} />
+                                    )
+                                ) : selectedMaster === 'categories' && categoryPageMode === 'add-category-page' ? (
+                                    AddCategoryFormComp ? (
+                                        <AddCategoryFormComp
+                                            onSuccess={(msg) => {
+                                                triggerToast(msg);
+                                                fetchCategories();
+                                                window.history.back();
+                                            }}
+                                            onCancel={() => window.history.back()}
+                                        />
+                                    ) : null
+                                ) : selectedMaster === 'categories' && categoryPageMode === 'edit-category-page' ? (
+                                    EditCategoryFormComp ? (
                                 <EditCategoryFormComp
                                     editingCategory={editingCategory}
                                     onSuccess={(msg) => {
@@ -2113,8 +2131,26 @@ function App() {
                                                                     )}
                                                                 </>
                                                             )}
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
 
-                                                            <button onClick={(e) => { e.stopPropagation(); setDeleteConfirmModal({ show: true, id: item.id, ids: [], title: item.name, type: selectedMaster }); }} className="text-[#e31b23] hover:underline font-bold cursor-pointer">
+                                                                    
+                                                                    const targetId = item.id || (item.raw ? (item.raw.id || item.raw.Id || item.raw.itemNo) : item.name);
+
+                                                                   
+                                                                    setSelectedMasterIds([]);
+
+                                                                    setDeleteConfirmModal({
+                                                                        show: true,
+                                                                        id: targetId,
+                                                                        ids: [],
+                                                                        title: item.name,
+                                                                        type: selectedMaster
+                                                                    });
+                                                                }}
+                                                                className="text-[#e31b23] hover:underline font-bold cursor-pointer">
                                                                 <i className="fa-solid fa-trash me-1"></i> Delete
                                                             </button>
                                                         </td>
@@ -2586,6 +2622,8 @@ function BulkGridFormContainer({ categoriesList, languagesList, authorsList, onS
 
     const [rows, setRows] = React.useState([createEmptyRow()]);
     const [isUploading, setIsUploading] = React.useState(false);
+    const [pasteText, setPasteText] = React.useState('');
+    const [showPasteBox, setShowPasteBox] = React.useState(false);
 
     const handleRowChange = (index, field, value) => {
         const updated = [...rows];
@@ -2599,10 +2637,61 @@ function BulkGridFormContainer({ categoriesList, languagesList, authorsList, onS
 
     const handleRemoveRow = (index) => {
         if (rows.length <= 1) {
-            alert("At least 1 row honi chahiye.");
+            alert("Kam se kam 1 row honi chahiye.");
             return;
         }
         setRows(rows.filter((_, i) => i !== index));
+    };
+
+    // SMART EXCEL PASTE PARSER LOGIC
+    const handleParseExcelPaste = () => {
+        if (!pasteText || !pasteText.trim()) {
+            alert("Kripya Excel se copy kiya hua data text area me paste karein.");
+            return;
+        }
+
+        const lines = pasteText.trim().split(/\r\n|\n|\r/);
+        const parsedRows = [];
+
+        lines.forEach(line => {
+            if (!line.trim()) return;
+
+            // Tab-separated string parsing (Excel default format)
+            const cols = line.split('\t');
+
+            /* Excel Columns Sequence Expected:
+               Col 0: Item Code (Optional)
+               Col 1: ISBN
+               Col 2: Book Name
+               Col 3: Price
+               Col 4: Pages
+            */
+            const itemNo = cols[0] ? cols[0].trim() : '';
+            const isbn = cols[1] ? cols[1].trim() : '';
+            const itemName = cols[2] ? cols[2].trim() : (cols[0] ? cols[0].trim() : '');
+            const price = cols[3] ? cols[3].trim() : '';
+            const noOfPages = cols[4] ? cols[4].trim() : '';
+
+            parsedRows.push({
+                itemNo: itemNo,
+                isbn: isbn,
+                itemName: itemName,
+                categoryCode: categoriesList.length > 0 ? (categoriesList[0].categoryCode || categoriesList[0].CategoryCode) : '',
+                authorName: authorsList.length > 0 ? authorsList[0].name : '',
+                language: languagesList.length > 0 ? (languagesList[0].name || languagesList[0].languageName) : 'English',
+                price: price,
+                noOfPages: noOfPages,
+                mainPdf: null,
+                coverImage: null
+            });
+        });
+
+        if (parsedRows.length > 0) {
+            setRows(parsedRows);
+            setPasteText('');
+            setShowPasteBox(false);
+            alert(`${parsedRows.length} rows Excel se successfully import ho gayi hain! Ab aap Files upload kar sakte hain.`);
+        }
     };
 
     const handleSubmitGrid = async (e) => {
@@ -2650,6 +2739,49 @@ function BulkGridFormContainer({ categoriesList, languagesList, authorsList, onS
 
     return (
         <form onSubmit={handleSubmitGrid} className="space-y-4 text-xs">
+            {/* EXCEL PASTE QUICK BAR */}
+            <div className="bg-emerald-50 p-4 rounded-lg border border-emerald-300 space-y-3">
+                <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-2">
+                        <i className="fa-solid fa-file-excel text-emerald-700 text-lg"></i>
+                        <span className="font-bold text-slate-800 text-xs">
+                            Quick Excel Copy-Paste Import
+                        </span>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => setShowPasteBox(!showPasteBox)}
+                        className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-3 py-1.5 rounded text-xs transition cursor-pointer flex items-center gap-1.5">
+                        <i className="fa-solid fa-[#e31b23] fa-paste"></i>
+                        {showPasteBox ? 'Hide Paste Box' : 'Paste Excel Data Here'}
+                    </button>
+                </div>
+
+                {showPasteBox && (
+                    <div className="space-y-2 pt-2 border-t border-emerald-200">
+                        <p className="text-[11px] text-slate-600">
+                            Excel sheet se in columns ko copy karein: <strong className="text-emerald-800">[Item Code | ISBN | Book Name | Price | Pages]</strong> aur niche paste karke Process button par click karein.
+                        </p>
+                        <textarea
+                            rows={4}
+                            value={pasteText}
+                            onChange={(e) => setPasteText(e.target.value)}
+                            placeholder="Excel se copy kiya hua data yahan Ctrl+V karein..."
+                            className="w-full p-2 border border-slate-300 rounded font-mono text-xs bg-white outline-none focus:border-emerald-600"
+                        />
+                        <div className="flex justify-end gap-2">
+                            <button
+                                type="button"
+                                onClick={handleParseExcelPaste}
+                                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded text-xs shadow cursor-pointer">
+                                <i className="fa-solid fa-check me-1"></i> Process & Auto-Fill Table
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* TABLE GRID */}
             <div className="overflow-x-auto border border-slate-300 rounded-lg shadow-sm bg-white">
                 <table className="w-full text-left text-xs border-collapse">
                     <thead className="bg-slate-100 text-slate-700 font-bold uppercase border-b border-slate-300 sticky top-0 z-10">

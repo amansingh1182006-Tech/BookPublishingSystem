@@ -31,12 +31,7 @@ namespace Web.Areas.Author.Controllers
         private readonly IWebHostEnvironment _environment;
         private readonly IConfiguration _configuration;
 
-        public BookController(
-            ApplicationDbContext dbContext,
-            UserManager<ApplicationUser> userManager,
-            IStorageService storageService,
-            IWebHostEnvironment environment,
-            IConfiguration configuration)
+        public BookController(ApplicationDbContext dbContext, UserManager<ApplicationUser> userManager, IStorageService storageService, IWebHostEnvironment environment, IConfiguration configuration)
         {
             _dbContext = dbContext;
             _userManager = userManager;
@@ -493,25 +488,28 @@ namespace Web.Areas.Author.Controllers
             }
         }
 
-        
+
         [HttpDelete("delete-book/{id}")]
         [HttpPost("delete-book/{id}")]
-        public async Task<IActionResult> DeleteBook(string id)
+        [HttpDelete("delete/{id}")]
+        [HttpPost("delete/{id}")]
+        public async Task<IActionResult> DeleteBook([FromRoute] string id)
         {
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                return BadRequest(new { success = false, message = "Invalid Book Identifier." });
+            }
+
+            string cleanId = Uri.UnescapeDataString(id).Trim();
+
             try
             {
-                if (string.IsNullOrWhiteSpace(id))
-                {
-                    return BadRequest(new { success = false, message = "Invalid Book Identifier." });
-                }
-
-                string cleanId = Uri.UnescapeDataString(id).Trim();
                 Book book = null;
 
                 
                 if (Guid.TryParse(cleanId, out Guid parsedGuid))
                 {
-                    book = await _dbContext.Books.FindAsync(parsedGuid);
+                    book = await _dbContext.Books.FirstOrDefaultAsync(b => b.Id == parsedGuid);
                 }
 
                 
@@ -520,39 +518,45 @@ namespace Web.Areas.Author.Controllers
                     book = await _dbContext.Books.FirstOrDefaultAsync(b => b.ItemNo.ToLower() == cleanId.ToLower());
                 }
 
+               
                 if (book == null)
                 {
-                    return NotFound(new { success = false, message = $"Book '{cleanId}' database mein nahi mila." });
+                    book = await _dbContext.Books.FirstOrDefaultAsync(b => b.ItemName.ToLower() == cleanId.ToLower());
+                }
+
+                if (book == null)
+                {
+                    return NotFound(new { success = false, message = $"Book '{cleanId}' database me nahi mila." });
                 }
 
                 Guid targetBookId = book.Id;
 
                 
-                var alpha = await _dbContext.BookSegmentsAlpha.Where(s => s.BookId == targetBookId).ToListAsync();
-                var beta = await _dbContext.BookSegmentsBeta.Where(s => s.BookId == targetBookId).ToListAsync();
-                var gamma = await _dbContext.BookSegmentsGamma.Where(s => s.BookId == targetBookId).ToListAsync();
+                try { await _dbContext.Database.ExecuteSqlRawAsync("DELETE FROM [UserReadingProgress] WHERE [BookId] = {0}", targetBookId); } catch { }
+                try { await _dbContext.Database.ExecuteSqlRawAsync("DELETE FROM [UserReadingProgresses] WHERE [BookId] = {0}", targetBookId); } catch { }
 
-               
-                if (alpha.Any()) _dbContext.BookSegmentsAlpha.RemoveRange(alpha);
-                if (beta.Any()) _dbContext.BookSegmentsBeta.RemoveRange(beta);
-                if (gamma.Any()) _dbContext.BookSegmentsGamma.RemoveRange(gamma);
+                try { await _dbContext.Database.ExecuteSqlRawAsync("DELETE FROM [BookSegmentsAlpha] WHERE [BookId] = {0}", targetBookId); } catch { }
+                try { await _dbContext.Database.ExecuteSqlRawAsync("DELETE FROM [BookSegmentAlpha] WHERE [BookId] = {0}", targetBookId); } catch { }
+
+                try { await _dbContext.Database.ExecuteSqlRawAsync("DELETE FROM [BookSegmentsBeta] WHERE [BookId] = {0}", targetBookId); } catch { }
+                try { await _dbContext.Database.ExecuteSqlRawAsync("DELETE FROM [BookSegmentBeta] WHERE [BookId] = {0}", targetBookId); } catch { }
+
+                try { await _dbContext.Database.ExecuteSqlRawAsync("DELETE FROM [BookSegmentsGamma] WHERE [BookId] = {0}", targetBookId); } catch { }
+                try { await _dbContext.Database.ExecuteSqlRawAsync("DELETE FROM [BookSegmentGamma] WHERE [BookId] = {0}", targetBookId); } catch { }
 
                 
-                _dbContext.Books.Remove(book);
+                await _dbContext.Database.ExecuteSqlRawAsync("DELETE FROM [Books] WHERE [Id] = {0}", targetBookId);
 
-                
-                await _dbContext.SaveChangesAsync();
-
-                return Ok(new { success = true, message = $"Book '{book.ItemName}' and its segments deleted successfully!" });
+                return Ok(new { success = true, message = $"Book '{book.ItemName}' deleted successfully!" });
             }
             catch (Exception ex)
             {
-                var innerMsg = ex.InnerException != null ? ex.InnerException.Message : ex.Message;
-                return StatusCode(500, new { success = false, message = $"Delete Error: {innerMsg}" });
+                var msg = ex.InnerException != null ? ex.InnerException.Message : ex.Message;
+                return StatusCode(500, new { success = false, message = "Delete Error: " + msg });
             }
         }
 
-        
+
         [HttpGet("view-pdf/{identifier}")]
         [AllowAnonymous]
         public async Task<IActionResult> ViewPdf(string identifier)

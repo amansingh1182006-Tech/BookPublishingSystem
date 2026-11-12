@@ -1,104 +1,123 @@
-﻿using Application.DTOs;
-using BookPublishingSystem.Application.DTOs;
-using BookPublishingSystem.Domain.Entities;
-using Infrastructure.Persistence;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using System;
+﻿using System;
 using System.Linq;
 using System.Threading.Tasks;
+using Application.Interfaces;
+using BookPublishingSystem.Application.DTOs;
+using BookPublishingSystem.Domain.Entities;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
-namespace BookPublishingSystem.Controllers
+namespace Web.Controllers
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/plan")]
     public class PlanController : ControllerBase
     {
-        private readonly ApplicationDbContext _dbContext;
+        private readonly IApplicationDbContext _dbContext;
 
-        public PlanController(ApplicationDbContext dbContext)
+        public PlanController(IApplicationDbContext dbContext)
         {
             _dbContext = dbContext;
         }
 
-        // GET: api/plan/all
-        [HttpGet("all")]
+        // GET: api/plan/get-all
+        [HttpGet("get-all")]
         public async Task<IActionResult> GetAllPlans()
         {
             try
             {
                 var plans = await _dbContext.Plans
-                    .OrderByDescending(p => p.CreatedAt)
+                    .Include(p => p.Features)
+                    .OrderBy(p => p.PriceIncludingTax)
                     .ToListAsync();
+
                 return Ok(plans);
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Error fetching plans: " + ex.Message });
+                return BadRequest(new { success = false, message = "Error fetching plans: " + ex.Message });
             }
         }
 
-        // POST: api/plan/create
-        [HttpPost("create")]
-        public async Task<IActionResult> CreatePlan([FromBody] CreatePlanDto model)
+        // POST: api/plan/save
+        [HttpPost("save")]
+        public async Task<IActionResult> SavePlan([FromBody] CreatePlanDto dto)
         {
-            if (!ModelState.IsValid)
-                return BadRequest(ModelState);
+            if (!ModelState.IsValid) return BadRequest(ModelState);
 
             try
             {
-                var plan = new Plan
+                Plan? plan = null;
+                if (dto.Id.HasValue && dto.Id.Value != Guid.Empty)
                 {
-                    Id = Guid.NewGuid(),
-                    PlanName = model.PlanName.Trim(),
-                    Description = model.Description?.Trim() ?? "",
-                    PriceIncludingTax = model.PriceIncludingTax,
-                    TaxPercentage = model.TaxPercentage,
-                    ValidityInDays = model.ValidityInDays,
-                    TargetUser = string.IsNullOrWhiteSpace(model.TargetUser) ? "Reader" : model.TargetUser.Trim(),
-                    MaxBookLimit = model.MaxBookLimit,
-                    IsActive = true,
-                    CreatedAt = DateTime.UtcNow
-                };
+                    plan = await _dbContext.Plans
+                        .Include(p => p.Features)
+                        .FirstOrDefaultAsync(p => p.Id == dto.Id.Value);
+                }
 
-                _dbContext.Plans.Add(plan);
-                await _dbContext.SaveChangesAsync();
-
-                return Ok(new { message = $"Plan '{plan.PlanName}' successfully create ho gaya hai!", planId = plan.Id });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { message = "Error creating plan: " + ex.Message });
-            }
-        }
-
-        // PUT: api/plan/update/{id}
-        [HttpPut("update/{id}")]
-        public async Task<IActionResult> UpdatePlan(Guid id, [FromBody] CreatePlanDto model)
-        {
-            if (!ModelState.IsValid)
-                return BadRequest(ModelState);
-
-            try
-            {
-                var plan = await _dbContext.Plans.FindAsync(id);
                 if (plan == null)
-                    return NotFound(new { message = "Plan nahi mila." });
+                {
+                    plan = new Plan { Id = Guid.NewGuid() };
+                    _dbContext.Plans.Add(plan);
+                }
+                else
+                {
+                    
+                    var existingFeatures = plan.Features.ToList();
+                    foreach (var feat in existingFeatures)
+                    {
+                        _dbContext.PlanFeatures.Remove(feat);
+                    }
+                }
 
-                plan.PlanName = model.PlanName.Trim();
-                plan.Description = model.Description?.Trim() ?? "";
-                plan.PriceIncludingTax = model.PriceIncludingTax;
-                plan.TaxPercentage = model.TaxPercentage;
-                plan.ValidityInDays = model.ValidityInDays;
-                plan.TargetUser = model.TargetUser;
-                plan.MaxBookLimit = model.MaxBookLimit;
+                
+                int validityDays = dto.ValidityInDays;
+                if (dto.BillingPeriod == "Monthly") validityDays = 30;
+                else if (dto.BillingPeriod == "Yearly") validityDays = 365;
+                else if (dto.BillingPeriod == "2 Years") validityDays = 730;
+                else if (dto.BillingPeriod == "3 Years") validityDays = 1095;
+                else if (dto.BillingPeriod == "5 Years") validityDays = 1825;
 
-                await _dbContext.SaveChangesAsync();
-                return Ok(new { message = "Plan successfully update ho gaya hai!" });
+                plan.PlanName = dto.PlanName.Trim();
+                plan.Description = dto.Description;
+                plan.PriceIncludingTax = dto.PriceIncludingTax;
+                plan.TaxPercentage = dto.TaxPercentage;
+                plan.BillingPeriod = string.IsNullOrWhiteSpace(dto.BillingPeriod) ? "Monthly" : dto.BillingPeriod;
+                plan.ValidityInDays = validityDays > 0 ? validityDays : 30;
+                plan.TargetUser = dto.TargetUser;
+                plan.BasicBookLimit = dto.BasicBookLimit;
+                plan.RoyaltyBookLimit = dto.RoyaltyBookLimit;
+                plan.MaxBookLimit = dto.BasicBookLimit + dto.RoyaltyBookLimit;
+                plan.IsActive = dto.IsActive;
+
+                
+                if (dto.Features != null && dto.Features.Any())
+                {
+                    foreach (var f in dto.Features)
+                    {
+                        if (string.IsNullOrWhiteSpace(f.FeatureName)) continue;
+
+                        plan.Features.Add(new PlanFeature
+                        {
+                            Id = Guid.NewGuid(),
+                            PlanId = plan.Id,
+                            FeatureName = f.FeatureName.Trim(),
+                            Limitation = string.IsNullOrWhiteSpace(f.Limitation) ? "Included" : f.Limitation.Trim(),
+                            IsEnabled = f.IsEnabled
+                        });
+                    }
+                }
+
+                await _dbContext.SaveChangesAsync(default);
+                return Ok(new { success = true, message = "Subscription Plan Saved Successfully!", planId = plan.Id });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Error updating plan: " + ex.Message });
+                string detailedError = ex.InnerException != null
+                    ? (ex.InnerException.InnerException != null ? ex.InnerException.InnerException.Message : ex.InnerException.Message)
+                    : ex.Message;
+
+                return BadRequest(new { success = false, message = "Save Error: " + detailedError });
             }
         }
 
@@ -109,16 +128,16 @@ namespace BookPublishingSystem.Controllers
             try
             {
                 var plan = await _dbContext.Plans.FindAsync(id);
-                if (plan == null)
-                    return NotFound(new { message = "Plan nahi mila." });
+                if (plan == null) return NotFound(new { success = false, message = "Plan not found." });
 
                 _dbContext.Plans.Remove(plan);
-                await _dbContext.SaveChangesAsync();
-                return Ok(new { message = "Plan delete ho gaya hai!" });
+                await _dbContext.SaveChangesAsync(default);
+
+                return Ok(new { success = true, message = "Plan deleted successfully." });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Error deleting plan: " + ex.Message });
+                return BadRequest(new { success = false, message = "Delete Error: " + ex.Message });
             }
         }
     }

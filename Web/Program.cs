@@ -48,7 +48,12 @@ builder.Services.AddAuthorizationBuilder()
         policy.RequireRole("Reader", "Admin")
               .AddRequirements(new Application.Authorization.Requirements.BookPurchaseRequirement()));
 
-builder.Services.AddControllersWithViews();
+builder.Services.AddControllersWithViews()
+    .AddJsonOptions(options =>
+    {
+        
+        options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
+    });
 
 var app = builder.Build();
 

@@ -41,7 +41,7 @@ namespace Web.Middlewares
                             await signInManager.SignOutAsync();
                             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                             context.Response.ContentType = "application/json";
-                            await context.Response.WriteAsync("{\"error\": \"SessionExpired\", \"message\": \"Aapka account kisi doosri device me login ho gaya hai. Kripya punah login karein.\"}");
+                            await context.Response.WriteAsync("{\"error\": \"SessionExpired\", \"message\": \"Your Account Login in another Device.\"}");
                             return;
                         }
 
