@@ -60,7 +60,6 @@ namespace Web.Areas.Author.Controllers
                     coverPath = await _storageService.SaveCoverImageAsync(dto.CoverImage, dto.ItemNo);
                 }
 
-                
                 Guid? matchedAuthorMasterId = null;
                 if (!string.IsNullOrWhiteSpace(dto.AuthorId) && Guid.TryParse(dto.AuthorId, out Guid parsedAuthGuid))
                 {
@@ -76,6 +75,25 @@ namespace Web.Areas.Author.Controllers
                     }
                 }
 
+                // Vendor Name ya Vendor Code ke basis par Vendor link karein
+                Guid? matchedVendorId = null;
+                string finalVendorName = "In-House (B. Jain)";
+                if (!string.IsNullOrWhiteSpace(dto.VendorName))
+                {
+                    string cleanVName = dto.VendorName.Trim().ToLower();
+                    var existingVendor = await _dbContext.Vendors
+                        .FirstOrDefaultAsync(v => v.Name.ToLower() == cleanVName || v.VendorCode.ToLower() == cleanVName);
+                    if (existingVendor != null)
+                    {
+                        matchedVendorId = existingVendor.Id;
+                        finalVendorName = existingVendor.Name;
+                    }
+                    else
+                    {
+                        finalVendorName = dto.VendorName.Trim();
+                    }
+                }
+
                 var book = new Book
                 {
                     Id = Guid.NewGuid(),
@@ -88,13 +106,10 @@ namespace Web.Areas.Author.Controllers
                     Description = string.IsNullOrWhiteSpace(dto.Description) ? "Official Homoeopathy Publication" : dto.Description,
                     CoverImagePath = coverPath,
                     Price = dto.Price,
-
-                    
                     AuthorMasterId = matchedAuthorMasterId,
-
-                    
                     AuthorId = currentUser.Id,
-
+                    VendorId = matchedVendorId,
+                    VendorName = finalVendorName,
                     IsPublished = false,
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
@@ -184,6 +199,25 @@ namespace Web.Areas.Author.Controllers
                         if (existingAuthor != null) matchedAuthorMasterId = existingAuthor.Id;
                     }
 
+                    // Vendor Name ya Vendor Code ke basis par Vendor link karein
+                    Guid? matchedVendorId = null;
+                    string finalVendorName = "In-House (B. Jain)";
+                    if (!string.IsNullOrWhiteSpace(row.VendorName))
+                    {
+                        string cleanVName = row.VendorName.Trim().ToLower();
+                        var existingVendor = await _dbContext.Vendors
+                            .FirstOrDefaultAsync(v => v.Name.ToLower() == cleanVName || v.VendorCode.ToLower() == cleanVName);
+                        if (existingVendor != null)
+                        {
+                            matchedVendorId = existingVendor.Id;
+                            finalVendorName = existingVendor.Name;
+                        }
+                        else
+                        {
+                            finalVendorName = row.VendorName.Trim();
+                        }
+                    }
+
                     string itemNo = !string.IsNullOrWhiteSpace(row.ItemNo)
                         ? row.ItemNo.Trim().ToUpper()
                         : $"BK-{DateTime.UtcNow:yyMM}-{new Random().Next(1000, 9999)}";
@@ -208,7 +242,9 @@ namespace Web.Areas.Author.Controllers
                         Price = row.Price,
                         AuthorMasterId = matchedAuthorMasterId,
                         AuthorId = currentUser.Id,
-                        IsPublished = false, 
+                        VendorId = matchedVendorId,
+                        VendorName = finalVendorName,
+                        IsPublished = false,
                         CreatedAt = DateTime.UtcNow,
                         UpdatedAt = DateTime.UtcNow
                     };
@@ -275,9 +311,6 @@ namespace Web.Areas.Author.Controllers
             });
         }
 
-
-
-        
         [HttpGet("my-books")]
         public async Task<IActionResult> GetMyBooks()
         {
@@ -289,23 +322,26 @@ namespace Web.Areas.Author.Controllers
                     .OrderByDescending(b => b.CreatedAt)
                     .ToListAsync();
 
-                
                 var categoriesMap = await _dbContext.Categories
                     .ToDictionaryAsync(c => c.CategoryCode.Trim().ToLower(), c => c.CategoryName);
 
+                // Sirf Yes/No flag ke liye active royalty books fetch karein (percentage backend mein safe rahega)
+                var royaltyBookIds = await _dbContext.VendorRoyaltyRules
+                    .Where(r => r.IsRoyaltyApplicable && r.LiveStatus == "Live")
+                    .Select(r => r.BookId)
+                    .ToListAsync();
+
+                var royaltySet = new HashSet<Guid>(royaltyBookIds);
+
                 var books = rawBooks.Select(b =>
                 {
-                    
                     string displayAuthor = b.AuthorMaster != null ? b.AuthorMaster.AuthorName : null;
                     if (string.IsNullOrWhiteSpace(displayAuthor))
                     {
                         displayAuthor = "Dr. Samuel Hahnemann";
                     }
 
-                   
                     string publisherName = b.Author != null ? (b.Author.FullName ?? b.Author.UserName) : "System Administrator";
-
-                    
                     string catCode = b.CategoryCode?.Trim() ?? "HOMEO";
                     string catName = categoriesMap.ContainsKey(catCode.ToLower()) ? categoriesMap[catCode.ToLower()] : catCode;
 
@@ -316,7 +352,7 @@ namespace Web.Areas.Author.Controllers
                         itemName = b.ItemName,
                         isbn = b.ISBN,
                         categoryCode = catCode,
-                        categoryName = catName, 
+                        categoryName = catName,
                         noOfPages = b.NoOfPages,
                         language = b.Language,
                         description = b.Description,
@@ -327,6 +363,12 @@ namespace Web.Areas.Author.Controllers
                         author = displayAuthor,
                         publishedBy = publisherName,
                         createdBy = publisherName,
+
+                        vendorId = b.VendorId,
+                        vendorName = !string.IsNullOrWhiteSpace(b.VendorName) ? b.VendorName : "In-House (B. Jain)",
+
+                        // Home Page ke liye sirf Yes/No flag
+                        isRoyaltyApplicable = royaltySet.Contains(b.Id),
 
                         isPublished = b.IsPublished,
                         createdAt = b.CreatedAt
@@ -341,7 +383,7 @@ namespace Web.Areas.Author.Controllers
             }
         }
 
-        
+
         [HttpPost("approve-book/{id}")]
         public async Task<IActionResult> ApproveBook(string id)
         {

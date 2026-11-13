@@ -32,6 +32,7 @@ namespace Application.Interfaces
 
          DbSet<Bundle> Bundles { get; set; }
          DbSet<BundleItem> BundleItems { get; set; }
+         DbSet<VendorRoyaltyTransaction> VendorRoyaltyTransactions { get; set; }
 
         Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
     }

@@ -4,6 +4,7 @@ function AddBookForm({
     categoriesList,
     languagesList,
     authorsList,
+    vendorsList,
     setShowAddCategoryModal,
     setShowAddLanguageModal,
     setShowAddAuthorModal,
@@ -17,6 +18,7 @@ function AddBookForm({
     const [noOfPagesInput, setNoOfPagesInput] = React.useState(100);
     const [languageInput, setLanguageInput] = React.useState('English');
     const [authorInput, setAuthorInput] = React.useState('');
+    const [vendorNameInput, setVendorNameInput] = React.useState('');
     const [bookPriceInput, setBookPriceInput] = React.useState('');
     const [coverImageFile, setCoverImageFile] = React.useState(null);
     const [mainPdfFile, setMainPdfFile] = React.useState(null);
@@ -53,6 +55,7 @@ function AddBookForm({
         formData.append('noOfPages', parseInt(noOfPagesInput) || 1);
         formData.append('language', languageInput || 'English');
         formData.append('authorName', authorInput || 'System Administrator');
+        formData.append('vendorName', vendorNameInput || '');
         formData.append('price', parseFloat(bookPriceInput));
         if (coverImageFile) formData.append('coverImage', coverImageFile);
         formData.append('mainPdf', mainPdfFile);
@@ -172,11 +175,35 @@ function AddBookForm({
                     </div>
                 </div>
 
-                {/* 6. TOTAL PAGE COUNT */}
-                <div className="grid grid-cols-1 gap-4">
+                {/* 6. TOTAL PAGE COUNT & VENDOR NAME (MANUAL + SUGGESTION) */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                         <label className="font-bold block mb-1 text-slate-700">Total Page Count *</label>
-                        <input type="number" required value={noOfPagesInput} onChange={e => setNoOfPagesInput(e.target.value)} placeholder="150" className="w-full border rounded px-3 py-2 font-bold outline-none" />
+                        <input
+                            type="number"
+                            required
+                            value={noOfPagesInput}
+                            onChange={e => setNoOfPagesInput(e.target.value)}
+                            placeholder="150"
+                            className="w-full border rounded px-3 py-2 font-bold outline-none"
+                        />
+                    </div>
+                    <div>
+                        <label className="font-bold block mb-1 text-slate-700">Vendor / Publisher Name</label>
+                        <input
+                            type="text"
+                            list="vendors-datalist-add"
+                            value={vendorNameInput}
+                            onChange={e => setVendorNameInput(e.target.value)}
+                            placeholder="Type Vendor Name (e.g. Aman Singh) or leave blank for In-House"
+                            className="w-full border rounded px-3 py-2 font-bold bg-emerald-50 outline-none focus:border-emerald-600"
+                        />
+                        <datalist id="vendors-datalist-add">
+                            {vendorsList && vendorsList.map(v => {
+                                const vName = v.name || v.Name || v.vendorName || v.VendorName;
+                                return <option key={v.id || v.Id} value={vName} />;
+                            })}
+                        </datalist>
                     </div>
                 </div>
 

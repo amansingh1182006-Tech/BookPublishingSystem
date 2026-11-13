@@ -35,6 +35,7 @@ namespace Infrastructure.Persistence
 
         public DbSet<Bundle> Bundles { get; set; }
         public DbSet<BundleItem> BundleItems { get; set; }
+        public DbSet<VendorRoyaltyTransaction> VendorRoyaltyTransactions { get; set; }
 
         protected override void OnModelCreating(ModelBuilder builder)
         {

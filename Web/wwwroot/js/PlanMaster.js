@@ -1,14 +1,16 @@
 ﻿// wwwroot/js/PlanMaster.js
 
-function PlanMaster({ triggerToast }) {
+function PlanMaster({ booksList = [], triggerToast }) {
     const [plansList, setPlansList] = React.useState([]);
+    const [availableBooks, setAvailableBooks] = React.useState([]);
+    const [royaltyRulesMap, setRoyaltyRulesMap] = React.useState({});
     const [loading, setLoading] = React.useState(false);
 
     // Page Mode State: 'list' (Grid View) OR 'form' (Add/Edit Master Page)
     const [viewMode, setViewMode] = React.useState('list');
     const [editingPlan, setEditingPlan] = React.useState(null);
 
-    // Form Field States (All Direct Manual Typing Inputs)
+    // Form Field States
     const [planNameInput, setPlanNameInput] = React.useState('Basic Plan');
     const [description, setDescription] = React.useState('');
     const [priceIncludingTax, setPriceIncludingTax] = React.useState(199);
@@ -19,6 +21,8 @@ function PlanMaster({ triggerToast }) {
     const [targetUser, setTargetUser] = React.useState('Reader');
     const [basicBookLimit, setBasicBookLimit] = React.useState(5);
     const [royaltyBookLimit, setRoyaltyBookLimit] = React.useState(1);
+    const [selectedPlanBookIds, setSelectedPlanBookIds] = React.useState([]);
+    const [bookSearchQuery, setBookSearchQuery] = React.useState('');
     const [isActive, setIsActive] = React.useState(true);
 
     // Dynamic Features List State
@@ -53,7 +57,60 @@ function PlanMaster({ triggerToast }) {
         }
     };
 
+    const fetchBooksAndRoyaltyRules = async () => {
+        try {
+            if (booksList && booksList.length > 0) {
+                setAvailableBooks(booksList);
+            } else {
+                const resBooks = await fetch('/api/author/book/my-books');
+                if (resBooks.ok) {
+                    const bData = await resBooks.json();
+                    setAvailableBooks(Array.isArray(bData) ? bData : []);
+                }
+            }
+
+            const resVendors = await fetch('/api/vendor/get-all');
+            if (resVendors.ok) {
+                const vData = await resVendors.json();
+                const rulesObj = {};
+                (vData || []).forEach(v => {
+                    const vName = v.name || v.Name || v.vendorName || v.VendorName || 'Vendor';
+                    const rules = v.royaltyRules || v.RoyaltyRules || [];
+                    rules.forEach(r => {
+                        const bId = String(r.bookId || r.BookId).toLowerCase();
+                        const status = r.liveStatus || r.LiveStatus || 'Live';
+                        if (status === 'Live') {
+                            rulesObj[bId] = {
+                                vendorName: vName,
+                                isRoyalty: r.isRoyaltyApplicable ?? r.IsRoyaltyApplicable ?? false,
+                                percentage: r.royaltyPercentage ?? r.RoyaltyPercentage ?? 30,
+                                threshold: r.royaltyPageThreshold ?? r.RoyaltyPageThreshold ?? 100
+                            };
+                        }
+                    });
+                });
+                setRoyaltyRulesMap(rulesObj);
+            }
+        } catch (e) {
+            console.error("Fetch books/royalty rules error:", e);
+        }
+    };
+
+    React.useEffect(() => {
+        if (booksList && booksList.length > 0) {
+            setAvailableBooks(booksList);
+        }
+    }, [booksList]);
+
+    const togglePlanBookSelection = (bookId) => {
+        const strId = String(bookId);
+        setSelectedPlanBookIds(prev =>
+            prev.includes(strId) ? prev.filter(id => id !== strId) : [...prev, strId]
+        );
+    };
+
     const resetAndOpenForm = (plan = null) => {
+        setBookSearchQuery('');
         if (plan) {
             setEditingPlan(plan);
             setPlanNameInput(plan.planName || plan.PlanName || '');
@@ -66,6 +123,10 @@ function PlanMaster({ triggerToast }) {
             setBasicBookLimit(plan.basicBookLimit ?? plan.BasicBookLimit ?? 5);
             setRoyaltyBookLimit(plan.royaltyBookLimit ?? plan.RoyaltyBookLimit ?? 1);
             setIsActive(plan.isActive ?? plan.IsActive ?? true);
+
+            const rawBookIds = plan.bookIds || plan.BookIds ||
+                (plan.planBooks || plan.PlanBooks || []).map(pb => pb.bookId || pb.BookId || pb.id) || [];
+            setSelectedPlanBookIds(rawBookIds.map(id => String(id)));
 
             const fetchedFeatures = plan.features || plan.Features || [];
             if (fetchedFeatures.length > 0) {
@@ -88,6 +149,7 @@ function PlanMaster({ triggerToast }) {
             setTargetUser('Reader');
             setBasicBookLimit(5);
             setRoyaltyBookLimit(1);
+            setSelectedPlanBookIds([]);
             setIsActive(true);
             setFeatures([
                 { featureName: 'Standard E-Book Reading Mode', limitation: 'Available on Web & Mobile', isEnabled: true },
@@ -97,9 +159,9 @@ function PlanMaster({ triggerToast }) {
         setViewMode('form');
     };
 
-    // 👈 EVENT LISTENERS: Outer "+ Add New Plan" Button Click Integration
     React.useEffect(() => {
         fetchPlans();
+        fetchBooksAndRoyaltyRules();
 
         const handleGlobalOpenForm = () => {
             resetAndOpenForm(null);
@@ -107,7 +169,6 @@ function PlanMaster({ triggerToast }) {
 
         window.addEventListener('open-plan-create-page', handleGlobalOpenForm);
 
-        // Attach direct click listener to outer header buttons
         const attachOuterBtnClick = () => {
             const buttons = document.querySelectorAll('button');
             buttons.forEach(btn => {
@@ -169,6 +230,7 @@ function PlanMaster({ triggerToast }) {
             targetUser: targetUser,
             basicBookLimit: parseInt(basicBookLimit, 10) || 0,
             royaltyBookLimit: parseInt(royaltyBookLimit, 10) || 0,
+            bookIds: selectedPlanBookIds,
             isActive: isActive,
             features: features.map(f => ({
                 featureName: f.featureName,
@@ -213,6 +275,42 @@ function PlanMaster({ triggerToast }) {
 
     // FULL PAGE FORM VIEW MODE
     if (viewMode === 'form') {
+        const planPriceNum = parseFloat(priceIncludingTax) || 0;
+        const pool30 = planPriceNum * 0.30;
+
+        let selectedBasicCount = 0;
+        const selectedRoyaltyDetails = [];
+
+        selectedPlanBookIds.forEach(id => {
+            const item = availableBooks.find(x => String((x.raw || x).id || (x.raw || x).Id) === String(id));
+            if (!item) return;
+            const b = item.raw || item;
+            const rule = royaltyRulesMap[String(id).toLowerCase()];
+            if (rule && rule.isRoyalty && rule.threshold > 0) {
+                const pages = b.noOfPages || b.NoOfPages || 0;
+                selectedRoyaltyDetails.push({
+                    bookName: b.itemName || b.ItemName,
+                    vendorName: rule.vendorName,
+                    percentage: rule.percentage,
+                    points: pages / rule.threshold
+                });
+            } else {
+                selectedBasicCount++;
+            }
+        });
+
+        const totalPoolPoints = selectedRoyaltyDetails.reduce((s, x) => s + x.points, 0);
+
+        const filteredBooks = availableBooks.filter(item => {
+            const b = item.raw || item;
+            if (!bookSearchQuery.trim()) return true;
+            const q = bookSearchQuery.toLowerCase();
+            const title = (b.itemName || b.ItemName || '').toLowerCase();
+            const author = (b.authorName || b.AuthorName || '').toLowerCase();
+            const vendor = (b.vendorName || b.VendorName || '').toLowerCase();
+            return title.includes(q) || author.includes(q) || vendor.includes(q);
+        });
+
         return (
             <div className="w-full bg-white p-6 rounded-lg shadow-md border border-slate-200 space-y-6">
 
@@ -231,7 +329,7 @@ function PlanMaster({ triggerToast }) {
                                 <i className="fa-solid fa-crown text-amber-500"></i>
                                 {editingPlan ? 'Edit Subscription Plan Page' : 'Configure New Subscription Plan Page'}
                             </h3>
-                            <p className="text-xs text-slate-500">Type any manual plan name & billing cycle limit directly in the form below.</p>
+                            <p className="text-xs text-slate-500">Configure plan pricing, limits, and select exact books included in this plan.</p>
                         </div>
                     </div>
 
@@ -360,11 +458,156 @@ function PlanMaster({ triggerToast }) {
                         </div>
                     </div>
 
-                    {/* SECTION 3: FEATURES & LIMITATIONS */}
+                    {/* SECTION 3: SELECT BOOKS INCLUDED IN THIS PLAN WITH ROYALTY % BADGE */}
+                    <div className="bg-blue-50/50 p-5 rounded-lg border border-blue-200 space-y-4">
+                        <div className="flex flex-wrap justify-between items-center border-b border-blue-200 pb-2 gap-2">
+                            <div>
+                                <h4 className="font-bold text-blue-900 text-sm flex items-center gap-2">
+                                    <i className="fa-solid fa-layer-group text-blue-600"></i>
+                                    3. Select Books Included in Plan ({selectedPlanBookIds.length} Selected)
+                                </h4>
+                                <p className="text-[11px] text-slate-500">
+                                    Selected: <strong className="text-emerald-700">{selectedRoyaltyDetails.length} Royalty Books</strong> (30% Pool Share) &bull; <strong className="text-slate-700">{selectedBasicCount} Basic Books</strong>
+                                </p>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2">
+                                <input
+                                    type="text"
+                                    value={bookSearchQuery}
+                                    onChange={e => setBookSearchQuery(e.target.value)}
+                                    placeholder="Search book or vendor..."
+                                    className="border border-slate-300 rounded px-3 py-1.5 text-xs bg-white outline-none focus:border-blue-600"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setSelectedPlanBookIds(availableBooks.map(item => String((item.raw || item).id || (item.raw || item).Id)))}
+                                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-1.5 rounded text-[11px] cursor-pointer">
+                                    Select All ({availableBooks.length})
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setSelectedPlanBookIds([])}
+                                    className="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold px-3 py-1.5 rounded text-[11px] cursor-pointer">
+                                    Clear
+                                </button>
+                            </div>
+                        </div>
+
+                        {filteredBooks.length === 0 ? (
+                            <div className="text-center py-6 bg-white rounded border border-dashed text-slate-400">
+                                No books available to select.
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 max-h-72 overflow-y-auto pr-1">
+                                {filteredBooks.map(item => {
+                                    const b = item.raw || item;
+                                    const bId = String(b.id || b.Id);
+                                    const isChecked = selectedPlanBookIds.includes(bId);
+                                    const rule = royaltyRulesMap[bId.toLowerCase()];
+                                    const pages = b.noOfPages || b.NoOfPages || 0;
+                                    const pts = (rule && rule.isRoyalty && rule.threshold > 0)
+                                        ? (pages / rule.threshold).toFixed(2)
+                                        : '0.00';
+                                    const vName = b.vendorName || b.VendorName || 'In-House';
+
+                                    return (
+                                        <label
+                                            key={bId}
+                                            className={`flex items-start justify-between p-3 rounded border cursor-pointer transition ${isChecked
+                                                    ? 'bg-blue-100/70 border-blue-500 shadow-sm'
+                                                    : 'bg-white border-slate-200 hover:bg-slate-50'
+                                                }`}>
+                                            <div className="flex items-start gap-2.5">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isChecked}
+                                                    onChange={() => togglePlanBookSelection(bId)}
+                                                    className="mt-1 w-4 h-4 accent-blue-600 cursor-pointer"
+                                                />
+                                                <div>
+                                                    <div className="font-bold text-slate-900 text-xs line-clamp-1">
+                                                        {b.itemName || b.ItemName}
+                                                    </div>
+                                                    <div className="text-[10px] text-slate-500">
+                                                        {b.authorName || b.AuthorName} | {pages} Pages
+                                                    </div>
+                                                    <div className="flex flex-wrap items-center gap-1 mt-1">
+                                                        {rule && rule.isRoyalty ? (
+                                                            <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 font-bold px-1.5 py-0.5 rounded text-[9px]">
+                                                                Royalty: Yes ({rule.percentage}% | {pts} Pts &bull; {rule.vendorName})
+                                                            </span>
+                                                        ) : (
+                                                            <span className="bg-slate-200 text-slate-700 font-semibold px-1.5 py-0.5 rounded text-[9px]">
+                                                                Royalty: No (Basic &bull; {vName})
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <span className="font-extrabold text-emerald-700 text-xs">
+                                                ₹{b.price !== undefined ? b.price : b.Price}
+                                            </span>
+                                        </label>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        {/* LIVE 30% ROYALTY POOL SPLIT PREVIEW */}
+                        {selectedPlanBookIds.length > 0 && (
+                            <div className="bg-white p-4 rounded-lg border border-blue-300 space-y-2 mt-2">
+                                <div className="flex flex-wrap justify-between items-center">
+                                    <span className="font-bold text-blue-900 text-xs">
+                                        <i className="fa-solid fa-chart-pie text-blue-600 mr-1"></i>
+                                        Live 30% Vendor Royalty Pool Split (On ₹{planPriceNum.toFixed(2)} Plan Price = ₹{pool30.toFixed(2)} Pool)
+                                    </span>
+                                    <span className="text-[11px] font-bold text-slate-600">
+                                        Total Pool Points: {totalPoolPoints.toFixed(2)} Pts
+                                    </span>
+                                </div>
+
+                                {selectedRoyaltyDetails.length === 0 ? (
+                                    <p className="text-[11px] text-slate-500">
+                                        No <strong>Royalty: Yes</strong> books selected in this plan. 100% revenue (₹{planPriceNum.toFixed(2)}) goes to Publisher.
+                                    </p>
+                                ) : (
+                                    <table className="w-full text-left text-[11px] border">
+                                        <thead>
+                                            <tr className="bg-blue-50 text-blue-900 font-bold border-b">
+                                                <th className="p-2">Vendor Name</th>
+                                                <th className="p-2">Royalty Book</th>
+                                                <th className="p-2">Rule % / Points</th>
+                                                <th className="p-2">Pool Share %</th>
+                                                <th className="p-2 text-right">Vendor Payout (₹)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {selectedRoyaltyDetails.map((rd, idx) => {
+                                                const ratio = totalPoolPoints > 0 ? (rd.points / totalPoolPoints) : 0;
+                                                const payout = pool30 * ratio;
+                                                return (
+                                                    <tr key={idx} className="border-b last:border-0">
+                                                        <td className="p-2 font-bold text-indigo-900">{rd.vendorName}</td>
+                                                        <td className="p-2">{rd.bookName}</td>
+                                                        <td className="p-2">{rd.percentage}% ({rd.points.toFixed(2)} Pts)</td>
+                                                        <td className="p-2 font-bold text-blue-700">{(ratio * 100).toFixed(1)}%</td>
+                                                        <td className="p-2 text-right font-extrabold text-emerald-700">₹{payout.toFixed(2)}</td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* SECTION 4: FEATURES & LIMITATIONS */}
                     <div className="bg-indigo-50/40 p-5 rounded-lg border border-indigo-200 space-y-4">
                         <div className="flex justify-between items-center border-b border-indigo-200 pb-2">
                             <h4 className="font-bold text-indigo-900 text-sm flex items-center gap-2">
-                                <i className="fa-solid fa-list-check text-indigo-600"></i> 3. Features Dropdown & Limitation Rules
+                                <i className="fa-solid fa-list-check text-indigo-600"></i> 4. Features Dropdown & Limitation Rules
                             </h4>
                             <button
                                 type="button"
@@ -466,7 +709,7 @@ function PlanMaster({ triggerToast }) {
                     <h2 className="text-xl font-bold text-[#0d233a] flex items-center gap-2">
                         <i className="fa-solid fa-crown text-amber-500"></i> Subscription Plans Master Page
                     </h2>
-                    <p className="text-xs text-slate-500 mt-0.5">Manage custom plans with manual text names, billing cycles & book limits.</p>
+                    <p className="text-xs text-slate-500 mt-0.5">Manage custom plans with manual text names, billing cycles, book limits & included books.</p>
                 </div>
             </div>
 
@@ -485,6 +728,7 @@ function PlanMaster({ triggerToast }) {
                     {plansList.map(plan => {
                         const pName = plan.planName || plan.PlanName;
                         const pFeatures = plan.features || plan.Features || [];
+                        const mappedCount = (plan.bookIds || plan.BookIds || plan.planBooks || plan.PlanBooks || []).length;
                         const isPopular = pName.toLowerCase().includes('advance') || pName.toLowerCase().includes('gold') || pName.toLowerCase().includes('vip');
 
                         return (
@@ -518,6 +762,10 @@ function PlanMaster({ triggerToast }) {
                                             <span>Royalty Books Access:</span>
                                             <span className="text-indigo-700">{(plan.royaltyBookLimit ?? plan.RoyaltyBookLimit) === -1 ? 'Unlimited' : `${plan.royaltyBookLimit ?? plan.RoyaltyBookLimit} Books`}</span>
                                         </div>
+                                        <div className="flex justify-between font-bold text-blue-700 border-t pt-1">
+                                            <span>Mapped Specific Books:</span>
+                                            <span>{mappedCount} Books Selected</span>
+                                        </div>
                                         <div className="flex justify-between text-[11px] text-slate-500 font-semibold border-t pt-1">
                                             <span>Validity:</span>
                                             <span>{plan.validityInDays || plan.ValidityInDays} Days</span>
@@ -545,12 +793,12 @@ function PlanMaster({ triggerToast }) {
                                 <div className="p-4 bg-slate-50 border-t flex justify-between items-center text-xs">
                                     <button
                                         onClick={() => resetAndOpenForm(plan)}
-                                        className="text-indigo-600 font-bold hover:underline flex items-center gap-1">
+                                        className="text-indigo-600 font-bold hover:underline flex items-center gap-1 cursor-pointer">
                                         <i className="fa-solid fa-pen-to-square"></i> Edit Plan
                                     </button>
                                     <button
                                         onClick={() => handleDeletePlan(plan.id || plan.Id, pName)}
-                                        className="text-red-600 font-bold hover:underline flex items-center gap-1">
+                                        className="text-red-600 font-bold hover:underline flex items-center gap-1 cursor-pointer">
                                         <i className="fa-solid fa-trash"></i> Delete
                                     </button>
                                 </div>

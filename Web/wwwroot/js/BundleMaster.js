@@ -3,6 +3,7 @@
 function BundleMaster({ triggerToast }) {
     const [bundles, setBundles] = React.useState([]);
     const [availableBooks, setAvailableBooks] = React.useState([]);
+    const [royaltyRulesMap, setRoyaltyRulesMap] = React.useState({});
     const [loading, setLoading] = React.useState(false);
     const [loadingBooks, setLoadingBooks] = React.useState(false);
 
@@ -30,15 +31,13 @@ function BundleMaster({ triggerToast }) {
         }
     };
 
-    // FIX: Using exact endpoint `/api/author/book/my-books` from your BookController
-    const fetchBooks = async () => {
+    const fetchBooksAndRoyalties = async () => {
         setLoadingBooks(true);
         try {
             let res = await fetch('/api/author/book/my-books');
             let data = [];
 
             if (!res.ok) {
-                // Fallback route if route prefix differs
                 res = await fetch('/api/reader/catalog/all-books');
             }
 
@@ -52,11 +51,37 @@ function BundleMaster({ triggerToast }) {
                     itemName: b.itemName || b.ItemName || b.title || 'Untitled Book',
                     isbn: b.isbn || b.ISBN || 'N/A',
                     authorName: b.authorName || b.AuthorName || b.author || 'N/A',
+                    noOfPages: parseInt(b.noOfPages || b.NoOfPages || 0, 10) || 0,
+                    vendorName: b.vendorName || b.VendorName || 'In-House (B. Jain)',
                     price: parseFloat(b.price !== undefined ? b.price : (b.Price !== undefined ? b.Price : 0)) || 0
                 })));
             }
+
+            // Vendors ke Royalty Rules fetch karke exact Royalty % aur Points map karein
+            const resVendors = await fetch('/api/vendor/get-all');
+            if (resVendors.ok) {
+                const vendorsData = await resVendors.json();
+                const rulesMap = {};
+                (vendorsData || []).forEach(v => {
+                    const vName = v.name || v.Name || v.vendorName || v.VendorName || 'Vendor';
+                    const rules = v.royaltyRules || v.RoyaltyRules || [];
+                    rules.forEach(r => {
+                        const bId = String(r.bookId || r.BookId).toLowerCase();
+                        const status = r.liveStatus || r.LiveStatus || 'Live';
+                        if (status === 'Live') {
+                            rulesMap[bId] = {
+                                vendorName: vName,
+                                isRoyalty: r.isRoyaltyApplicable ?? r.IsRoyaltyApplicable ?? false,
+                                percentage: r.royaltyPercentage ?? r.RoyaltyPercentage ?? 30,
+                                threshold: r.royaltyPageThreshold ?? r.RoyaltyPageThreshold ?? 100
+                            };
+                        }
+                    });
+                });
+                setRoyaltyRulesMap(rulesMap);
+            }
         } catch (e) {
-            console.error("Error fetching books for bundle:", e);
+            console.error("Error fetching books/royalties for bundle:", e);
         } finally {
             setLoadingBooks(false);
         }
@@ -64,7 +89,7 @@ function BundleMaster({ triggerToast }) {
 
     React.useEffect(() => {
         fetchBundles();
-        fetchBooks();
+        fetchBooksAndRoyalties();
     }, []);
 
     // Calculate Total Original MRP & Auto Final Price based on Selected Books
@@ -169,6 +194,27 @@ function BundleMaster({ triggerToast }) {
 
     // PAGE VIEW MODE 1: FULL PAGE FORM
     if (viewMode === 'form') {
+        // Selected Royalty Books ka live 30% Pool calculation
+        const sellingPriceNum = parseFloat(finalPrice) || 0;
+        const pool30 = sellingPriceNum * 0.30;
+
+        const selectedRoyaltyDetails = selectedBookIds
+            .map(id => {
+                const bk = availableBooks.find(x => String(x.id) === String(id));
+                const rule = royaltyRulesMap[String(id).toLowerCase()];
+                if (!bk || !rule || !rule.isRoyalty || rule.threshold <= 0) return null;
+                const pts = bk.noOfPages / rule.threshold;
+                return {
+                    bookName: bk.itemName,
+                    vendorName: rule.vendorName,
+                    percentage: rule.percentage,
+                    points: pts
+                };
+            })
+            .filter(Boolean);
+
+        const totalPoolPoints = selectedRoyaltyDetails.reduce((s, x) => s + x.points, 0);
+
         return (
             <div className="w-full bg-white p-6 rounded-lg shadow-md border border-slate-200 space-y-6 text-xs">
                 {/* PAGE HEADER */}
@@ -228,13 +274,15 @@ function BundleMaster({ triggerToast }) {
                         </div>
                     </div>
 
-                    {/* SECTION 2: BOOK SELECTION LIST */}
+                    {/* SECTION 2: BOOK SELECTION LIST WITH ROYALTY % BADGE */}
                     <div className="bg-indigo-50/40 p-5 rounded-lg border border-indigo-200 space-y-4">
                         <div className="flex justify-between items-center border-b border-indigo-200 pb-2">
                             <h4 className="font-bold text-indigo-900 text-sm flex items-center gap-2">
                                 <i className="fa-solid fa-book-bookmark text-indigo-600"></i> 2. Select Books for Bundle ({selectedBookIds.length} Selected)
                             </h4>
-                            <span className="font-bold text-slate-700">Total Selected Books Count: <strong className="text-indigo-700 text-sm">{selectedBookIds.length}</strong></span>
+                            <span className="font-bold text-slate-700">
+                                Royalty Books: <strong className="text-emerald-700">{selectedRoyaltyDetails.length}</strong> | Total Selected: <strong className="text-indigo-700 text-sm">{selectedBookIds.length}</strong>
+                            </span>
                         </div>
 
                         {loadingBooks ? (
@@ -244,24 +292,42 @@ function BundleMaster({ triggerToast }) {
                                 No books found in system catalog. Please add books from Book Master first.
                             </div>
                         ) : (
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-64 overflow-y-auto p-2 bg-white rounded border border-slate-300">
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-72 overflow-y-auto p-2 bg-white rounded border border-slate-300">
                                 {availableBooks.map(book => {
                                     const isChecked = selectedBookIds.includes(book.id);
+                                    const rule = royaltyRulesMap[String(book.id).toLowerCase()];
+                                    const pts = (rule && rule.isRoyalty && rule.threshold > 0)
+                                        ? (book.noOfPages / rule.threshold).toFixed(2)
+                                        : '0.00';
+
                                     return (
                                         <div
                                             key={book.id}
                                             onClick={() => toggleBookSelection(book.id)}
-                                            className={`p-3 rounded border cursor-pointer flex items-center justify-between transition ${isChecked ? 'bg-indigo-50 border-indigo-500 font-bold' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'}`}>
-                                            <div className="flex items-center gap-2.5">
+                                            className={`p-3 rounded border cursor-pointer flex items-start justify-between transition ${isChecked ? 'bg-indigo-50 border-indigo-500' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'}`}>
+                                            <div className="flex items-start gap-2.5">
                                                 <input
                                                     type="checkbox"
                                                     checked={isChecked}
                                                     onChange={() => { }}
-                                                    className="w-4 h-4 accent-indigo-600 cursor-pointer"
+                                                    className="mt-1 w-4 h-4 accent-indigo-600 cursor-pointer"
                                                 />
-                                                <div className="truncate max-w-[180px]">
-                                                    <span className="block text-slate-900 truncate font-bold">{book.itemName}</span>
-                                                    <span className="text-[10px] text-slate-500">{book.authorName} | ISBN: {book.isbn}</span>
+                                                <div>
+                                                    <span className="block text-slate-900 font-bold line-clamp-1">{book.itemName}</span>
+                                                    <span className="text-[10px] text-slate-500 block">
+                                                        {book.authorName} | {book.noOfPages} Pages
+                                                    </span>
+                                                    <div className="mt-1 flex flex-wrap items-center gap-1">
+                                                        {rule && rule.isRoyalty ? (
+                                                            <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 font-bold px-1.5 py-0.5 rounded text-[9px]">
+                                                                Royalty: Yes ({rule.percentage}% | {pts} Pts &bull; {rule.vendorName})
+                                                            </span>
+                                                        ) : (
+                                                            <span className="bg-slate-200 text-slate-700 font-semibold px-1.5 py-0.5 rounded text-[9px]">
+                                                                Royalty: No (Basic &bull; {book.vendorName})
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </div>
                                             <span className="font-extrabold text-emerald-700">₹{book.price}</span>
@@ -318,6 +384,54 @@ function BundleMaster({ triggerToast }) {
                                 />
                             </div>
                         </div>
+
+                        {/* LIVE 30% ROYALTY POOL SPLIT PREVIEW */}
+                        {selectedBookIds.length > 0 && (
+                            <div className="bg-white p-4 rounded-lg border border-emerald-300 space-y-2 mt-3">
+                                <div className="flex flex-wrap justify-between items-center">
+                                    <span className="font-bold text-emerald-900 text-xs">
+                                        <i className="fa-solid fa-chart-pie text-emerald-600 mr-1"></i>
+                                        Live 30% Vendor Royalty Pool Split (On ₹{sellingPriceNum.toFixed(2)} Bundle Sale = ₹{pool30.toFixed(2)} Pool)
+                                    </span>
+                                    <span className="text-[11px] font-bold text-slate-600">
+                                        Total Pool Points: {totalPoolPoints.toFixed(2)} Pts
+                                    </span>
+                                </div>
+
+                                {selectedRoyaltyDetails.length === 0 ? (
+                                    <p className="text-[11px] text-slate-500">
+                                        No <strong>Royalty: Yes</strong> books selected in this bundle. 100% revenue (₹{sellingPriceNum.toFixed(2)}) goes to Publisher.
+                                    </p>
+                                ) : (
+                                    <table className="w-full text-left text-[11px] border">
+                                        <thead>
+                                            <tr className="bg-emerald-50 text-emerald-900 font-bold border-b">
+                                                <th className="p-2">Vendor Name</th>
+                                                <th className="p-2">Royalty Book</th>
+                                                <th className="p-2">Rule % / Points</th>
+                                                <th className="p-2">Pool Share %</th>
+                                                <th className="p-2 text-right">Vendor Payout (₹)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {selectedRoyaltyDetails.map((rd, idx) => {
+                                                const ratio = totalPoolPoints > 0 ? (rd.points / totalPoolPoints) : 0;
+                                                const payout = pool30 * ratio;
+                                                return (
+                                                    <tr key={idx} className="border-b last:border-0">
+                                                        <td className="p-2 font-bold text-indigo-900">{rd.vendorName}</td>
+                                                        <td className="p-2">{rd.bookName}</td>
+                                                        <td className="p-2">{rd.percentage}% ({rd.points.toFixed(2)} Pts)</td>
+                                                        <td className="p-2 font-bold text-blue-700">{(ratio * 100).toFixed(1)}%</td>
+                                                        <td className="p-2 text-right font-extrabold text-emerald-700">₹{payout.toFixed(2)}</td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                )}
+                            </div>
+                        )}
                     </div>
 
                     {/* BOTTOM SAVE BAR */}
@@ -358,7 +472,7 @@ function BundleMaster({ triggerToast }) {
                     <h2 className="text-xl font-bold text-[#0d233a] flex items-center gap-2">
                         <i className="fa-solid fa-layer-group text-amber-500"></i> Book Bundle Master Page
                     </h2>
-                    <p className="text-xs text-slate-500 mt-0.5">Create and manage multi-book offers (5, 10, 15 titles) with bundle discount pricing.</p>
+                    <p className="text-xs text-slate-500 mt-0.5">Create and manage multi-book offers (5, 10, 15 titles) with bundle discount pricing & 30% vendor royalty split.</p>
                 </div>
                 <button
                     onClick={() => openBundleForm()}

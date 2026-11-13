@@ -210,6 +210,13 @@ namespace Infrastructure.Migrations
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<Guid?>("VendorId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("VendorName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("AuthorId");
@@ -217,6 +224,8 @@ namespace Infrastructure.Migrations
                     b.HasIndex("AuthorMasterId");
 
                     b.HasIndex("LanguageMasterId");
+
+                    b.HasIndex("VendorId");
 
                     b.ToTable("Books");
                 });
@@ -823,6 +832,53 @@ namespace Infrastructure.Migrations
                     b.ToTable("VendorRoyaltyRules");
                 });
 
+            modelBuilder.Entity("Domain.Entities.VendorRoyaltyTransaction", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("BookId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("BookName")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal>("BookPoints")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal>("EarnedRoyaltyAmount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("OrderReferenceId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("PurchaseType")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal>("RoyaltyPoolAmount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("TotalOrderAmount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("TotalOrderPoints")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<Guid>("VendorId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("VendorRoyaltyTransactions");
+                });
+
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>
                 {
                     b.Property<int>("Id")
@@ -945,11 +1001,17 @@ namespace Infrastructure.Migrations
                         .WithMany()
                         .HasForeignKey("LanguageMasterId");
 
+                    b.HasOne("Domain.Entities.Vendor", "Vendor")
+                        .WithMany()
+                        .HasForeignKey("VendorId");
+
                     b.Navigation("Author");
 
                     b.Navigation("AuthorMaster");
 
                     b.Navigation("LanguageMaster");
+
+                    b.Navigation("Vendor");
                 });
 
             modelBuilder.Entity("BookPublishingSystem.Domain.Entities.BookSegmentAlpha", b =>

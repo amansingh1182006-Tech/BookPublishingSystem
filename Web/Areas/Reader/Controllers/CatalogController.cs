@@ -28,7 +28,14 @@ namespace Web.Areas.Reader.Controllers
         [HttpGet("all-books")]
         public async Task<IActionResult> GetAllBooks()
         {
-            var books = await _dbContext.Books
+            var royaltyBookIds = await _dbContext.VendorRoyaltyRules
+                .Where(r => r.IsRoyaltyApplicable && r.LiveStatus == "Live")
+                .Select(r => r.BookId)
+                .ToListAsync();
+
+            var royaltySet = new HashSet<Guid>(royaltyBookIds);
+
+            var rawBooks = await _dbContext.Books
                 .Where(b => b.IsPublished)
                 .Select(b => new
                 {
@@ -46,6 +53,21 @@ namespace Web.Areas.Reader.Controllers
                     createdAt = b.CreatedAt
                 })
                 .ToListAsync();
+
+            var books = rawBooks.Select(b => new
+            {
+                b.id,
+                b.itemNo,
+                b.itemName,
+                b.price,
+                b.noOfPages,
+                b.categoryCode,
+                b.image,
+                b.author,
+                b.chunkCount,
+                isRoyaltyApplicable = royaltySet.Contains(b.id), // Home Page ke liye sirf Yes/No flag
+                b.createdAt
+            }).ToList();
 
             return Ok(books);
         }

@@ -17,8 +17,10 @@ namespace Infrastructure
 
             // Direct interface binding to ApplicationDbContext (No Lambda Needed)
             services.AddScoped<IApplicationDbContext, ApplicationDbContext>();
+            services.AddScoped<Application.Interfaces.IRoyaltyDistributionService, Infrastructure.Services.RoyaltyDistributionService>();
 
             return services;
         }
+
     }
 }

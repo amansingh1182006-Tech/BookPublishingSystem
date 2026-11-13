@@ -155,6 +155,54 @@ namespace Web.Controllers
             }
         }
 
+        // GET: api/vendor/vendor-books/{id}
+        [HttpGet("vendor-books/{id}")]
+        public async Task<IActionResult> GetVendorBooks(Guid id)
+        {
+            var vendor = await _dbContext.Vendors.FindAsync(id);
+            if (vendor == null)
+                return NotFound(new { success = false, message = "Vendor not found." });
+
+            string cleanVendorName = (vendor.Name ?? "").Trim().ToLower();
+
+            var vendorBooks = await _dbContext.Books
+                .Where(b => b.VendorId == id || (!string.IsNullOrEmpty(b.VendorName) && b.VendorName.ToLower() == cleanVendorName))
+                .OrderByDescending(b => b.CreatedAt)
+                .Select(b => new
+                {
+                    id = b.Id,
+                    itemNo = b.ItemNo,
+                    itemName = b.ItemName,
+                    noOfPages = b.NoOfPages,
+                    price = b.Price,
+                    vendorId = b.VendorId,
+                    vendorName = b.VendorName
+                })
+                .ToListAsync();
+
+            return Ok(new { success = true, books = vendorBooks });
+        }
+
+        // GET: api/vendor/earnings/{vendorId}
+        [HttpGet("earnings/{vendorId}")]
+        public async Task<IActionResult> GetVendorEarnings(Guid vendorId)
+        {
+            var transactions = await _dbContext.VendorRoyaltyTransactions
+                .Where(t => t.VendorId == vendorId)
+                .OrderByDescending(t => t.CreatedAt)
+                .ToListAsync();
+
+            return Ok(new
+            {
+                success = true,
+                totalEarned = transactions.Sum(t => t.EarnedRoyaltyAmount),
+                singleSalesEarned = transactions.Where(t => t.PurchaseType == "SingleBook").Sum(t => t.EarnedRoyaltyAmount),
+                bundleSalesEarned = transactions.Where(t => t.PurchaseType == "Bundle").Sum(t => t.EarnedRoyaltyAmount),
+                planSalesEarned = transactions.Where(t => t.PurchaseType == "Plan").Sum(t => t.EarnedRoyaltyAmount),
+                transactions = transactions
+            });
+        }
+
         // POST: api/vendor/add-royalty-rule
         [HttpPost("add-royalty-rule")]
         public async Task<IActionResult> AddRoyaltyRule([FromBody] VendorRoyaltyRuleDto dto)
@@ -166,30 +214,53 @@ namespace Web.Controllers
                     return BadRequest(new { success = false, message = "Invalid Rule Data. VendorId and BookId are required." });
                 }
 
-                var rule = new VendorRoyaltyRule
-                {
-                    Id = Guid.NewGuid(),
-                    VendorId = dto.VendorId,
-                    BookId = dto.BookId,
-                    BookName = dto.BookName ?? "",
-                    IsRoyaltyApplicable = dto.IsRoyaltyApplicable,
-                    RoyaltyPageThreshold = dto.RoyaltyPageThreshold,
-                    RoyaltyPercentage = dto.RoyaltyPercentage,
-                    RoyaltyFlatAmount = dto.RoyaltyFlatAmount,
-                    PublishingStartDate = dto.PublishingStartDate != default ? dto.PublishingStartDate : DateTime.UtcNow,
-                    LiveStatus = string.IsNullOrWhiteSpace(dto.LiveStatus) ? "Live" : dto.LiveStatus,
-                    Status = string.IsNullOrWhiteSpace(dto.Status) ? "Active" : dto.Status
-                };
+                var book = await _dbContext.Books.FindAsync(dto.BookId);
+                string resolvedBookName = !string.IsNullOrWhiteSpace(dto.BookName)
+                    ? dto.BookName.Trim()
+                    : (book?.ItemName ?? "Mapped Book");
 
-                _dbContext.VendorRoyaltyRules.Add(rule);
+                // Agar is book ka rule pehle se bana hai toh update karein, warna naya banayein
+                var existingRule = await _dbContext.VendorRoyaltyRules
+                    .FirstOrDefaultAsync(r => r.VendorId == dto.VendorId && r.BookId == dto.BookId);
+
+                if (existingRule != null)
+                {
+                    existingRule.BookName = resolvedBookName;
+                    existingRule.IsRoyaltyApplicable = dto.IsRoyaltyApplicable;
+                    existingRule.RoyaltyPageThreshold = dto.IsRoyaltyApplicable ? dto.RoyaltyPageThreshold : 0;
+                    existingRule.RoyaltyPercentage = dto.IsRoyaltyApplicable ? dto.RoyaltyPercentage : 0;
+                    existingRule.RoyaltyFlatAmount = dto.IsRoyaltyApplicable ? dto.RoyaltyFlatAmount : 0;
+                    existingRule.PublishingStartDate = dto.PublishingStartDate != default ? dto.PublishingStartDate : existingRule.PublishingStartDate;
+                    existingRule.LiveStatus = string.IsNullOrWhiteSpace(dto.LiveStatus) ? "Live" : dto.LiveStatus;
+                    existingRule.Status = "Active";
+                }
+                else
+                {
+                    var rule = new VendorRoyaltyRule
+                    {
+                        Id = Guid.NewGuid(),
+                        VendorId = dto.VendorId,
+                        BookId = dto.BookId,
+                        BookName = resolvedBookName,
+                        IsRoyaltyApplicable = dto.IsRoyaltyApplicable,
+                        RoyaltyPageThreshold = dto.IsRoyaltyApplicable ? dto.RoyaltyPageThreshold : 0,
+                        RoyaltyPercentage = dto.IsRoyaltyApplicable ? dto.RoyaltyPercentage : 0,
+                        RoyaltyFlatAmount = dto.IsRoyaltyApplicable ? dto.RoyaltyFlatAmount : 0,
+                        PublishingStartDate = dto.PublishingStartDate != default ? dto.PublishingStartDate : DateTime.UtcNow,
+                        LiveStatus = string.IsNullOrWhiteSpace(dto.LiveStatus) ? "Live" : dto.LiveStatus,
+                        Status = string.IsNullOrWhiteSpace(dto.Status) ? "Active" : dto.Status
+                    };
+                    _dbContext.VendorRoyaltyRules.Add(rule);
+                }
+
                 await _dbContext.SaveChangesAsync();
 
-                return Ok(new { success = true, message = "Royalty Rule Added Successfully!", rule });
+                return Ok(new { success = true, message = "Royalty Rule Saved Successfully!" });
             }
             catch (Exception ex)
             {
                 string detailedError = ex.InnerException != null ? ex.InnerException.Message : ex.Message;
-                return BadRequest(new { success = false, message = "Error adding rule: " + detailedError });
+                return BadRequest(new { success = false, message = "Error saving rule: " + detailedError });
             }
         }
 
@@ -212,5 +283,7 @@ namespace Web.Controllers
                 return BadRequest(new { success = false, message = "Delete Error: " + ex.Message });
             }
         }
+
+
     }
 }

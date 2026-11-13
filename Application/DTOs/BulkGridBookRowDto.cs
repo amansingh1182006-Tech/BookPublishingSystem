@@ -16,6 +16,7 @@ namespace Application.DTOs
         public string? ISBN { get; set; }
         public string ItemName { get; set; } = string.Empty;
         public string? CategoryCode { get; set; }
+        public string? VendorName { get; set; }
         public string? AuthorName { get; set; }
         public string? Language { get; set; }
         public decimal Price { get; set; }

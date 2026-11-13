@@ -1,4 +1,8 @@
-﻿namespace BookPublishingSystem.Domain.Entities;
+﻿using Domain.Entities;
+using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
+
+namespace BookPublishingSystem.Domain.Entities;
 
 public class Book
 {
@@ -20,6 +24,11 @@ public class Book
     public decimal Price { get; set; }
     public string AuthorId { get; set; } = string.Empty; 
     public ApplicationUser Author { get; set; } = null!;
+    public Guid? VendorId { get; set; }
+    [MaxLength(200)]
+    public string? VendorName { get; set; }
+    [ForeignKey("VendorId")]
+    public virtual Vendor? Vendor { get; set; }
     public bool IsPublished { get; set; } = false;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAt { get; set; }

@@ -409,6 +409,7 @@ function App() {
     const [categoriesList, setCategoriesList] = useState([]);
     const [customersList, setCustomersList] = useState([]);
     const [authorsList, setAuthorsList] = useState([]);
+    const [vendorsList, setVendorsList] = useState([]);
     const [languagesList, setLanguagesList] = useState([]);
     const [keywordsList, setKeywordsList] = useState([]);
     const [plansList, setPlansList] = useState([]);
@@ -706,6 +707,15 @@ function App() {
             }
         } catch (e) { console.error("Fetch authors error:", e); }
     };
+    const fetchVendorsMaster = async () => {
+        try {
+            const res = await fetch('/api/vendor/get-all');
+            if (res.ok) {
+                const data = await res.json();
+                setVendorsList(Array.isArray(data) ? data : []);
+            }
+        } catch (e) { console.error("Fetch vendors error:", e); }
+    };
 
     const fetchStoreBooks = async () => {
         setLoadingBooks(true);
@@ -789,9 +799,11 @@ function App() {
                         isbn: b.isbn || b.ISBN || b.Isbn || 'N/A',
                         authorName: actualAuthor,
                         publishedBy: publisher,
+                        vendorName: b.vendorName || b.VendorName || 'In-House (B. Jain)',
                         language: b.language || b.Language || 'English',
                         price: b.price !== undefined ? b.price : (b.Price !== undefined ? b.Price : 0),
                         noOfPages: b.noOfPages || b.NoOfPages || 1,
+                        isPublished: b.isPublished !== undefined ?b.isPublished : (b.IsPublished !== undefined ? b.IsPublished : false),
                         isPublished: b.isPublished !== undefined ? b.isPublished : (b.IsPublished !== undefined ? b.IsPublished : false),
                         raw: {
                             ...b,
@@ -825,6 +837,7 @@ function App() {
         fetchKeywordsMaster();
         fetchPlansMaster();
         fetchAuthorsMaster();
+        fetchVendorsMaster();
 
         const urlParams = new URLSearchParams(window.location.search);
         const resumeBookId = urlParams.get('readBookId');
@@ -1737,7 +1750,7 @@ function App() {
                         {(selectedMaster === 'vendors') ? (
                             VendorMasterComp ? (
                                 <VendorMasterComp
-                                    booksList={storeBooks}
+                                    booksList={myAuthorBooks}
                                     triggerToast={triggerToast}
                                 />
                             ) : <div>Vendor Master Component Not Loaded</div>
@@ -1746,7 +1759,8 @@ function App() {
                                 <AddBookFormComp
                                     categoriesList={categoriesList}
                                     languagesList={languagesList}
-                                    authorsList={authorsList}
+                                        authorsList={authorsList}
+                                        vendorsList={vendorsList}
                                     onOpenAddCategoryModal={() => setShowAddCategoryModal(true)}
                                     onOpenAddLanguageModal={() => setShowAddLanguageModal(true)}
                                     onOpenAddAuthorModal={() => setShowAddAuthorModal(true)}
@@ -2030,6 +2044,7 @@ function App() {
                                                         <th className="p-3">ISBN</th>
                                                         <th className="p-3">Author Name</th>
                                                         <th className="p-3">Published By</th>
+                                                                                                                        <th className="p-3">Vendor Name</th>
                                                         <th className="p-3">Language</th>
                                                         <th className="p-3">Price (₹)</th>
                                                         <th className="p-3">Pages</th>
@@ -2101,7 +2116,10 @@ function App() {
                                                                 </td>
                                                                 <td className="p-3 font-bold text-slate-700">
                                                                     {item.raw.extractedPublisherName || item.raw.createdBy || item.raw.CreatedBy || item.raw.publisherName || item.raw.PublisherName || 'System Administrator'}
-                                                                </td>
+                                                                    </td>
+                                                                    <td className="p-3 font-bold text-indigo-700">
+                                                                        {item.raw.vendorName || item.raw.VendorName || 'In-House (B. Jain)'}
+                                                                    </td>
                                                                 <td className="p-3 font-medium text-slate-700">
                                                                     {item.raw.language || item.raw.Language || 'English'}
                                                                 </td>
@@ -2249,6 +2267,13 @@ function App() {
                                                     </span>
                                                     <h3 className="font-bold text-slate-900 text-sm line-clamp-2 mt-1">{b.itemName || b.ItemName}</h3>
                                                     <p className="text-slate-500 text-[11px]">by {getBookAuthorName(b)}</p>
+                                                    {(b.isRoyaltyApplicable || b.IsRoyaltyApplicable) && (
+                                                        <div className="mt-1">
+                                                            <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-extrabold px-2 py-0.5 rounded-full">
+                                                                <i className="fa-solid fa-crown text-amber-600"></i> Royalty: Yes
+                                                            </span>
+                                                        </div>
+                                                    )}
                                                 </div>
 
                                                 <div className="space-y-2 pt-2 border-t">
@@ -2606,13 +2631,14 @@ function App() {
     );
 }
 
-function BulkGridFormContainer({ categoriesList, languagesList, authorsList, onSuccess, onCancel }) {
+function BulkGridFormContainer({ categoriesList, languagesList, authorsList, vendorsList, onSuccess, onCancel }) {
     const createEmptyRow = () => ({
         itemNo: '',
         isbn: '',
         itemName: '',
         categoryCode: categoriesList.length > 0 ? (categoriesList[0].categoryCode || categoriesList[0].CategoryCode) : '',
         authorName: authorsList.length > 0 ? authorsList[0].name : '',
+        vendorName: '',
         language: languagesList.length > 0 ? (languagesList[0].name || languagesList[0].languageName) : 'English',
         price: '',
         noOfPages: '',
@@ -2712,6 +2738,7 @@ function BulkGridFormContainer({ categoriesList, languagesList, authorsList, onS
             formData.append(`Books[${idx}].ItemName`, r.itemName.trim());
             formData.append(`Books[${idx}].CategoryCode`, r.categoryCode);
             formData.append(`Books[${idx}].AuthorName`, r.authorName);
+            formData.append(`Books[${idx}].VendorName`, r.vendorName || '');
             formData.append(`Books[${idx}].Language`, r.language);
             formData.append(`Books[${idx}].Price`, r.price || '0');
             formData.append(`Books[${idx}].NoOfPages`, r.noOfPages || '1');
@@ -2792,6 +2819,7 @@ function BulkGridFormContainer({ categoriesList, languagesList, authorsList, onS
                             <th className="p-2 min-w-[200px]">Book Name *</th>
                             <th className="p-2 min-w-[150px]">Category *</th>
                             <th className="p-2 min-w-[150px]">Author Name</th>
+                            <th className="p-2 min-w-[150px]">Vendor Name</th>
                             <th className="p-2 min-w-[110px]">Language</th>
                             <th className="p-2 min-w-[90px]">Price (₹) *</th>
                             <th className="p-2 min-w-[80px]">Pages *</th>
@@ -2855,6 +2883,22 @@ function BulkGridFormContainer({ categoriesList, languagesList, authorsList, onS
                                             </option>
                                         ))}
                                     </select>
+                                </td>
+                                <td className="p-1">
+                                    <input
+                                        type="text"
+                                        list={`vendors-datalist-row-${idx}`}
+                                        placeholder="Enter Vendor Name"
+                                        value={row.vendorName}
+                                        onChange={e => handleRowChange(idx, 'vendorName', e.target.value)}
+                                        className="w-full border rounded px-2 py-1 font-semibold bg-emerald-50/50 outline-none focus:border-emerald-600"
+                                    />
+                                    <datalist id={`vendors-datalist-row-${idx}`}>
+                                        {vendorsList && vendorsList.map(v => {
+                                            const vName = v.name || v.Name || v.vendorName || v.VendorName;
+                                            return <option key={v.id || v.Id} value={vName} />;
+                                        })}
+                                    </datalist>
                                 </td>
                                 <td className="p-1">
                                     <select
