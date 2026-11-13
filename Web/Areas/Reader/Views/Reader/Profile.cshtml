@@ -49,6 +49,10 @@
             const [libraryBooks, setLibraryBooks] = useState([]);
             const [isLibraryLoading, setIsLibraryLoading] = useState(true);
 
+            // ACTIVE PLANS & PURCHASED BUNDLES STATE
+            const [membershipData, setMembershipData] = useState({ plans: [], bundles: [] });
+            const [isMembershipLoading, setIsMembershipLoading] = useState(true);
+
             // HELPER TO FETCH MY LIBRARY WITH FALLBACK ROUTES
             const fetchUserLibrary = async () => {
                 setIsLibraryLoading(true);
@@ -65,6 +69,25 @@
                     console.error("Library fetch error:", err);
                 } finally {
                     setIsLibraryLoading(false);
+                }
+            };
+
+            // HELPER TO FETCH ACTIVE PLANS & PURCHASED BUNDLES
+            const fetchMembershipDetails = async () => {
+                setIsMembershipLoading(true);
+                try {
+                    const res = await fetch('/api/plan/my-profile-membership');
+                    if (res.ok) {
+                        const data = await res.json();
+                        setMembershipData({
+                            plans: Array.isArray(data.plans) ? data.plans : [],
+                            bundles: Array.isArray(data.bundles) ? data.bundles : []
+                        });
+                    }
+                } catch (err) {
+                    console.error("Membership fetch error:", err);
+                } finally {
+                    setIsMembershipLoading(false);
                 }
             };
 
@@ -103,11 +126,15 @@
                     .catch(err => setMessage({ text: 'Error loading profile: ' + err.message, type: 'error' }))
                     .finally(() => setIsLoading(false));
 
-                // 2. Initial Library Load
+                // 2. Initial Library & Membership Load
                 fetchUserLibrary();
+                fetchMembershipDetails();
 
                 // 3. Tab Focus Real-Time Sync
-                const handleFocus = () => fetchUserLibrary();
+                const handleFocus = () => {
+                    fetchUserLibrary();
+                    fetchMembershipDetails();
+                };
                 window.addEventListener('focus', handleFocus);
                 return () => window.removeEventListener('focus', handleFocus);
             }, []);
@@ -200,7 +227,7 @@
 
                         {/* PROFILE CONTAINER */}
                         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                            
+
                             {/* USER BANNER CARD */}
                             <div className="bg-gradient-to-r from-[#0d233a] to-[#163554] p-6 md:p-8 text-white flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
                                 <div className="flex items-center gap-4">
@@ -208,7 +235,7 @@
                                         {profile.custName ? profile.custName[0].toUpperCase() : 'U'}
                                     </div>
                                     <div className="space-y-1">
-                                        <div className="flex items-center gap-2">
+                                        <div className="flex flex-wrap items-center gap-2">
                                             <h1 className="text-2xl font-black">{profile.custName || 'Reader Account'}</h1>
                                             <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider">Reader Account</span>
                                         </div>
@@ -414,6 +441,203 @@
                             </div>
                         </div>
 
+                        {/* ACTIVE SUBSCRIPTION PLANS & INCLUDED BOOKS SECTION */}
+                        {!isEditMode && (
+                            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 md:p-8 space-y-6">
+                                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b pb-4 gap-3">
+                                    <div>
+                                        <h3 className="text-lg font-black text-[#0d233a] flex items-center gap-2.5">
+                                            <i className="fa-solid fa-crown text-amber-500"></i>
+                                            My Active Subscription Plans & Included Books
+                                        </h3>
+                                        <p className="text-xs text-slate-500 mt-0.5">
+                                            Plan validity timeline (Kab se kab tak active rahega) aur plan ke andar included sabhi books
+                                        </p>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={fetchMembershipDetails}
+                                            title="Refresh Plans"
+                                            className="text-xs text-slate-500 hover:text-[#0d233a] p-2 rounded-full hover:bg-slate-100 transition cursor-pointer">
+                                            <i className="fa-solid fa-rotate-right"></i>
+                                        </button>
+                                        <a href="/" className="text-xs bg-[#0d233a] hover:bg-[#be1e2d] text-white px-4 py-2 rounded-lg font-bold transition shadow-sm">
+                                            + Browse / Upgrade Plans
+                                        </a>
+                                    </div>
+                                </div>
+
+                                {isMembershipLoading ? (
+                                    <div className="text-center py-8 text-xs font-bold text-slate-500 flex items-center justify-center gap-2">
+                                        <i className="fa-solid fa-spinner fa-spin text-xl text-amber-500"></i>
+                                        <span>Loading Subscription Details...</span>
+                                    </div>
+                                ) : membershipData.plans.length === 0 ? (
+                                    <div className="text-center py-8 bg-slate-50 rounded-xl border border-dashed border-slate-300 space-y-2">
+                                        <p className="text-xs font-bold text-slate-700">Abhi tak koi Subscription Plan active nahi hai.</p>
+                                        <a href="/" className="inline-block text-xs bg-[#be1e2d] hover:bg-red-700 text-white px-5 py-2 rounded-lg font-bold transition">
+                                            Explore Plans & Books
+                                        </a>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-6">
+                                        {membershipData.plans.map((planItem, pIdx) => {
+                                            const startStr = new Date(planItem.startDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+                                            const endStr = new Date(planItem.endDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+
+                                            return (
+                                                <div key={pIdx} className="border border-slate-200 rounded-2xl overflow-hidden bg-slate-50/60 shadow-sm">
+                                                    {/* PLAN HEADER & VALIDITY TIMELINE */}
+                                                    <div className="bg-gradient-to-r from-[#0d233a] to-[#1b3b5c] text-white p-4 md:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                                        <div className="space-y-1">
+                                                            <div className="flex flex-wrap items-center gap-2">
+                                                                <span className="text-base md:text-lg font-black text-amber-400">
+                                                                    <i className="fa-solid fa-gem me-1.5"></i>{planItem.planName}
+                                                                </span>
+                                                                <span className={`text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full ${
+                                                                    planItem.isActive
+                                                                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40'
+                                                                        : 'bg-red-500/20 text-red-300 border border-red-400/40'
+                                                                }`}>
+                                                                    {planItem.isActive ? `Active • ${planItem.remainingDays} Days Left` : 'Expired'}
+                                                                </span>
+                                                            </div>
+                                                            <p className="text-[11px] text-slate-300 font-mono">
+                                                                Order ID: {planItem.transactionId || 'N/A'} • Paid: ₹{planItem.amountPaid} ({planItem.billingPeriod})
+                                                            </p>
+                                                        </div>
+
+                                                        {/* START DATE TO END DATE BOX */}
+                                                        <div className="bg-slate-900/60 border border-slate-700 rounded-xl px-4 py-2.5 flex items-center gap-4 text-xs shrink-0">
+                                                            <div>
+                                                                <span className="text-[10px] text-slate-400 block uppercase font-bold">Active From</span>
+                                                                <span className="font-extrabold text-emerald-400">{startStr}</span>
+                                                            </div>
+                                                            <i className="fa-solid fa-arrow-right text-slate-500"></i>
+                                                            <div>
+                                                                <span className="text-[10px] text-slate-400 block uppercase font-bold">Valid Till</span>
+                                                                <span className="font-extrabold text-amber-300">{endStr}</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* BOOKS INCLUDED IN THIS PLAN */}
+                                                    <div className="p-4 md:p-5 space-y-3">
+                                                        <div className="flex items-center justify-between">
+                                                            <span className="text-xs font-extrabold text-slate-700 uppercase tracking-wide">
+                                                                <i className="fa-solid fa-book-open text-[#be1e2d] me-1.5"></i>
+                                                                Books Included in "{planItem.planName}" ({planItem.books?.length || 0})
+                                                            </span>
+                                                        </div>
+
+                                                        {(!planItem.books || planItem.books.length === 0) ? (
+                                                            <p className="text-xs text-slate-500 italic">Is plan ke liye books list abhi empty hai.</p>
+                                                        ) : (
+                                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                                                {planItem.books.map((bk, bIdx) => (
+                                                                    <div key={bIdx} className="bg-white border border-slate-200 rounded-xl p-3 flex items-center justify-between gap-3 hover:shadow-md transition">
+                                                                        <div className="flex items-center gap-3 min-w-0">
+                                                                            <img
+                                                                                src={bk.coverImage || '/images/default-cover.png'}
+                                                                                alt={bk.itemName}
+                                                                                className="w-11 h-14 object-cover rounded border bg-slate-100 shrink-0"
+                                                                            />
+                                                                            <div className="min-w-0">
+                                                                                <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 inline-block mb-0.5">
+                                                                                    Plan: {planItem.planName}
+                                                                                </span>
+                                                                                <h4 className="font-bold text-xs text-slate-900 truncate" title={bk.itemName}>
+                                                                                    {bk.itemName}
+                                                                                </h4>
+                                                                                <p className="text-[10px] text-slate-500 truncate">
+                                                                                    {bk.authorName} • {bk.pages || 0} Pages
+                                                                                </p>
+                                                                            </div>
+                                                                        </div>
+
+                                                                        <button
+                                                                            onClick={() => window.location.href = `/?readBookId=${encodeURIComponent(bk.id)}&page=1`}
+                                                                            className="bg-[#0d233a] hover:bg-[#be1e2d] text-white text-[11px] font-bold px-3 py-1.5 rounded-lg shrink-0 transition cursor-pointer">
+                                                                            Read
+                                                                        </button>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* MY PURCHASED BUNDLES SECTION */}
+                        {!isEditMode && membershipData.bundles.length > 0 && (
+                            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 md:p-8 space-y-6">
+                                <div className="border-b pb-4">
+                                    <h3 className="text-lg font-black text-[#0d233a] flex items-center gap-2.5">
+                                        <i className="fa-solid fa-layer-group text-indigo-600"></i>
+                                        My Purchased Book Bundles ({membershipData.bundles.length})
+                                    </h3>
+                                    <p className="text-xs text-slate-500 mt-0.5">
+                                        Aapke kharide gaye bundles aur unke andar maujood sabhi books
+                                    </p>
+                                </div>
+
+                                <div className="space-y-5">
+                                    {membershipData.bundles.map((bnd, idx) => {
+                                        const purDate = new Date(bnd.purchasedDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+                                        return (
+                                            <div key={idx} className="border border-indigo-200 rounded-2xl overflow-hidden bg-indigo-50/30">
+                                                <div className="bg-indigo-950 text-white px-5 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                        <i className="fa-solid fa-box-open text-amber-400"></i>
+                                                        <span className="font-black text-sm">{bnd.bundleName}</span>
+                                                        <span className="text-[10px] bg-indigo-500/30 border border-indigo-400/40 px-2 py-0.5 rounded-full font-bold">
+                                                            {bnd.books?.length || 0} Books Included
+                                                        </span>
+                                                    </div>
+                                                    <span className="text-[11px] text-indigo-200 font-mono">
+                                                        Purchased: {purDate} • Paid: ₹{bnd.amountPaid}
+                                                    </span>
+                                                </div>
+
+                                                <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                                    {(bnd.books || []).map((bk, bIdx) => (
+                                                        <div key={bIdx} className="bg-white border border-slate-200 rounded-xl p-3 flex items-center justify-between gap-3 hover:shadow-md transition">
+                                                            <div className="flex items-center gap-3 min-w-0">
+                                                                <img
+                                                                    src={bk.coverImage || '/images/default-cover.png'}
+                                                                    alt={bk.itemName}
+                                                                    className="w-11 h-14 object-cover rounded border bg-slate-100 shrink-0"
+                                                                />
+                                                                <div className="min-w-0">
+                                                                    <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 inline-block mb-0.5">
+                                                                        Bundle: {bnd.bundleName}
+                                                                    </span>
+                                                                    <h4 className="font-bold text-xs text-slate-900 truncate" title={bk.itemName}>
+                                                                        {bk.itemName}
+                                                                    </h4>
+                                                                    <p className="text-[10px] text-slate-500 truncate">{bk.authorName}</p>
+                                                                </div>
+                                                            </div>
+                                                            <button
+                                                                onClick={() => window.location.href = `/?readBookId=${encodeURIComponent(bk.id)}&page=1`}
+                                                                className="bg-indigo-700 hover:bg-[#be1e2d] text-white text-[11px] font-bold px-3 py-1.5 rounded-lg shrink-0 transition cursor-pointer">
+                                                                Read
+                                                            </button>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
                         {/* POCKET FM STYLE MY LIBRARY & CONTINUE READING SECTION */}
                         {!isEditMode && (
                             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 md:p-8 space-y-5">
@@ -475,11 +699,11 @@
                                                             <span className="text-[9px] font-black uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded inline-block">
                                                                 {item.categoryCode || 'HOMEO'}
                                                             </span>
-                                                            
+
                                                             <h4 className="font-bold text-xs text-slate-900 truncate group-hover:text-[#be1e2d] transition" title={item.itemName}>
                                                                 {item.itemName}
                                                             </h4>
-                                                            
+
                                                             <p className="text-[11px] text-slate-500 font-medium truncate">
                                                                 by {item.authorName}
                                                             </p>
@@ -503,7 +727,7 @@
                                                                 ></div>
                                                             </div>
                                                         </div>
-                                                        
+
                                                         <button
                                                             onClick={() => handleResumeBook(item)}
                                                             className="w-full bg-[#0d233a] hover:bg-[#be1e2d] text-white font-bold py-2 rounded-lg text-xs transition shadow flex items-center justify-center gap-2 cursor-pointer mt-2"

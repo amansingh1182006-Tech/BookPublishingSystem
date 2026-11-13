@@ -37,6 +37,7 @@ builder.Services.AddScoped<IUserClaimsPrincipalFactory<ApplicationUser>, CustomC
 
 builder.Services.AddScoped<IStorageService, LocalSecureStorageService>();
 builder.Services.AddScoped<IChapterStreamService, DRMStreamService>();
+builder.Services.AddScoped<Application.Interfaces.IRoyaltyDistributionService, Infrastructure.Services.RoyaltyDistributionService>();
 
 
 builder.Services.AddAuthorizationBuilder()

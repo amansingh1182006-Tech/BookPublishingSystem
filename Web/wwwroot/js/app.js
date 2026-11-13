@@ -445,6 +445,7 @@ function App() {
     const [custAddressInput, setCustAddressInput] = useState('');
 
     const [selectedBookForDrm, setSelectedBookForDrm] = useState(null);
+    const [pendingBookForPlan, setPendingBookForPlan] = useState(null);
 
     const [user, setUser] = useState({
         isLoggedIn: false,
@@ -819,10 +820,36 @@ function App() {
         }
     };
 
-    const handleReadAccess = (bookObj) => {
+    const handleReadAccess = async (bookObj) => {
         if (!user.isLoggedIn) {
+            setPendingBookForPlan(bookObj);
             openAuthModal('login');
             return;
+        }
+
+        // Admin ke liye direct book open karein
+        if (isAdmin) {
+            saveReadingProgressToBackend(bookObj, 1);
+            window.history.pushState({ modal: 'reader' }, '');
+            setSelectedBookForDrm(bookObj);
+            return;
+        }
+
+        // Customer / Reader ke liye pehle Subscription Plan aur Profile check karein
+        try {
+            const res = await fetch('/api/plan/my-subscription-status');
+            const status = res.ok ? await res.json() : { hasActivePlan: false, hasProfile: false };
+
+            if (!status.hasActivePlan || !status.hasProfile) {
+                setPendingBookForPlan(bookObj);
+                changeNavState({ activeTab: 'user-plans' });
+                triggerToast(!status.hasActivePlan
+                    ? "Book padhne ke liye pehle koi Subscription Plan choose karein."
+                    : "Kripya pehle apni Reader Profile complete karein.");
+                return;
+            }
+        } catch (e) {
+            console.warn("Subscription check error:", e);
         }
 
         saveReadingProgressToBackend(bookObj, 1);
@@ -1304,6 +1331,7 @@ function App() {
                     setAuthSuccessMsg('Registration successful! Please sign in now.');
                     setAuthMode('login');
                     setPasswordInput('');
+                    changeNavState({ activeTab: 'store' });
                 } else {
                     const assignedRole = data.roles && data.roles.length > 0 ? data.roles[0] : 'Reader';
                     localStorage.setItem('isExplicitLogin', 'true');
@@ -1572,6 +1600,13 @@ function App() {
                         className={`font-bold flex items-center gap-1.5 ${activeTab === 'store' ? 'text-amber-400 border-b-2 border-amber-400 pb-0.5' : 'text-gray-200 hover:text-amber-400'}`}>
                         <i className="fa-solid fa-store"></i> Home
                     </button>
+                    {user.isLoggedIn && !isAdmin && (
+                        <button
+                            onClick={() => changeNavState({ activeTab: 'user-plans' })}
+                            className={`font-bold flex items-center gap-1.5 cursor-pointer ${activeTab === 'user-plans' ? 'text-amber-400 border-b-2 border-amber-400 pb-0.5' : 'text-gray-200 hover:text-amber-400'}`}>
+                            <i className="fa-solid fa-crown text-amber-400"></i> Subscription Plans
+                        </button>
+                    )}
 
                     {user.isLoggedIn && !isAdmin && (
                         <button
@@ -2183,6 +2218,23 @@ function App() {
                     </div>
                 )}
 
+                {activeTab === 'user-plans' && (
+                    window.UserPlansPage ? (
+                        <window.UserPlansPage
+                            user={user}
+                            pendingBook={pendingBookForPlan}
+                            triggerToast={triggerToast}
+                            onCompleteAccess={(bookToOpen) => {
+                                setPendingBookForPlan(null);
+                                changeNavState({ activeTab: 'store' });
+                                if (bookToOpen) {
+                                    saveReadingProgressToBackend(bookToOpen, 1);
+                                    setSelectedBookForDrm(bookToOpen);
+                                }
+                            }}
+                        />
+                    ) : <div className="p-6 text-center font-bold">Loading Plans Component...</div>
+                )}
                 {activeTab === 'store' && (
                     <main className="w-full space-y-8">
 
