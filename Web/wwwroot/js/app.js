@@ -866,29 +866,7 @@ function App() {
         fetchAuthorsMaster();
         fetchVendorsMaster();
 
-        const urlParams = new URLSearchParams(window.location.search);
-        const resumeBookId = urlParams.get('readBookId');
-        const resumePage = urlParams.get('page');
-
-        if (resumeBookId) {
-            fetch('/api/reader/catalog/all-books')
-                .then(res => res.ok ? res.json() : [])
-                .then(allBooks => {
-                    const targetBook = allBooks.find(b =>
-                        String(b.id) === String(resumeBookId) ||
-                        String(b.Id) === String(resumeBookId) ||
-                        String(b.itemNo) === String(resumeBookId) ||
-                        String(b.bookId) === String(resumeBookId)
-                    );
-
-                    if (targetBook) {
-                        targetBook.initialPage = resumePage ? parseInt(resumePage, 10) : 1;
-                        setSelectedBookForDrm(targetBook);
-                        window.history.replaceState({}, document.title, window.location.pathname);
-                    }
-                })
-                .catch(err => console.warn("Failed to auto resume book:", err));
-        }
+       
 
         fetch('/api/account/me')
             .then(res => res.ok ? res.json() : null)
@@ -909,6 +887,30 @@ function App() {
                 setUser({ isLoggedIn: false, fullName: '', email: '', role: '' });
             });
     }, []);
+
+    // URL se ?readBookId=...&page=... aane par seedha DRM Reader kholne ke liye
+    useEffect(() => {
+        if (!user.isLoggedIn || storeBooks.length === 0) return;
+
+        const params = new URLSearchParams(window.location.search);
+        const readBookId = params.get('readBookId');
+        const targetPage = parseInt(params.get('page') || '1', 10) || 1;
+
+        if (readBookId) {
+            const matchedBook = storeBooks.find(b =>
+                String(b.id || b.Id || b.itemNo || b.bookId) === String(readBookId)
+            );
+
+            if (matchedBook) {
+                const bookWithStartPage = { ...matchedBook, initialPage: targetPage };
+                saveReadingProgressToBackend(matchedBook, targetPage);
+                setSelectedBookForDrm(bookWithStartPage);
+
+                // URL clean karein taaki refresh par baar-baar popup na khule
+                window.history.replaceState({}, document.title, window.location.pathname);
+            }
+        }
+    }, [user.isLoggedIn, storeBooks]);
 
     useEffect(() => {
         setSelectedMasterIds([]);

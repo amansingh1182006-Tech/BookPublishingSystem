@@ -11,55 +11,33 @@ namespace Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            // 1. Update Existing 'Plans' Table with New Columns
-            migrationBuilder.AddColumn<int>(
-                name: "BasicBookLimit",
-                table: "Plans",
-                type: "int",
-                nullable: false,
-                defaultValue: 0);
+            migrationBuilder.Sql(@"
+                IF OBJECT_ID(N'[dbo].[Plans]', N'U') IS NOT NULL
+                BEGIN
+                    IF COL_LENGTH('dbo.Plans', 'BasicBookLimit') IS NULL
+                        ALTER TABLE [dbo].[Plans] ADD [BasicBookLimit] int NOT NULL DEFAULT 0;
 
-            migrationBuilder.AddColumn<string>(
-                name: "BillingPeriod",
-                table: "Plans",
-                type: "nvarchar(20)",
-                maxLength: 20,
-                nullable: false,
-                defaultValue: "Monthly");
+                    IF COL_LENGTH('dbo.Plans', 'BillingPeriod') IS NULL
+                        ALTER TABLE [dbo].[Plans] ADD [BillingPeriod] nvarchar(20) NOT NULL DEFAULT 'Monthly';
 
-            migrationBuilder.AddColumn<int>(
-                name: "RoyaltyBookLimit",
-                table: "Plans",
-                type: "int",
-                nullable: false,
-                defaultValue: 0);
+                    IF COL_LENGTH('dbo.Plans', 'RoyaltyBookLimit') IS NULL
+                        ALTER TABLE [dbo].[Plans] ADD [RoyaltyBookLimit] int NOT NULL DEFAULT 0;
+                END
 
-            // 2. Create New 'PlanFeatures' Child Table Mapped with Plans
-            migrationBuilder.CreateTable(
-                name: "PlanFeatures",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    PlanId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    FeatureName = table.Column<string>(type: "nvarchar(150)", maxLength: 150, nullable: false),
-                    Limitation = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
-                    IsEnabled = table.Column<bool>(type: "bit", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_PlanFeatures", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_PlanFeatures_Plans_PlanId",
-                        column: x => x.PlanId,
-                        principalTable: "Plans",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateIndex(
-                name: "IX_PlanFeatures_PlanId",
-                table: "PlanFeatures",
-                column: "PlanId");
+                IF OBJECT_ID(N'[dbo].[PlanFeatures]', N'U') IS NULL
+                BEGIN
+                    CREATE TABLE [dbo].[PlanFeatures] (
+                        [Id] uniqueidentifier NOT NULL,
+                        [PlanId] uniqueidentifier NOT NULL,
+                        [FeatureName] nvarchar(150) NOT NULL,
+                        [Limitation] nvarchar(100) NOT NULL,
+                        [IsEnabled] bit NOT NULL,
+                        CONSTRAINT [PK_PlanFeatures] PRIMARY KEY ([Id]),
+                        CONSTRAINT [FK_PlanFeatures_Plans_PlanId] FOREIGN KEY ([PlanId]) REFERENCES [dbo].[Plans] ([Id]) ON DELETE CASCADE
+                    );
+                    CREATE INDEX [IX_PlanFeatures_PlanId] ON [dbo].[PlanFeatures] ([PlanId]);
+                END
+            ");
         }
 
         /// <inheritdoc />

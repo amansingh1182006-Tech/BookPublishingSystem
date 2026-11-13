@@ -168,8 +168,11 @@
             const handleResumeBook = (bookItem) => {
                 if (!bookItem) return;
                 const targetBookId = bookItem.bookId || bookItem.BookId || bookItem.id || bookItem.Id || bookItem.itemNo;
+                if (!targetBookId) {
+                    setMessage({ text: 'Book ID missing! Cannot open reader.', type: 'error' });
+                    return;
+                }
                 const targetPage = bookItem.lastReadPage || 1;
-
                 window.location.href = `/?readBookId=${encodeURIComponent(targetBookId)}&page=${targetPage}`;
             };
 
@@ -556,7 +559,7 @@
                                                                         </div>
 
                                                                         <button
-                                                                            onClick={() => window.location.href = `/?readBookId=${encodeURIComponent(bk.id)}&page=1`}
+                                                                            onClick={() => handleResumeBook({ ...bk, lastReadPage: 1 })}
                                                                             className="bg-[#0d233a] hover:bg-[#be1e2d] text-white text-[11px] font-bold px-3 py-1.5 rounded-lg shrink-0 transition cursor-pointer">
                                                                             Read
                                                                         </button>
@@ -624,7 +627,7 @@
                                                                 </div>
                                                             </div>
                                                             <button
-                                                                onClick={() => window.location.href = `/?readBookId=${encodeURIComponent(bk.id)}&page=1`}
+                                                                onClick={() => handleResumeBook({ ...bk, lastReadPage: 1 })}
                                                                 className="bg-indigo-700 hover:bg-[#be1e2d] text-white text-[11px] font-bold px-3 py-1.5 rounded-lg shrink-0 transition cursor-pointer">
                                                                 Read
                                                             </button>

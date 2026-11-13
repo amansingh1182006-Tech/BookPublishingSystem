@@ -403,6 +403,7 @@ namespace Web.Controllers
                 if (appUser == null)
                     return Ok(new { plans = new List<object>(), bundles = new List<object>() });
 
+                // Safe helper: Book entity se real Author, Pages, CoverImage nikalne ke liye
                 object MapBookSafe(Book b, bool isRoyalty = false)
                 {
                     var t = b.GetType();
@@ -411,16 +412,17 @@ namespace Web.Controllers
                                  ?? t.GetProperty("Name")?.GetValue(b))?.ToString() ?? "Book";
 
                     var authorVal = t.GetProperty("AuthorName")?.GetValue(b);
-                    if (authorVal == null)
+                    if (authorVal == null || string.IsNullOrWhiteSpace(authorVal.ToString()))
                     {
                         var authorNav = t.GetProperty("Author")?.GetValue(b);
                         if (authorNav != null)
                         {
                             authorVal = authorNav.GetType().GetProperty("Name")?.GetValue(authorNav)
-                                     ?? authorNav.GetType().GetProperty("FullName")?.GetValue(authorNav);
+                                     ?? authorNav.GetType().GetProperty("FullName")?.GetValue(authorNav)
+                                     ?? authorNav.GetType().GetProperty("AuthorName")?.GetValue(authorNav);
                         }
                     }
-                    string author = authorVal?.ToString() ?? "B. Jain Author";
+                    string author = !string.IsNullOrWhiteSpace(authorVal?.ToString()) ? authorVal.ToString()! : "B. Jain Author";
 
                     string cover = (t.GetProperty("CoverImage")?.GetValue(b)
                                  ?? t.GetProperty("CoverImagePath")?.GetValue(b)
@@ -431,7 +433,9 @@ namespace Web.Controllers
                                     ?? t.GetProperty("Category")?.GetValue(b))?.ToString() ?? "HOMEO";
 
                     int pages = 0;
-                    var pagesObj = t.GetProperty("Pages")?.GetValue(b) ?? t.GetProperty("TotalPages")?.GetValue(b);
+                    var pagesObj = t.GetProperty("TotalPages")?.GetValue(b)
+                                ?? t.GetProperty("Pages")?.GetValue(b)
+                                ?? t.GetProperty("PageCount")?.GetValue(b);
                     if (pagesObj != null) int.TryParse(pagesObj.ToString(), out pages);
 
                     return new
@@ -452,32 +456,70 @@ namespace Web.Controllers
                     .ThenInclude(bi => bi.Book)
                     .ToListAsync();
 
+                // Sabhi Royalty Rules (chahe LiveStatus "Live" ho ya "Active" ya blank)
                 var royaltyBookIdList = await _dbContext.VendorRoyaltyRules
-                    .Where(r => r.IsRoyaltyApplicable && r.LiveStatus == "Live")
+                    .Where(r => r.IsRoyaltyApplicable && (r.LiveStatus == null || r.LiveStatus == "" || r.LiveStatus == "Live" || r.LiveStatus == "Active"))
                     .Select(r => r.BookId.ToString())
                     .Distinct()
                     .ToListAsync();
 
                 var royaltyBookIds = new HashSet<string>(royaltyBookIdList, StringComparer.OrdinalIgnoreCase);
 
+                // Books ke saath Author navigation property bhi load karein
                 var rawBooks = await _dbContext.Books
+                    .Include(b => b.Author)
                     .Where(b => b.IsPublished)
                     .ToListAsync();
 
                 var allPublishedBooks = rawBooks
-                    .Select(b => new
+                    .Select(b =>
                     {
-                        BookEntity = b,
-                        IsRoyalty = royaltyBookIds.Contains(b.Id.ToString()),
-                        Mapped = MapBookSafe(b, royaltyBookIds.Contains(b.Id.ToString()))
+                        // Book entity par bhi check karein agar IsRoyalty / VendorId set hai
+                        var bType = b.GetType();
+                        bool bookFlagRoyalty = false;
+                        var isRoyProp = bType.GetProperty("IsRoyalty")?.GetValue(b) ?? bType.GetProperty("IsRoyaltyBook")?.GetValue(b);
+                        if (isRoyProp is bool bBool && bBool) bookFlagRoyalty = true;
+
+                        var vendorProp = bType.GetProperty("VendorId")?.GetValue(b);
+                        if (vendorProp != null && vendorProp.ToString() != Guid.Empty.ToString()) bookFlagRoyalty = true;
+
+                        bool isRoy = royaltyBookIds.Contains(b.Id.ToString()) || bookFlagRoyalty;
+                        return new
+                        {
+                            BookEntity = b,
+                            IsRoyalty = isRoy,
+                            Mapped = MapBookSafe(b, isRoy)
+                        };
                     })
                     .ToList();
+
+                List<object> BuildPlanBooks(Plan? matchedPlan)
+                {
+                    var result = new List<object>();
+                    if (matchedPlan == null) return result;
+
+                    // 1. Royalty Books (RoyaltyBookLimit ke hisab se)
+                    if (matchedPlan.RoyaltyBookLimit != 0)
+                    {
+                        var rBooks = allPublishedBooks.Where(x => x.IsRoyalty).Select(x => x.Mapped).ToList();
+                        result.AddRange(matchedPlan.RoyaltyBookLimit < 0 ? rBooks : rBooks.Take(matchedPlan.RoyaltyBookLimit));
+                    }
+
+                    // 2. Basic Books (BasicBookLimit ke hisab se)
+                    if (matchedPlan.BasicBookLimit != 0)
+                    {
+                        var bBooks = allPublishedBooks.Where(x => !x.IsRoyalty).Select(x => x.Mapped).ToList();
+                        result.AddRange(matchedPlan.BasicBookLimit < 0 ? bBooks : bBooks.Take(matchedPlan.BasicBookLimit));
+                    }
+
+                    return result;
+                }
 
                 var activePlansList = new List<object>();
                 var purchasedBundlesList = new List<object>();
                 var addedTxnIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-                // 1. Primary Source: dbo.UserSubscriptions table se user ke saare subscriptions layein
+                // 1. Primary Source: dbo.UserSubscriptions table
                 var userSubs = await _dbContext.UserSubscriptions
                     .Where(s => s.UserId == appUser.Id)
                     .OrderByDescending(s => s.CreatedAt)
@@ -490,21 +532,6 @@ namespace Web.Controllers
                     int validityDays = matchedPlan?.ValidityInDays ?? Math.Max(1, (int)(sub.ExpiryDate - sub.StartDate).TotalDays);
                     int remainingDays = Math.Max(0, (int)Math.Ceiling((sub.ExpiryDate - DateTime.UtcNow).TotalDays));
                     bool isCurrentlyActive = (sub.Status == "Active") && (DateTime.UtcNow <= sub.ExpiryDate);
-
-                    var planBooks = new List<object>();
-                    if (matchedPlan != null)
-                    {
-                        if (matchedPlan.RoyaltyBookLimit != 0)
-                        {
-                            var rBooks = allPublishedBooks.Where(x => x.IsRoyalty).Select(x => x.Mapped);
-                            planBooks.AddRange(matchedPlan.RoyaltyBookLimit < 0 ? rBooks.ToList() : rBooks.Take(matchedPlan.RoyaltyBookLimit).ToList());
-                        }
-                        if (matchedPlan.BasicBookLimit != 0)
-                        {
-                            var bBooks = allPublishedBooks.Where(x => !x.IsRoyalty).Select(x => x.Mapped);
-                            planBooks.AddRange(matchedPlan.BasicBookLimit < 0 ? bBooks.ToList() : bBooks.Take(matchedPlan.BasicBookLimit).ToList());
-                        }
-                    }
 
                     if (!string.IsNullOrWhiteSpace(sub.TransactionId))
                         addedTxnIds.Add(sub.TransactionId);
@@ -520,7 +547,7 @@ namespace Web.Controllers
                         isActive = isCurrentlyActive,
                         amountPaid = sub.AmountPaid,
                         transactionId = sub.TransactionId,
-                        books = planBooks
+                        books = BuildPlanBooks(matchedPlan)
                     });
                 }
 
@@ -538,7 +565,6 @@ namespace Web.Controllers
                     if (!string.IsNullOrWhiteSpace(rec.TransactionId) && addedTxnIds.Contains(rec.TransactionId))
                         continue;
 
-                    // Check Bundle
                     var matchedBundle = allBundles.FirstOrDefault(b =>
                     {
                         var bNameObj = b.GetType().GetProperty("BundleName")?.GetValue(b)
@@ -575,7 +601,9 @@ namespace Web.Controllers
                         continue;
                     }
 
-                    // Legacy Plan Record (agar UserSubscriptions mein nahi tha)
+                    // Agar UserSubscriptions mein koi record nahi tha toh hi legacy Customer plan dikhayein
+                    if (userSubs.Any()) continue;
+
                     var matchedPlan = allPlans.FirstOrDefault(p =>
                         p.PlanName.Equals(rec.PlanType, StringComparison.OrdinalIgnoreCase));
 
@@ -583,21 +611,6 @@ namespace Web.Controllers
                     DateTime startDate = rec.PurchasedAt != default ? rec.PurchasedAt : rec.CreatedAt;
                     if (startDate == default) startDate = DateTime.UtcNow;
                     DateTime endDate = startDate.AddDays(validityDays);
-
-                    var planBooks = new List<object>();
-                    if (matchedPlan != null)
-                    {
-                        if (matchedPlan.RoyaltyBookLimit != 0)
-                        {
-                            var rBooks = allPublishedBooks.Where(x => x.IsRoyalty).Select(x => x.Mapped);
-                            planBooks.AddRange(matchedPlan.RoyaltyBookLimit < 0 ? rBooks.ToList() : rBooks.Take(matchedPlan.RoyaltyBookLimit).ToList());
-                        }
-                        if (matchedPlan.BasicBookLimit != 0)
-                        {
-                            var bBooks = allPublishedBooks.Where(x => !x.IsRoyalty).Select(x => x.Mapped);
-                            planBooks.AddRange(matchedPlan.BasicBookLimit < 0 ? bBooks.ToList() : bBooks.Take(matchedPlan.BasicBookLimit).ToList());
-                        }
-                    }
 
                     activePlansList.Add(new
                     {
@@ -610,7 +623,7 @@ namespace Web.Controllers
                         isActive = DateTime.UtcNow <= endDate,
                         amountPaid = rec.AmountPaid,
                         transactionId = rec.TransactionId,
-                        books = planBooks
+                        books = BuildPlanBooks(matchedPlan)
                     });
                 }
 
