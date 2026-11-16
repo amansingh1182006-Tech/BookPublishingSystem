@@ -391,17 +391,28 @@ namespace Web.Controllers
 
         // GET: api/plan/my-profile-membership
         [HttpGet("my-profile-membership")]
-        public async Task<IActionResult> GetMyProfileMembership()
+        public async Task<IActionResult> GetMyProfileMembership([FromQuery] string? userId = null)
         {
             try
             {
-                var email = User?.Identity?.Name;
-                if (string.IsNullOrEmpty(email))
-                    return Ok(new { plans = new List<object>(), bundles = new List<object>() });
+                ApplicationUser? appUser = null;
+                if (!string.IsNullOrWhiteSpace(userId) && User.IsInRole("Admin"))
+                {
+                    appUser = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId);
+                }
+                else
+                {
+                    var identityEmail = User?.Identity?.Name;
+                    if (string.IsNullOrEmpty(identityEmail))
+                        return Ok(new { plans = new List<object>(), bundles = new List<object>() });
 
-                var appUser = await _dbContext.Users.FirstOrDefaultAsync(u => u.Email == email || u.UserName == email);
+                    appUser = await _dbContext.Users.FirstOrDefaultAsync(u => u.Email == identityEmail || u.UserName == identityEmail);
+                }
+
                 if (appUser == null)
                     return Ok(new { plans = new List<object>(), bundles = new List<object>() });
+
+                string email = appUser.Email ?? appUser.UserName ?? "";
 
                 // Safe helper: Book entity se real Author, Pages, CoverImage nikalne ke liye
                 object MapBookSafe(Book b, bool isRoyalty = false)
@@ -553,7 +564,7 @@ namespace Web.Controllers
 
                 // 2. Customers table se Purchased Bundles aur legacy records check karein
                 var customerRecords = await _dbContext.Customers
-                    .Where(c => c.UserId == appUser.Id || c.EmailId.ToLower() == email.ToLower())
+                    .Where(c => c.UserId == appUser.Id || (!string.IsNullOrEmpty(email) && c.EmailId.ToLower() == email.ToLower()))
                     .OrderByDescending(c => c.PurchasedAt)
                     .ToListAsync();
 

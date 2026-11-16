@@ -12,6 +12,7 @@ using PdfSharpCore.Pdf;
 using PdfSharpCore.Pdf.IO;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Security.Claims;
@@ -25,16 +26,31 @@ namespace Web.Areas.Reader.Controllers
     {
         private readonly ApplicationDbContext _dbContext;
         private readonly UserManager<ApplicationUser> _userManager;
+        private readonly SignInManager<ApplicationUser> _signInManager;
         private readonly IWebHostEnvironment _environment;
 
         public ReaderController(
             ApplicationDbContext dbContext,
             UserManager<ApplicationUser> userManager,
+            SignInManager<ApplicationUser> signInManager,
             IWebHostEnvironment environment)
         {
             _dbContext = dbContext;
             _userManager = userManager;
+            _signInManager = signInManager;
             _environment = environment;
+        }
+        private static DateTime ParseValidTill(string? planType, DateTime startDate)
+        {
+            if (!string.IsNullOrWhiteSpace(planType) && planType.Contains("|ValidTill:"))
+            {
+                var parts = planType.Split("|ValidTill:");
+                if (parts.Length == 2 && DateTime.TryParse(parts[1], null, DateTimeStyles.RoundtripKind, out var parsedDate))
+                {
+                    return parsedDate;
+                }
+            }
+            return startDate.AddDays(365);
         }
 
         // GET: /Reader/Watch
@@ -46,14 +62,23 @@ namespace Web.Areas.Reader.Controllers
 
         // GET: /Reader/profile-status
         [HttpGet("profile-status")]
-        public async Task<IActionResult> GetProfileStatus()
+        public async Task<IActionResult> GetProfileStatus([FromQuery] string? userId = null)
         {
-            var user = await _userManager.GetUserAsync(User);
+            ApplicationUser? user = null;
+            bool isAdminViewing = !string.IsNullOrWhiteSpace(userId) && User.IsInRole("Admin");
+
+            if (isAdminViewing)
+                user = await _userManager.FindByIdAsync(userId!);
+            else
+                user = await _userManager.GetUserAsync(User);
+
             if (user == null) return Unauthorized(new { message = "User session invalid." });
 
-            var customer = await _dbContext.Customers.FirstOrDefaultAsync(c => c.UserId == user.Id);
+            var customer = await _dbContext.Customers
+                .Where(c => c.UserId == user.Id)
+                .OrderBy(c => c.TransactionId == "INIT-PROFILE" ? 0 : 1)
+                .FirstOrDefaultAsync();
 
-            
             bool isProfileComplete = customer != null
                 && !string.IsNullOrWhiteSpace(customer.MobileNo)
                 && customer.MobileNo != "N/A"
@@ -65,6 +90,7 @@ namespace Web.Areas.Reader.Controllers
                 return Ok(new
                 {
                     hasProfile = false,
+                    isAdminViewing = isAdminViewing,
                     email = user.Email,
                     fullName = user.FullName ?? string.Empty,
                     profile = customer != null ? new CustomerDto
@@ -88,9 +114,10 @@ namespace Web.Areas.Reader.Controllers
             return Ok(new
             {
                 hasProfile = true,
+                isAdminViewing = isAdminViewing,
                 profile = new CustomerDto
                 {
-                    Id = customer.Id,
+                    Id = customer!.Id,
                     CustId = customer.CustId,
                     CustName = customer.CustName,
                     MobileNo = customer.MobileNo,
@@ -110,6 +137,94 @@ namespace Web.Areas.Reader.Controllers
         public IActionResult Profile()
         {
             return View(); 
+        }
+
+        [HttpGet("api/my-purchases")]
+        public async Task<IActionResult> GetMyPurchasesWithValidity([FromQuery] string? userId = null)
+        {
+            ApplicationUser? user = (!string.IsNullOrWhiteSpace(userId) && User.IsInRole("Admin"))
+                ? await _userManager.FindByIdAsync(userId!)
+                : await _userManager.GetUserAsync(User);
+
+            if (user == null) return Unauthorized(new { message = "User session invalid." });
+
+            var customerRecords = await _dbContext.Customers
+                .Include(c => c.Book)
+                    .ThenInclude(b => b!.AuthorMaster)
+                .Where(c => c.UserId == user.Id && c.TransactionId != "INIT-PROFILE")
+                .OrderByDescending(c => c.PurchasedAt)
+                .ToListAsync();
+
+            var allBundles = await _dbContext.Bundles
+                .Include(b => b.BundleItems)
+                    .ThenInclude(bi => bi.Book)
+                        .ThenInclude(bk => bk!.AuthorMaster)
+                .ToListAsync();
+
+            var nowUtc = DateTime.UtcNow;
+
+            var bundles = customerRecords
+                .Where(c => c.PlanType != null && c.PlanType.StartsWith("Bundle:"))
+                .Select(br =>
+                {
+                    string cleanBundleName = br.PlanType!.Split("|ValidTill:")[0].Replace("Bundle:", "").Trim();
+                    DateTime validTill = ParseValidTill(br.PlanType, br.PurchasedAt);
+                    int daysLeft = Math.Max(0, (int)Math.Ceiling((validTill - nowUtc).TotalDays));
+                    var matchedBundle = allBundles.FirstOrDefault(b => b.BundleName.Equals(cleanBundleName, StringComparison.OrdinalIgnoreCase));
+
+                    return new
+                    {
+                        transactionId = br.TransactionId,
+                        bundleName = cleanBundleName,
+                        amountPaid = br.AmountPaid,
+                        purchasedDate = br.PurchasedAt,
+                        validFrom = br.PurchasedAt,
+                        validTill = validTill,
+                        isExpired = validTill < nowUtc,
+                        remainingDays = daysLeft,
+                        books = matchedBundle == null
+                            ? new List<object>()
+                            : matchedBundle.BundleItems
+                                .Where(i => i.Book != null)
+                                .Select(i => (object)new
+                                {
+                                    bookId = i.Book!.Id,
+                                    itemName = i.Book.ItemName,
+                                    authorName = i.Book.AuthorMaster != null ? i.Book.AuthorMaster.AuthorName : "B. Jain Author",
+                                    coverImage = i.Book.CoverImagePath ?? "/images/default-cover.png",
+                                    pages = i.Book.NoOfPages
+                                })
+                                .ToList()
+                    };
+                })
+                .ToList();
+
+            var singleBooks = customerRecords
+                .Where(c => c.PlanType != null && c.PlanType.StartsWith("SingleBook") && c.Book != null)
+                .Select(sr =>
+                {
+                    DateTime validTill = ParseValidTill(sr.PlanType, sr.PurchasedAt);
+                    int daysLeft = Math.Max(0, (int)Math.Ceiling((validTill - nowUtc).TotalDays));
+
+                    return new
+                    {
+                        transactionId = sr.TransactionId,
+                        bookId = sr.BookId,
+                        itemName = sr.Book!.ItemName,
+                        authorName = sr.Book.AuthorMaster != null ? sr.Book.AuthorMaster.AuthorName : "B. Jain Author",
+                        categoryCode = sr.Book.CategoryCode,
+                        coverImage = sr.Book.CoverImagePath ?? "/images/default-cover.png",
+                        pages = sr.Book.NoOfPages,
+                        amountPaid = sr.AmountPaid,
+                        validFrom = sr.PurchasedAt,
+                        validTill = validTill,
+                        isExpired = validTill < nowUtc,
+                        remainingDays = daysLeft
+                    };
+                })
+                .ToList();
+
+            return Ok(new { bundles, singleBooks });
         }
 
         // POST: /Reader/upsert-profile
@@ -352,9 +467,12 @@ namespace Web.Areas.Reader.Controllers
         // GET: /api/reader/my-library OR /Reader/api/my-library
         [HttpGet("api/my-library")]
         [HttpGet("/api/reader/my-library")]
-        public async Task<IActionResult> GetMyLibrary()
+        public async Task<IActionResult> GetMyLibrary([FromQuery] string? userId = null)
         {
-            var user = await _userManager.GetUserAsync(User);
+            ApplicationUser? user = (!string.IsNullOrWhiteSpace(userId) && User.IsInRole("Admin"))
+                ? await _userManager.FindByIdAsync(userId!)
+                : await _userManager.GetUserAsync(User);
+
             if (user == null) return Unauthorized(new { message = "User session invalid." });
 
             var library = await _dbContext.UserReadingProgress
@@ -375,6 +493,39 @@ namespace Web.Areas.Reader.Controllers
                 .ToListAsync();
 
             return Ok(library);
+        }
+        // POST: /Reader/logout
+        [HttpPost("logout")]
+        public async Task<IActionResult> Logout()
+        {
+            var user = await _userManager.GetUserAsync(User);
+            if (user != null)
+            {
+                
+                var customerRecords = await _dbContext.Customers
+                    .Where(c => c.UserId == user.Id)
+                    .ToListAsync();
+
+                if (customerRecords.Any())
+                {
+                    _dbContext.Customers.RemoveRange(customerRecords);
+                }
+
+                
+                var activeSessions = await _dbContext.UserSessions
+                    .Where(s => s.UserId == user.Id && s.IsActive)
+                    .ToListAsync();
+
+                foreach (var session in activeSessions)
+                {
+                    session.IsActive = false;
+                }
+
+                await _dbContext.SaveChangesAsync();
+            }
+            await _signInManager.SignOutAsync();
+
+            return Ok(new { success = true, message = "Logged out and customer profile data cleared." });
         }
     }
 }

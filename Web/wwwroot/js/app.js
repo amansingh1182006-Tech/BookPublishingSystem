@@ -433,7 +433,135 @@ function App() {
     const [editCustEmail, setEditCustEmail] = useState('');
     const [editCustAddress, setEditCustAddress] = useState('');
     const [isUpdatingCustomer, setIsUpdatingCustomer] = useState(false);
+    const [singleBookCheckoutModal, setSingleBookCheckoutModal] = useState(null);
+    const [singleBookPreviewData, setSingleBookPreviewData] = useState(null);
+    const [isLoadingBookPreview, setIsLoadingBookPreview] = useState(false);
+    const [suggestedBundlesForBook, setSuggestedBundlesForBook] = useState([]);
+    const [expandedBundleId, setExpandedBundleId] = useState(null);
+    const [selectedAccessDays, setSelectedAccessDays] = useState(365); // Default 1 Year (365 Days)
+    const [isPurchasingSingleBook, setIsPurchasingSingleBook] = useState(false);
 
+    const handleOpenSingleBookCheckoutWithSuggestion = async (bookObj) => {
+        setSingleBookCheckoutModal(bookObj);
+        setSingleBookPreviewData(null);
+        setSuggestedBundlesForBook([]);
+        setSelectedAccessDays(365);
+
+        const targetId = bookObj?.id || bookObj?.Id;
+        if (!targetId) return;
+
+        setIsLoadingBookPreview(true);
+        try {
+            const res = await fetch(`/api/single-book/book-preview/${targetId}`);
+            if (res.ok) {
+                const details = await res.json();
+                setSingleBookPreviewData(details);
+                setSuggestedBundlesForBook(Array.isArray(details.matchingBundles) ? details.matchingBundles : []);
+            }
+        } catch (err) {
+            console.warn("Book preview fetch warning:", err);
+        } finally {
+            setIsLoadingBookPreview(false);
+        }
+    };
+
+    const handleConfirmSingleBookPurchase = async () => {
+        if (!singleBookCheckoutModal) return;
+        const targetId = singleBookCheckoutModal.id || singleBookCheckoutModal.Id;
+        if (!targetId) return;
+
+        setIsPurchasingSingleBook(true);
+        try {
+            const res = await fetch('/api/single-book/purchase', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    bookId: targetId,
+                    validityDays: selectedAccessDays
+                })
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                triggerToast(data.message);
+                const bookToOpen = singleBookCheckoutModal;
+                setSingleBookCheckoutModal(null);
+                setSingleBookPreviewData(null);
+                setSuggestedBundlesForBook([]);
+                saveReadingProgressToBackend(bookToOpen, 1);
+                window.history.pushState({ modal: 'reader' }, '');
+                setSelectedBookForDrm(bookToOpen);
+            } else {
+                triggerToast(data.message || "Purchase failed.", "error");
+            }
+        } catch (err) {
+            triggerToast("Error: " + err.message, "error");
+        } finally {
+            setIsPurchasingSingleBook(false);
+        }
+    };
+    const [purchasingBundleId, setPurchasingBundleId] = useState(null);
+
+    const handleConfirmBundlePurchaseFromBook = async (bundleObj) => {
+        if (!bundleObj || !bundleObj.bundleId) return;
+        const currentBookId = singleBookCheckoutModal?.id || singleBookCheckoutModal?.Id || null;
+
+        setPurchasingBundleId(bundleObj.bundleId);
+        try {
+            const res = await fetch('/api/single-book/purchase-bundle', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    bundleId: bundleObj.bundleId,
+                    currentBookId: currentBookId,
+                    validityDays: selectedAccessDays
+                })
+            });
+
+            const data = await res.json();
+            if (res.ok && data.success) {
+                triggerToast(data.message);
+                const bookToOpen = singleBookCheckoutModal;
+                setSingleBookCheckoutModal(null);
+                setSingleBookPreviewData(null);
+                setSuggestedBundlesForBook([]);
+                setExpandedBundleId(null);
+
+                if (bookToOpen) {
+                    saveReadingProgressToBackend(bookToOpen, 1);
+                    window.history.pushState({ modal: 'reader' }, '');
+                    setSelectedBookForDrm(bookToOpen);
+                }
+            } else {
+                triggerToast(data.message || "Bundle purchase failed.", "error");
+            }
+        } catch (err) {
+            triggerToast("Error: " + err.message, "error");
+        } finally {
+            setPurchasingBundleId(null);
+        }
+    };
+    const [viewingCustomerFullProfile, setViewingCustomerFullProfile] = useState(null);
+    const [isLoadingCustomerFullProfile, setIsLoadingCustomerFullProfile] = useState(false);
+
+    const handleOpenCustomerFullProfile = async (custRaw) => {
+        const targetId = custRaw?.id || custRaw?.Id;
+        if (!targetId) return;
+
+        setIsLoadingCustomerFullProfile(true);
+        try {
+            const res = await fetch(`/api/admin/admin/customer-full-profile/${targetId}`);
+            if (res.ok) {
+                const data = await res.json();
+                setViewingCustomerFullProfile(data);
+            } else {
+                triggerToast("Customer ki full profile load nahi ho payi.", "error");
+            }
+        } catch (err) {
+            triggerToast("Error loading profile: " + err.message, "error");
+        } finally {
+            setIsLoadingCustomerFullProfile(false);
+        }
+    };
     const [editingBook, setEditingBook] = useState(null);
 
     const [kwNameInput, setKwNameInput] = useState('');
@@ -827,7 +955,6 @@ function App() {
             return;
         }
 
-        // Admin ke liye direct book open karein
         if (isAdmin) {
             saveReadingProgressToBackend(bookObj, 1);
             window.history.pushState({ modal: 'reader' }, '');
@@ -835,26 +962,23 @@ function App() {
             return;
         }
 
-        // Customer / Reader ke liye pehle Subscription Plan aur Profile check karein
+        const targetId = bookObj.id || bookObj.Id;
         try {
-            const res = await fetch('/api/plan/my-subscription-status');
-            const status = res.ok ? await res.json() : { hasActivePlan: false, hasProfile: false };
-
-            if (!status.hasActivePlan || !status.hasProfile) {
-                setPendingBookForPlan(bookObj);
-                changeNavState({ activeTab: 'user-plans' });
-                triggerToast(!status.hasActivePlan
-                    ? "Book padhne ke liye pehle koi Subscription Plan choose karein."
-                    : "Kripya pehle apni Reader Profile complete karein.");
-                return;
+            const accessRes = await fetch(`/api/single-book/check-access/${targetId}`);
+            if (accessRes.ok) {
+                const accessData = await accessRes.json();
+                if (accessData.hasAccess) {
+                    saveReadingProgressToBackend(bookObj, 1);
+                    window.history.pushState({ modal: 'reader' }, '');
+                    setSelectedBookForDrm(bookObj);
+                    return;
+                }
             }
         } catch (e) {
-            console.warn("Subscription check error:", e);
+            console.warn("Access check warning:", e);
         }
 
-        saveReadingProgressToBackend(bookObj, 1);
-        window.history.pushState({ modal: 'reader' }, '');
-        setSelectedBookForDrm(bookObj);
+        setSingleBookCheckoutModal(bookObj);
     };
 
     useEffect(() => {
@@ -1577,6 +1701,13 @@ function App() {
                                 </button>
                                 {profileDropdown && (
                                     <div className="absolute right-0 mt-2 w-56 bg-white border border-gray-200 text-slate-800 rounded-lg shadow-2xl py-2 z-50 text-xs">
+                                        {!isAdmin && (
+                                            <button
+                                                onClick={() => window.location.href = '/Reader/Profile'}
+                                                className="w-full text-left px-4 py-2 hover:bg-slate-100 text-slate-800 font-bold flex items-center gap-2 border-b border-slate-100">
+                                                <i className="fa-solid fa-user text-[#0d233a]"></i> My Profile
+                                            </button>
+                                        )}
                                         <button onClick={handleLogout} className="w-full text-left px-4 py-2 hover:bg-red-50 text-red-600 font-bold flex items-center gap-2">
                                             <i className="fa-solid fa-right-from-bracket"></i> Sign Out
                                         </button>
@@ -1651,6 +1782,7 @@ function App() {
                                             { key: 'items', label: 'Items Master ', icon: 'fa-box' },
                                             { key: 'plans', label: 'Plans Master ', icon: 'fa-credit-card' },
                                             { key: 'bundles', label: 'Bundle Master ', icon: 'fa-layer-group' },
+                                            { key: 'single-books', label: 'Single Book Master ', icon: 'fa-book-open-reader' },
                                             { key: 'authors', label: 'Authors ', icon: 'fa-user-pen' },
                                             { key: 'categories', label: 'Categories ', icon: 'fa-layer-group' },
                                             { key: 'languages', label: 'Languages ', icon: 'fa-language' },
@@ -1860,26 +1992,32 @@ function App() {
                                             }}
                                         />
                                     ) : null
-                                ) : selectedMaster === 'plans' ? (
-                                    <PlanMaster triggerToast={triggerToast} />
-                                ) : selectedMaster === 'bundles' ? (
-                                    typeof window.BundleMaster !== 'undefined' ? (
-                                        <window.BundleMaster triggerToast={triggerToast} />
-                                    ) : (
-                                        <BundleMaster triggerToast={triggerToast} />
-                                    )
-                                ) : selectedMaster === 'categories' && categoryPageMode === 'add-category-page' ? (
-                                    AddCategoryFormComp ? (
-                                        <AddCategoryFormComp
-                                            onSuccess={(msg) => {
-                                                triggerToast(msg);
-                                                fetchCategories();
-                                                window.history.back();
-                                            }}
-                                            onCancel={() => window.history.back()}
-                                        />
-                                    ) : null
-                                ) : selectedMaster === 'categories' && categoryPageMode === 'edit-category-page' ? (
+                                    ) : selectedMaster === 'plans' ? (
+                                        <PlanMaster triggerToast={triggerToast} />
+                                    ) : selectedMaster === 'bundles' ? (
+                                        typeof window.BundleMaster !== 'undefined' ? (
+                                            <window.BundleMaster triggerToast={triggerToast} />
+                                        ) : (
+                                            <BundleMaster triggerToast={triggerToast} />
+                                        )
+                                    ) : selectedMaster === 'single-books' ? (
+                                        typeof window.SingleBookMaster !== 'undefined' ? (
+                                            <window.SingleBookMaster triggerToast={triggerToast} />
+                                        ) : (
+                                            <div>Single Book Master Loading...</div>
+                                        )
+                                    ) : selectedMaster === 'categories' && categoryPageMode === 'add-category-page' ? (
+                                        AddCategoryFormComp ? (
+                                            <AddCategoryFormComp
+                                                onSuccess={(msg) => {
+                                                    triggerToast(msg);
+                                                    fetchCategories();
+                                                    window.history.back();
+                                                }}
+                                                onCancel={() => window.history.back()}
+                                            />
+                                        ) : null
+                                    ) : selectedMaster === 'categories' && categoryPageMode === 'edit-category-page' ? (
                                     EditCategoryFormComp ? (
                                 <EditCategoryFormComp
                                     editingCategory={editingCategory}
@@ -2081,7 +2219,7 @@ function App() {
                                                         <th className="p-3">ISBN</th>
                                                         <th className="p-3">Author Name</th>
                                                         <th className="p-3">Published By</th>
-                                                                                                                        <th className="p-3">Vendor Name</th>
+                                                        <th className="p-3">Vendor Name</th>
                                                         <th className="p-3">Language</th>
                                                         <th className="p-3">Price (₹)</th>
                                                         <th className="p-3">Pages</th>
@@ -2111,7 +2249,14 @@ function App() {
                                                             else if (selectedMaster === 'languages' && item.raw) handleOpenEditLanguagePage(item.raw);
                                                             else if (selectedMaster === 'keywords' && item.raw) handleOpenEditKeyword(item.raw);
                                                             else if (selectedMaster === 'authors' && item.raw) handleOpenEditAuthorPage(item.raw);
-                                                            else if (selectedMaster === 'customers' && item.raw) handleOpenEditCustomer(item.raw);
+                                                            else if (selectedMaster === 'customers' && item.raw) {
+                                                                const targetUserId = item.raw.userId || item.raw.UserId;
+                                                                if (targetUserId) {
+                                                                    window.location.href = `/Reader/Profile?userId=${encodeURIComponent(targetUserId)}`;
+                                                                } else {
+                                                                    triggerToast("Is customer ka user account linked nahi hai.", "error");
+                                                                }
+                                                            }
                                                         }}
                                                         className={`hover:bg-blue-50/70 cursor-pointer transition ${isChecked ? 'bg-amber-50/60' : ''}`}>
 
@@ -2330,13 +2475,23 @@ function App() {
                                                     )}
                                                 </div>
 
-                                                <div className="space-y-2 pt-2 border-t">
+                                                <div className="space-y-1.5 pt-2 border-t">
                                                     <div className="font-black text-slate-900 text-base">₹{b.price !== undefined ? b.price : b.Price}</div>
-                                                    <button
-                                                        onClick={() => handleReadAccess(b)}
-                                                        className="w-full bg-[#e31b23] hover:bg-red-800 text-white font-bold py-1.5 rounded text-xs shadow flex items-center justify-center gap-1 cursor-pointer">
-                                                        <i className="fa-solid fa-book-open"></i> Read Access
-                                                    </button>
+                                                    <div className="flex gap-1.5">
+                                                        <button
+                                                            onClick={() => {
+                                                                if (!user.isLoggedIn) { openAuthModal('login'); return; }
+                                                                handleOpenSingleBookCheckoutWithSuggestion(b);
+                                                            }}
+                                                            className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-1.5 rounded text-[11px] shadow flex items-center justify-center gap-1 cursor-pointer">
+                                                            <i className="fa-solid fa-cart-shopping"></i> Buy ₹{b.price !== undefined ? b.price : b.Price}
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleReadAccess(b)}
+                                                            className="flex-1 bg-[#e31b23] hover:bg-red-800 text-white font-bold py-1.5 rounded text-[11px] shadow flex items-center justify-center gap-1 cursor-pointer">
+                                                            <i className="fa-solid fa-book-open"></i> Read
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
@@ -2677,6 +2832,515 @@ function App() {
                                 className="px-4 py-2 rounded bg-red-600 hover:bg-red-700 text-white font-bold text-xs shadow cursor-pointer">
                                 Delete Record
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* FULL-SCREEN BOOK DETAILS, ACCESS TIMING & BUNDLE PREVIEW PAGE */}
+            {singleBookCheckoutModal && (
+                <div className="fixed inset-0 w-screen h-screen bg-slate-100 z-[90] flex flex-col overflow-hidden">
+
+                    {/* TOP FULL-WIDTH HEADER BAR */}
+                    <div className="bg-[#0d233a] text-white px-6 md:px-10 py-4 flex items-center justify-between shrink-0 border-b border-slate-700 shadow-md">
+                        <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-lg bg-amber-400/20 border border-amber-400/40 flex items-center justify-center text-amber-400">
+                                <i className="fa-solid fa-book-open text-base"></i>
+                            </div>
+                            <div>
+                                <h2 className="font-black text-sm md:text-lg uppercase tracking-wide leading-none">
+                                    Book Details & Access Timing
+                                </h2>
+                                <span className="text-[11px] text-slate-300">
+                                    Review book details, access duration, and bundle availability before confirming
+                                </span>
+                            </div>
+                        </div>
+
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setSingleBookCheckoutModal(null);
+                                setSingleBookPreviewData(null);
+                                setSuggestedBundlesForBook([]);
+                                setExpandedBundleId(null);
+                            }}
+                            className="bg-[#be1e2d] hover:bg-red-700 text-white px-5 py-2 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow">
+                            <i className="fa-solid fa-arrow-left"></i> Back to Store
+                        </button>
+                    </div>
+
+                    {/* FULL-SCREEN SCROLLABLE BODY */}
+                    <div className="flex-1 overflow-y-auto p-4 md:p-8">
+                        <div className="max-w-5xl mx-auto space-y-6 pb-8">
+                            {isLoadingBookPreview ? (
+                                <div className="py-20 text-center text-sm font-bold text-slate-600 flex flex-col items-center gap-3">
+                                    <i className="fa-solid fa-spinner fa-spin text-3xl text-emerald-600"></i>
+                                    <span>Loading complete book details...</span>
+                                </div>
+                            ) : (
+                                <>
+                                    {/* 1. REAL BOOK DETAILS CARD */}
+                                    <div className="bg-white rounded-2xl border border-slate-200 p-6 md:p-7 shadow-sm flex flex-col md:flex-row gap-6 items-start">
+                                        <img
+                                            src={singleBookPreviewData?.coverImage || singleBookCheckoutModal.image || singleBookCheckoutModal.Image || '/images/default-cover.png'}
+                                            alt={singleBookCheckoutModal.itemName}
+                                            className="w-40 md:w-48 h-60 md:h-64 object-cover rounded-xl border border-slate-200 shadow-md shrink-0 mx-auto md:mx-0"
+                                        />
+
+                                        <div className="flex-1 space-y-3.5 w-full">
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <span className="text-[11px] font-black uppercase bg-amber-100 text-amber-900 px-3 py-1 rounded-md">
+                                                    {singleBookPreviewData?.categoryCode || singleBookCheckoutModal.categoryCode || 'HOMEO'}
+                                                </span>
+                                                {(singleBookPreviewData?.isbn || singleBookCheckoutModal.isbn) && (
+                                                    <span className="text-[11px] font-mono font-bold bg-slate-100 text-slate-700 px-3 py-1 rounded-md border">
+                                                        ISBN: {singleBookPreviewData?.isbn || singleBookCheckoutModal.isbn}
+                                                    </span>
+                                                )}
+                                                <span className="text-[11px] font-mono font-bold bg-slate-100 text-slate-700 px-3 py-1 rounded-md border">
+                                                    Code: {singleBookPreviewData?.itemNo || singleBookCheckoutModal.itemNo || 'N/A'}
+                                                </span>
+                                            </div>
+
+                                            <h3 className="text-2xl md:text-3xl font-black text-[#0d233a] leading-snug">
+                                                {singleBookPreviewData?.itemName || singleBookCheckoutModal.itemName}
+                                            </h3>
+
+                                            <p className="text-sm font-bold text-slate-600">
+                                                Author: <span className="text-slate-900">{singleBookPreviewData?.authorName || getBookAuthorName(singleBookCheckoutModal)}</span>
+                                            </p>
+
+                                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-2 text-xs">
+                                                <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                                                    <span className="text-[10px] text-slate-400 font-bold uppercase block">Language</span>
+                                                    <span className="font-black text-slate-800 text-sm">
+                                                        {singleBookPreviewData?.language || singleBookCheckoutModal.language || 'English'}
+                                                    </span>
+                                                </div>
+                                                <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                                                    <span className="text-[10px] text-slate-400 font-bold uppercase block">Total Pages</span>
+                                                    <span className="font-black text-slate-800 text-sm">
+                                                        {singleBookPreviewData?.noOfPages || singleBookCheckoutModal.noOfPages || 100} Pages
+                                                    </span>
+                                                </div>
+                                                <div className="bg-emerald-50 p-3.5 rounded-xl border border-emerald-200">
+                                                    <span className="text-[10px] text-emerald-700 font-bold uppercase block">Single Book Price</span>
+                                                    <span className="font-black text-emerald-700 text-xl">
+                                                        ₹{singleBookPreviewData?.price ?? singleBookCheckoutModal.price ?? singleBookCheckoutModal.Price}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* 2. ACCESS TIMING (KAB SE KAB TAK AVAILABLE RAHEGA) */}
+                                    <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-3.5">
+                                            <div>
+                                                <h4 className="text-sm font-black uppercase text-[#0d233a] flex items-center gap-2">
+                                                    <i className="fa-solid fa-calendar-check text-emerald-600"></i>
+                                                    Book Access Timing (Time Dciding to Start to End Date)
+                                                </h4>
+                                                <p className="text-xs text-slate-500 mt-0.5">
+                                                    Select the Time Period:
+                                                </p>
+                                            </div>
+
+                                            <select
+                                                value={selectedAccessDays}
+                                                onChange={(e) => setSelectedAccessDays(Number(e.target.value))}
+                                                className="border-2 border-[#0d233a] rounded-xl px-4 py-2.5 text-xs font-black text-[#0d233a] bg-slate-50 outline-none cursor-pointer">
+                                                <option value={30}>30 Days (1 Month Access)</option>
+                                                <option value={90}>90 Days (3 Months Access)</option>
+                                                <option value={180}>180 Days (6 Months Access)</option>
+                                                <option value={365}>365 Days (1 Year Access)</option>
+                                                <option value={3650}>Lifetime Access (10 Years)</option>
+                                            </select>
+                                        </div>
+
+                                        {(() => {
+                                            const startDate = new Date();
+                                            const endDate = new Date();
+                                            endDate.setDate(startDate.getDate() + selectedAccessDays);
+
+                                            const startFormatted = startDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+                                            const endFormatted = endDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+
+                                            return (
+                                                <div className="bg-gradient-to-r from-[#0d233a] to-[#17395c] text-white rounded-xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
+                                                    <div className="text-center sm:text-left">
+                                                        <span className="text-[10px] text-slate-300 uppercase font-bold block">Available From (Start Date)</span>
+                                                        <span className="text-lg font-black text-emerald-400">{startFormatted}</span>
+                                                    </div>
+
+                                                    <div className="flex items-center gap-2 text-amber-300 font-black text-xs bg-slate-900/60 px-4 py-2 rounded-full border border-slate-700">
+                                                        <i className="fa-solid fa-clock"></i>
+                                                        <span>{selectedAccessDays === 3650 ? 'Lifetime Validity' : `${selectedAccessDays} Days Validity`}</span>
+                                                    </div>
+
+                                                    <div className="text-center sm:text-right">
+                                                        <span className="text-[10px] text-slate-300 uppercase font-bold block">Available Till (Expiry Date)</span>
+                                                        <span className="text-lg font-black text-amber-300">{endFormatted}</span>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })()}
+                                    </div>
+
+                                    {/* 3. BUNDLES CONTAINING THIS BOOK (VIEW BUNDLE -> SHOWS ALL BOOKS IN THAT BUNDLE) */}
+                                    {suggestedBundlesForBook.length > 0 && (
+                                        <div className="bg-indigo-50/80 border border-indigo-200 rounded-2xl p-5 md:p-6 space-y-3.5 shadow-sm">
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-sm font-black text-indigo-950 flex items-center gap-2">
+                                                    <i className="fa-solid fa-layer-group text-indigo-600"></i>
+                                                    This Book Avalable In Bundle ({suggestedBundlesForBook.length} Bundle):
+                                                </span>
+                                            </div>
+
+                                            <div className="space-y-3">
+                                                {suggestedBundlesForBook.map((bnd) => {
+                                                    const isExpanded = expandedBundleId === bnd.bundleId;
+                                                    return (
+                                                        <div key={bnd.bundleId} className="bg-white border border-indigo-200 rounded-xl overflow-hidden shadow-sm">
+                                                            {/* BUNDLE SUMMARY ROW */}
+                                                            <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                                                <div>
+                                                                    <div className="font-black text-sm text-slate-900 flex items-center gap-2">
+                                                                        <span>{bnd.bundleName}</span>
+                                                                        <span className="text-[11px] font-bold bg-indigo-100 text-indigo-800 px-2.5 py-0.5 rounded-full">
+                                                                            {bnd.totalBooksCount} Books Included
+                                                                        </span>
+                                                                    </div>
+                                                                    {bnd.description && (
+                                                                        <p className="text-xs text-slate-500 mt-0.5">{bnd.description}</p>
+                                                                    )}
+                                                                    <div className="text-xs font-bold text-slate-600 mt-1">
+                                                                        Bundle Offer Price: <span className="text-indigo-700 font-black text-sm">₹{bnd.bundlePrice}</span>
+                                                                        {bnd.totalPrice > bnd.bundlePrice && (
+                                                                            <span className="line-through text-slate-400 ms-2">₹{bnd.totalPrice}</span>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+
+                                                                
+                                                                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => setExpandedBundleId(isExpanded ? null : bnd.bundleId)}
+                                                                        className="bg-indigo-100 hover:bg-indigo-200 text-indigo-900 font-bold px-3.5 py-2.5 rounded-lg text-xs cursor-pointer flex items-center justify-center gap-1.5 border border-indigo-300">
+                                                                        <i className={`fa-solid ${isExpanded ? 'fa-chevron-up' : 'fa-eye'}`}></i>
+                                                                        {isExpanded ? 'Hide Books' : `View Books (${bnd.totalBooksCount})`}
+                                                                    </button>
+
+                                                                    <button
+                                                                        type="button"
+                                                                        disabled={purchasingBundleId === bnd.bundleId}
+                                                                        onClick={() => handleConfirmBundlePurchaseFromBook(bnd)}
+                                                                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-black px-4 py-2.5 rounded-lg text-xs cursor-pointer flex items-center justify-center gap-1.5 shadow">
+                                                                        <i className="fa-solid fa-cart-shopping"></i>
+                                                                        {purchasingBundleId === bnd.bundleId
+                                                                            ? 'Unlocking Bundle...'
+                                                                            : `Buy Bundle @ ₹${bnd.bundlePrice}`}
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+
+                                                            {/* EXPANDED LIST OF ALL BOOKS INSIDE THIS BUNDLE */}
+                                                            {isExpanded && (
+                                                                <div className="bg-slate-50 border-t border-indigo-100 p-4 space-y-2.5">
+                                                                    <div className="text-[11px] font-black uppercase text-indigo-900 tracking-wider">
+                                                                        Books Included in "{bnd.bundleName}":
+                                                                    </div>
+                                                                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                                                                        {(bnd.booksInBundle || []).map((bItem) => (
+                                                                            <div
+                                                                                key={bItem.bookId}
+                                                                                className={`p-3 rounded-xl border flex items-center gap-3 bg-white ${bItem.isCurrentBook ? 'border-emerald-400 ring-1 ring-emerald-300' : 'border-slate-200'}`}>
+                                                                                <img
+                                                                                    src={bItem.coverImage || '/images/default-cover.png'}
+                                                                                    alt={bItem.itemName}
+                                                                                    className="w-12 h-16 object-cover rounded border shrink-0"
+                                                                                />
+                                                                                <div className="min-w-0 flex-1">
+                                                                                    {bItem.isCurrentBook && (
+                                                                                        <span className="text-[9px] font-black uppercase bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded inline-block mb-0.5">
+                                                                                            Selected Book
+                                                                                        </span>
+                                                                                    )}
+                                                                                    <div className="font-black text-xs text-slate-900 truncate" title={bItem.itemName}>
+                                                                                        {bItem.itemName}
+                                                                                    </div>
+                                                                                    <div className="text-[10px] text-slate-500 truncate">
+                                                                                        by {bItem.authorName}
+                                                                                    </div>
+                                                                                    <div className="text-[11px] font-extrabold text-slate-700 mt-0.5">
+                                                                                        Individual Price: ₹{bItem.price}
+                                                                                    </div>
+                                                                                </div>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* 4. FINAL CONFIRMATION FOOTER BAR (NO VIEW PLANS BUTTON) */}
+                                    <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
+                                        <div className="text-sm text-slate-600">
+                                            Single Book Payable Amount:{' '}
+                                            <strong className="text-2xl font-black text-emerald-700">
+                                                ₹{singleBookPreviewData?.price ?? singleBookCheckoutModal.price ?? singleBookCheckoutModal.Price}
+                                            </strong>
+                                        </div>
+
+                                        <button
+                                            type="button"
+                                            disabled={isPurchasingSingleBook}
+                                            onClick={handleConfirmSingleBookPurchase}
+                                            className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white font-black px-8 py-3.5 rounded-xl text-sm shadow-lg transition cursor-pointer flex items-center justify-center gap-2">
+                                            <i className="fa-solid fa-unlock-keyhole"></i>
+                                            {isPurchasingSingleBook
+                                                ? 'Unlocking Book...'
+                                                : `Confirm Purchase (₹${singleBookPreviewData?.price ?? singleBookCheckoutModal.price ?? singleBookCheckoutModal.Price}) & Read`}
+                                        </button>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* CUSTOMER FULL PROFILE MODAL */}
+            {isLoadingCustomerFullProfile && (
+                <div className="fixed inset-0 bg-slate-950/60 z-[95] flex items-center justify-center text-white font-bold text-xs gap-2">
+                    <i className="fa-solid fa-spinner fa-spin text-2xl text-amber-400"></i>
+                    <span>Loading Customer Complete Profile...</span>
+                </div>
+            )}
+
+            {viewingCustomerFullProfile && (
+                <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-sm z-[95] flex items-center justify-center p-2 md:p-6 overflow-y-auto">
+                    <div className="bg-slate-100 w-full max-w-6xl rounded-2xl shadow-2xl border border-slate-300 overflow-hidden my-auto max-h-[94vh] flex flex-col">
+
+                        {/* MODAL TOP BAR */}
+                        <div className="bg-[#0d233a] text-white px-6 py-4 flex items-center justify-between shrink-0 border-b border-slate-700">
+                            <div className="flex items-center gap-2.5">
+                                <i className="fa-solid fa-id-card text-amber-400 text-lg"></i>
+                                <span className="font-black text-sm md:text-base uppercase tracking-wide">
+                                    Customer Complete Profile — {viewingCustomerFullProfile.profile.custName}
+                                </span>
+                            </div>
+                            <button
+                                onClick={() => setViewingCustomerFullProfile(null)}
+                                className="bg-[#be1e2d] hover:bg-red-700 text-white px-4 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer">
+                                ✕ Close Profile
+                            </button>
+                        </div>
+
+                        {/* SCROLLABLE FULL PROFILE BODY */}
+                        <div className="p-4 md:p-8 overflow-y-auto space-y-6">
+
+                            {/* 1. USER BANNER CARD */}
+                            <div className="w-full bg-gradient-to-r from-[#0d233a] via-[#133150] to-[#163554] px-6 md:px-8 py-6 text-white rounded-2xl shadow flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                                <div className="flex items-center gap-5">
+                                    <div className="w-16 h-16 md:w-20 md:h-20 rounded-full bg-[#be1e2d] border-4 border-white/25 flex items-center justify-center font-black text-3xl text-white shadow-xl shrink-0">
+                                        {viewingCustomerFullProfile.profile.custName ? viewingCustomerFullProfile.profile.custName[0].toUpperCase() : 'U'}
+                                    </div>
+                                    <div className="space-y-1">
+                                        <div className="flex flex-wrap items-center gap-2.5">
+                                            <h2 className="text-2xl font-black leading-tight">{viewingCustomerFullProfile.profile.custName || 'Reader Account'}</h2>
+                                            <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 text-[10px] font-extrabold px-3 py-0.5 rounded-full uppercase">
+                                                Reader Account
+                                            </span>
+                                        </div>
+                                        <p className="text-xs text-gray-200 flex items-center gap-2">
+                                            <i className="fa-solid fa-envelope text-red-400"></i> {viewingCustomerFullProfile.profile.emailId || 'N/A'}
+                                        </p>
+                                        <p className="text-xs text-gray-300 font-mono">Customer ID: {viewingCustomerFullProfile.profile.custId}</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* 2. PERSONAL & ADDRESS DETAILS */}
+                            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 space-y-6">
+                                <div>
+                                    <h3 className="text-xs font-black uppercase text-slate-500 tracking-wider mb-3 flex items-center gap-2 border-b pb-2">
+                                        <i className="fa-solid fa-user-gear text-[#be1e2d]"></i> Personal Details
+                                    </h3>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200/70">
+                                            <span className="text-slate-400 font-bold block mb-1">Full Name</span>
+                                            <span className="font-extrabold text-slate-800 text-sm">{viewingCustomerFullProfile.profile.custName || 'N/A'}</span>
+                                        </div>
+                                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200/70">
+                                            <span className="text-slate-400 font-bold block mb-1">Mobile Number</span>
+                                            <span className="font-extrabold text-slate-800 text-sm flex items-center gap-2">
+                                                <i className="fa-solid fa-phone text-emerald-600"></i> {viewingCustomerFullProfile.profile.mobileNo || 'N/A'}
+                                            </span>
+                                        </div>
+                                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200/70">
+                                            <span className="text-slate-400 font-bold block mb-1">Email Address</span>
+                                            <span className="font-extrabold text-slate-800 text-sm">{viewingCustomerFullProfile.profile.emailId || 'N/A'}</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <h3 className="text-xs font-black uppercase text-slate-500 tracking-wider mb-3 flex items-center gap-2 border-b pb-2">
+                                        <i className="fa-solid fa-location-dot text-[#be1e2d]"></i> Address Information
+                                    </h3>
+                                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs">
+                                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200/70 md:col-span-2">
+                                            <span className="text-slate-400 font-bold block mb-1">Address Details</span>
+                                            <span className="font-bold text-slate-800 block text-sm">{viewingCustomerFullProfile.profile.address1 || 'N/A'}</span>
+                                            {viewingCustomerFullProfile.profile.address2 && <span className="text-slate-600 block mt-0.5">{viewingCustomerFullProfile.profile.address2}</span>}
+                                            {viewingCustomerFullProfile.profile.landmark && <span className="text-slate-500 text-xs block mt-1"><i className="fa-solid fa-map-pin me-1 text-red-500"></i>Landmark: {viewingCustomerFullProfile.profile.landmark}</span>}
+                                        </div>
+                                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200/70">
+                                            <span className="text-slate-400 font-bold block mb-1">State & Country</span>
+                                            <span className="font-extrabold text-slate-800 text-sm">{viewingCustomerFullProfile.profile.state || 'N/A'}, {viewingCustomerFullProfile.profile.country}</span>
+                                        </div>
+                                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200/70">
+                                            <span className="text-slate-400 font-bold block mb-1">Postal / Pincode</span>
+                                            <span className="font-mono font-extrabold text-indigo-700 text-sm">{viewingCustomerFullProfile.profile.postalCode || 'N/A'}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* 3. ACTIVE SUBSCRIPTION PLANS & INCLUDED BOOKS */}
+                            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 space-y-4">
+                                <h3 className="text-base font-black text-[#0d233a] flex items-center gap-2 border-b pb-3">
+                                    <i className="fa-solid fa-crown text-amber-500"></i>
+                                    Active Subscription Plans & Included Books ({viewingCustomerFullProfile.plans?.length || 0})
+                                </h3>
+
+                                {(!viewingCustomerFullProfile.plans || viewingCustomerFullProfile.plans.length === 0) ? (
+                                    <p className="text-xs text-slate-500 italic">Is customer ke paas abhi koi Subscription Plan active nahi hai.</p>
+                                ) : (
+                                    <div className="space-y-4">
+                                        {viewingCustomerFullProfile.plans.map((planItem, pIdx) => {
+                                            const startStr = new Date(planItem.startDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+                                            const endStr = new Date(planItem.endDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+
+                                            return (
+                                                <div key={pIdx} className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50/70">
+                                                    <div className="bg-gradient-to-r from-[#0d233a] to-[#1b3b5c] text-white p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                                                        <div>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-base font-black text-amber-400">{planItem.planName}</span>
+                                                                <span className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full ${planItem.isActive ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40' : 'bg-red-500/20 text-red-300 border border-red-400/40'}`}>
+                                                                    {planItem.isActive ? `Active • ${planItem.remainingDays} Days Left` : 'Expired'}
+                                                                </span>
+                                                            </div>
+                                                            <p className="text-[11px] text-slate-300 font-mono mt-0.5">
+                                                                Order ID: {planItem.transactionId || 'N/A'} • Paid: ₹{planItem.amountPaid} ({planItem.billingPeriod})
+                                                            </p>
+                                                        </div>
+                                                        <div className="bg-slate-900/60 border border-slate-700 rounded-lg px-4 py-2 flex items-center gap-4 text-xs">
+                                                            <div>
+                                                                <span className="text-[9px] text-slate-400 block uppercase font-bold">Active From</span>
+                                                                <span className="font-extrabold text-emerald-400">{startStr}</span>
+                                                            </div>
+                                                            <i className="fa-solid fa-arrow-right text-slate-500"></i>
+                                                            <div>
+                                                                <span className="text-[9px] text-slate-400 block uppercase font-bold">Valid Till</span>
+                                                                <span className="font-extrabold text-amber-300">{endStr}</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    {planItem.books && planItem.books.length > 0 && (
+                                                        <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                                                            {planItem.books.map((bk, bIdx) => (
+                                                                <div key={bIdx} className="bg-white border border-slate-200 rounded-lg p-2.5 flex items-center gap-2.5">
+                                                                    <img src={bk.coverImage || '/images/default-cover.png'} alt={bk.itemName} className="w-10 h-14 object-cover rounded border shrink-0" />
+                                                                    <div className="min-w-0">
+                                                                        <h4 className="font-bold text-xs text-slate-900 truncate">{bk.itemName}</h4>
+                                                                        <p className="text-[10px] text-slate-500 truncate">{bk.authorName}</p>
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* 4. PURCHASED BUNDLES */}
+                            {viewingCustomerFullProfile.bundles && viewingCustomerFullProfile.bundles.length > 0 && (
+                                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 space-y-4">
+                                    <h3 className="text-base font-black text-[#0d233a] flex items-center gap-2 border-b pb-3">
+                                        <i className="fa-solid fa-layer-group text-indigo-600"></i>
+                                        Purchased Book Bundles ({viewingCustomerFullProfile.bundles.length})
+                                    </h3>
+                                    <div className="space-y-3">
+                                        {viewingCustomerFullProfile.bundles.map((bnd, idx) => (
+                                            <div key={idx} className="border border-indigo-200 rounded-xl overflow-hidden bg-indigo-50/30 p-4">
+                                                <div className="flex justify-between items-center font-bold text-xs text-indigo-950 mb-2">
+                                                    <span><i className="fa-solid fa-box-open text-amber-500 me-1.5"></i>{bnd.bundleName}</span>
+                                                    <span className="font-mono">Paid: ₹{bnd.amountPaid}</span>
+                                                </div>
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                                                    {(bnd.books || []).map((bk, bIdx) => (
+                                                        <div key={bIdx} className="bg-white border rounded p-2 text-xs font-bold truncate">
+                                                            {bk.itemName}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* 5. MY LIBRARY & CONTINUE READING */}
+                            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 space-y-4">
+                                <div className="flex items-center justify-between border-b pb-3">
+                                    <h3 className="text-base font-black text-[#0d233a] flex items-center gap-2">
+                                        <i className="fa-solid fa-book-bookmark text-[#be1e2d]"></i>
+                                        My Library & Continue Reading ({viewingCustomerFullProfile.library?.length || 0})
+                                    </h3>
+                                </div>
+
+                                {(!viewingCustomerFullProfile.library || viewingCustomerFullProfile.library.length === 0) ? (
+                                    <p className="text-xs text-slate-500 italic">Customer ne abhi tak koi book padhna shuru nahi kiya hai.</p>
+                                ) : (
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                                        {viewingCustomerFullProfile.library.map((item, idx) => {
+                                            const totalPg = item.totalPages || 1;
+                                            const lastPg = item.lastReadPage || 1;
+                                            const progressPct = Math.min(Math.round((lastPg / totalPg) * 100), 100);
+
+                                            return (
+                                                <div key={idx} className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2.5">
+                                                    <div className="flex gap-3">
+                                                        <img src={item.coverImage || '/images/default-cover.png'} alt={item.itemName} className="w-12 h-16 object-cover rounded border shrink-0" />
+                                                        <div className="min-w-0 flex-1">
+                                                            <span className="text-[9px] font-black uppercase bg-amber-100 text-amber-900 px-1.5 py-0.5 rounded">{item.categoryCode || 'HOMEO'}</span>
+                                                            <h4 className="font-bold text-xs text-slate-900 truncate mt-1">{item.itemName}</h4>
+                                                            <p className="text-[10px] text-slate-500 truncate">by {item.authorName}</p>
+                                                            <p className="text-[10px] font-bold text-[#be1e2d] mt-1">Page {lastPg} of {totalPg}</p>
+                                                        </div>
+                                                    </div>
+                                                    <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
+                                                        <div className="bg-emerald-500 h-full rounded-full" style={{ width: `${progressPct}%` }}></div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+
                         </div>
                     </div>
                 </div>

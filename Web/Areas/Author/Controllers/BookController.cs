@@ -198,8 +198,6 @@ namespace Web.Areas.Author.Controllers
                             .FirstOrDefaultAsync(a => a.AuthorName.ToLower() == row.AuthorName.Trim().ToLower());
                         if (existingAuthor != null) matchedAuthorMasterId = existingAuthor.Id;
                     }
-
-                    // Vendor Name ya Vendor Code ke basis par Vendor link karein
                     Guid? matchedVendorId = null;
                     string finalVendorName = "In-House (B. Jain)";
                     if (!string.IsNullOrWhiteSpace(row.VendorName))

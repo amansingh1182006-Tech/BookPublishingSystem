@@ -100,33 +100,46 @@ namespace Web.Areas.Admin.Controllers
             });
         }
 
-        // NEW ENDPOINT: FETCH ALL CUSTOMER COLUMNS FOR ADMIN LIST
+
         [HttpGet("customers-list")]
         public async Task<IActionResult> GetCustomersList()
         {
-            var customers = await _dbContext.Customers
-                .OrderByDescending(c => c.CreatedAt)
-                .Select(c => new CustomerDto
-                {
-                    Id = c.Id,
-                    CustId = c.CustId,
-                    CustName = c.CustName,
-                    MobileNo = c.MobileNo == "N/A" ? "" : c.MobileNo,
-                    EmailId = c.EmailId,
-                    Address1 = c.Address1 == "Pending Profile Update" ? "" : c.Address1,
-                    Address2 = c.Address2,
-                    Country = string.IsNullOrWhiteSpace(c.Country) ? "India" : c.Country,
-                    State = c.State == "N/A" ? "" : c.State,
-                    PostalCode = c.PostalCode == "000000" ? "" : c.PostalCode,
-                    Landmark = c.Landmark,
-                    UserId = c.UserId
-                })
+            var allCustomers = await _dbContext.Customers
+                .OrderBy(c => c.CreatedAt)
                 .ToListAsync();
 
-            return Ok(customers);
+            var uniqueCustomers = allCustomers
+                .GroupBy(c => !string.IsNullOrWhiteSpace(c.UserId)
+                    ? c.UserId.Trim().ToLower()
+                    : (c.EmailId ?? c.Id.ToString()).Trim().ToLower())
+                .Select(g =>
+                {
+                    var master = g.FirstOrDefault(x => x.TransactionId == "INIT-PROFILE")
+                              ?? g.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x.MobileNo) && x.MobileNo != "N/A")
+                              ?? g.First();
+
+                    return new CustomerDto
+                    {
+                        Id = master.Id,
+                        CustId = master.CustId,
+                        CustName = master.CustName,
+                        MobileNo = master.MobileNo == "N/A" ? "" : master.MobileNo,
+                        EmailId = master.EmailId,
+                        Address1 = master.Address1 == "Pending Profile Update" ? "" : master.Address1,
+                        Address2 = master.Address2,
+                        Country = string.IsNullOrWhiteSpace(master.Country) ? "India" : master.Country,
+                        State = master.State == "N/A" ? "" : master.State,
+                        PostalCode = master.PostalCode == "000000" ? "" : master.PostalCode,
+                        Landmark = master.Landmark,
+                        UserId = master.UserId
+                    };
+                })
+                .ToList();
+
+            return Ok(uniqueCustomers);
         }
 
-        // NEW ENDPOINT: DELETE CUSTOMER RECORD
+
         [HttpDelete("delete-customer/{id}")]
         public async Task<IActionResult> DeleteCustomer(Guid id)
         {
@@ -137,6 +150,163 @@ namespace Web.Areas.Admin.Controllers
             await _dbContext.SaveChangesAsync();
 
             return Ok(new { success = true, message = "Customer deleted successfully." });
+        }
+
+        
+        [HttpGet("customer-full-profile/{id}")]
+        public async Task<IActionResult> GetCustomerFullProfile(Guid id)
+        {
+            var customer = await _dbContext.Customers.FirstOrDefaultAsync(c => c.Id == id);
+            if (customer == null)
+                return NotFound(new { message = "Customer record not found." });
+
+            string userId = customer.UserId;
+
+            
+            var rawSubs = await _dbContext.UserSubscriptions
+                .Include(s => s.Plan)
+                .ThenInclude(p => p!.Features)
+                .Where(s => s.UserId == userId)
+                .OrderByDescending(s => s.StartDate)
+                .ToListAsync();
+
+            var royaltyBookIds = await _dbContext.VendorRoyaltyRules
+                .Where(r => r.IsRoyaltyApplicable && r.LiveStatus == "Live")
+                .Select(r => r.BookId)
+                .ToListAsync();
+
+            var allPublishedBooks = await _dbContext.Books
+                .Include(b => b.AuthorMaster)
+                .Where(b => b.IsPublished)
+                .OrderByDescending(b => b.CreatedAt)
+                .ToListAsync();
+
+            var plansList = new System.Collections.Generic.List<object>();
+            foreach (var s in rawSubs)
+            {
+                var planBooks = new System.Collections.Generic.List<object>();
+                if (s.Plan != null)
+                {
+                    var basicBooks = allPublishedBooks.Where(b => !royaltyBookIds.Contains(b.Id)).ToList();
+                    var royaltyBooks = allPublishedBooks.Where(b => royaltyBookIds.Contains(b.Id)).ToList();
+
+                    var selectedBooks = new System.Collections.Generic.List<Book>();
+                    if (s.Plan.MaxBookLimit == -1)
+                    {
+                        selectedBooks.AddRange(allPublishedBooks);
+                    }
+                    else
+                    {
+                        if (s.Plan.BasicBookLimit > 0)
+                            selectedBooks.AddRange(basicBooks.Take(s.Plan.BasicBookLimit));
+                        if (s.Plan.RoyaltyBookLimit > 0)
+                            selectedBooks.AddRange(royaltyBooks.Take(s.Plan.RoyaltyBookLimit));
+                        if (!selectedBooks.Any() && s.Plan.MaxBookLimit > 0)
+                            selectedBooks.AddRange(allPublishedBooks.Take(s.Plan.MaxBookLimit));
+                    }
+
+                    planBooks = selectedBooks.Select(b => (object)new
+                    {
+                        bookId = b.Id,
+                        itemName = b.ItemName,
+                        authorName = b.AuthorMaster != null ? b.AuthorMaster.AuthorName : "B. Jain Author",
+                        coverImage = b.CoverImagePath ?? "/images/default-cover.png",
+                        pages = b.NoOfPages
+                    }).ToList();
+                }
+
+                plansList.Add(new
+                {
+                    planName = s.Plan != null ? s.Plan.PlanName : "Subscription Plan",
+                    startDate = s.StartDate,
+                    endDate = s.ExpiryDate,
+                    amountPaid = s.AmountPaid,
+                    billingPeriod = s.Plan != null ? s.Plan.BillingPeriod : "Standard",
+                    transactionId = s.TransactionId,
+                    isActive = s.ExpiryDate >= DateTime.UtcNow && s.Status == "Active",
+                    remainingDays = s.ExpiryDate >= DateTime.UtcNow ? (int)(s.ExpiryDate - DateTime.UtcNow).TotalDays : 0,
+                    books = planBooks
+                });
+            }
+
+            
+            var bundlesList = new System.Collections.Generic.List<object>();
+            var bundlePurchases = await _dbContext.Customers
+                .Where(c => c.UserId == userId && c.PlanType != null && c.PlanType.StartsWith("Bundle:"))
+                .OrderByDescending(c => c.PurchasedAt)
+                .ToListAsync();
+
+            foreach (var bp in bundlePurchases)
+            {
+                string bundleName = bp.PlanType!.Replace("Bundle:", "").Trim();
+                var matchedBundle = await _dbContext.Bundles
+                    .FirstOrDefaultAsync(b => b.BundleName == bundleName);
+
+                var bundleBooks = new System.Collections.Generic.List<object>();
+                if (matchedBundle != null)
+                {
+                    var booksInBundle = await _dbContext.BundleItems
+                        .Include(bi => bi.Book)
+                        .ThenInclude(bk => bk!.AuthorMaster)
+                        .Where(bi => bi.BundleId == matchedBundle.Id && bi.Book != null)
+                        .Select(bi => (object)new
+                        {
+                            bookId = bi.BookId,
+                            itemName = bi.Book!.ItemName,
+                            authorName = bi.Book.AuthorMaster != null ? bi.Book.AuthorMaster.AuthorName : "B. Jain Author",
+                            coverImage = bi.Book.CoverImagePath ?? "/images/default-cover.png"
+                        })
+                        .ToListAsync();
+
+                    bundleBooks.AddRange(booksInBundle);
+                }
+
+                bundlesList.Add(new
+                {
+                    bundleName = bundleName,
+                    purchasedDate = bp.PurchasedAt,
+                    amountPaid = bp.AmountPaid,
+                    books = bundleBooks
+                });
+            }
+
+            
+            var libraryList = await _dbContext.UserReadingProgress
+                .Where(p => p.UserId == userId)
+                .OrderByDescending(p => p.LastReadAt)
+                .Select(p => new
+                {
+                    bookId = p.BookId,
+                    itemName = p.Book != null ? p.Book.ItemName : "eBook Document",
+                    authorName = p.Book != null && p.Book.AuthorMaster != null ? p.Book.AuthorMaster.AuthorName : "B. Jain Author",
+                    categoryCode = p.Book != null ? p.Book.CategoryCode : "HOMEO",
+                    coverImage = p.Book != null ? p.Book.CoverImagePath : "/images/default-cover.png",
+                    lastReadPage = p.LastReadPage,
+                    totalPages = p.TotalPages,
+                    lastReadAt = p.LastReadAt
+                })
+                .ToListAsync();
+
+            return Ok(new
+            {
+                profile = new
+                {
+                    id = customer.Id,
+                    custId = customer.CustId,
+                    custName = customer.CustName,
+                    mobileNo = customer.MobileNo == "N/A" ? "" : customer.MobileNo,
+                    emailId = customer.EmailId,
+                    address1 = customer.Address1 == "Pending Profile Update" ? "" : customer.Address1,
+                    address2 = customer.Address2,
+                    country = string.IsNullOrWhiteSpace(customer.Country) ? "India" : customer.Country,
+                    state = customer.State == "N/A" ? "" : customer.State,
+                    postalCode = customer.PostalCode == "000000" ? "" : customer.PostalCode,
+                    landmark = customer.Landmark
+                },
+                plans = plansList,
+                bundles = bundlesList,
+                library = libraryList
+            });
         }
     }
 }
