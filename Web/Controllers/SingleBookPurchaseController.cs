@@ -49,9 +49,25 @@ namespace Web.Controllers
                     CREATE INDEX IX_PurchasedBundleSnapshots_TxnId ON PurchasedBundleSnapshots(TransactionId);
                 END";
             await _dbContext.Database.ExecuteSqlRawAsync(sql);
+            const string metaSql = @"
+                IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'PurchasedBookMetadataSnapshots')
+                BEGIN
+                    CREATE TABLE PurchasedBookMetadataSnapshots (
+                        Id UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
+                        TransactionId NVARCHAR(150) NOT NULL,
+                        BookId UNIQUEIDENTIFIER NOT NULL,
+                        ItemName NVARCHAR(300) NOT NULL,
+                        AuthorName NVARCHAR(200) NOT NULL,
+                        CoverImage NVARCHAR(500) NOT NULL,
+                        CategoryCode NVARCHAR(100) NOT NULL,
+                        NoOfPages INT NOT NULL DEFAULT 0,
+                        PriceAtPurchase DECIMAL(18,2) NOT NULL DEFAULT 0,
+                        LockedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE()
+                    );
+                END";
+            await _dbContext.Database.ExecuteSqlRawAsync(metaSql);
         }
 
-        // Helper: Parse ValidTill date from PlanType ("SingleBook|ValidTill:2027-11-14T00:00:00Z")
         private static DateTime? ParseSingleBookExpiry(string? planType, DateTime purchasedAt)
         {
             if (string.IsNullOrWhiteSpace(planType)) return null;
@@ -66,7 +82,6 @@ namespace Web.Controllers
             return purchasedAt.AddDays(365);
         }
 
-        // 1. CHECK IF USER HAS ACTIVE ACCESS TO THIS BOOK (CHECKS SINGLE BOOK EXPIRY + PLAN + BUNDLE SNAPSHOT)
         [HttpGet("check-access/{bookId:guid}")]
         public async Task<IActionResult> CheckBookAccess(Guid bookId)
         {
@@ -74,7 +89,6 @@ namespace Web.Controllers
             if (user == null)
                 return Ok(new { hasAccess = false, isLoggedIn = false });
 
-            // 1. Check Active Single Book Purchase (Not Expired)
             var singlePurchases = await _dbContext.Customers
                 .Where(c => c.UserId == user.Id &&
                             c.BookId == bookId &&
@@ -99,7 +113,6 @@ namespace Web.Controllers
                 }
             }
 
-            // 2. Check Active Subscription Plan
             bool hasActivePlan = await _dbContext.UserSubscriptions.AnyAsync(s =>
                 s.UserId == user.Id &&
                 s.Status == "Active" &&
@@ -108,7 +121,6 @@ namespace Web.Controllers
             if (hasActivePlan)
                 return Ok(new { hasAccess = true, isLoggedIn = true, accessType = "SubscriptionPlan" });
 
-            // 3. Check Purchased Bundle (Using Immutable Snapshot Table)
             await EnsureSnapshotTableAsync();
 
             var userBundleRecords = await _dbContext.Customers
@@ -123,11 +135,10 @@ namespace Web.Controllers
             {
                 var expiry = ParseSingleBookExpiry(br.PlanType, br.PurchasedAt);
                 if (expiry != null && expiry < DateTime.UtcNow)
-                    continue; // Bundle expired
+                    continue; 
 
                 string cleanBundleName = br.PlanType!.Split('|')[0].Replace("Bundle:", "").Trim();
 
-                // Read locked snapshot rows for this exact order
                 var lockedBooksForTxn = await _dbContext.Database
                     .SqlQueryRaw<Guid>("SELECT BookId AS Value FROM PurchasedBundleSnapshots WHERE TransactionId = {0}", br.TransactionId)
                     .ToListAsync();
@@ -145,10 +156,9 @@ namespace Web.Controllers
                             validTill = expiry
                         });
                     }
-                    continue; // Do NOT unlock books added later by admin
+                    continue;
                 }
 
-                // Fallback only if legacy order has no snapshot rows yet
                 bool inBundle = await _dbContext.BundleItems
                     .Include(bi => bi.Bundle)
                     .AnyAsync(bi => bi.BookId == bookId &&
@@ -171,7 +181,6 @@ namespace Web.Controllers
             return Ok(new { hasAccess = false, isLoggedIn = true });
         }
 
-        // 2. GET BOOK FULL DETAILS + MATCHING BUNDLES FOR BUY NOW FULL SCREEN
         [HttpGet("book-preview/{bookId:guid}")]
         public async Task<IActionResult> GetSingleBookPreviewDetails(Guid bookId)
         {
@@ -331,6 +340,19 @@ namespace Web.Controllers
 
             _dbContext.Customers.Add(purchaseRecord);
             await _dbContext.SaveChangesAsync();
+            await EnsureSnapshotTableAsync();
+            var authorEntity = book.AuthorMasterId.HasValue
+                ? await _dbContext.Authors.FindAsync(book.AuthorMasterId.Value)
+                : null;
+
+            await _dbContext.Database.ExecuteSqlRawAsync(
+                @"INSERT INTO PurchasedBookMetadataSnapshots 
+                  (Id, TransactionId, BookId, ItemName, AuthorName, CoverImage, CategoryCode, NoOfPages, PriceAtPurchase, LockedAt) 
+                  VALUES ({0}, {1}, {2}, {3}, {4}, {5}, {6}, {7}, {8}, {9})",
+                Guid.NewGuid(), txnId, book.Id, book.ItemName ?? "Book",
+                authorEntity?.AuthorName ?? "B. Jain Author",
+                book.CoverImagePath ?? "/images/default-cover.png",
+                book.CategoryCode ?? "HOMEO", book.NoOfPages, book.Price, nowUtc);
 
             return Ok(new
             {
@@ -433,6 +455,25 @@ namespace Web.Controllers
                 await _dbContext.Database.ExecuteSqlRawAsync(
                     "INSERT INTO PurchasedBundleSnapshots (Id, TransactionId, UserId, BundleName, BookId, LockedAt) VALUES ({0}, {1}, {2}, {3}, {4}, {5})",
                     Guid.NewGuid(), txnId, user.Id, bundle.BundleName, bId, nowUtc);
+            }
+            var bundleBooksMeta = await _dbContext.Books
+                .Include(b => b.AuthorMaster)
+                .Where(b => bundleBookIds.Contains(b.Id))
+                .ToDictionaryAsync(b => b.Id);
+
+            foreach (var bId in bundleBookIds)
+            {
+                if (bundleBooksMeta.TryGetValue(bId, out var bk))
+                {
+                    await _dbContext.Database.ExecuteSqlRawAsync(
+                        @"INSERT INTO PurchasedBookMetadataSnapshots 
+                          (Id, TransactionId, BookId, ItemName, AuthorName, CoverImage, CategoryCode, NoOfPages, PriceAtPurchase, LockedAt) 
+                          VALUES ({0}, {1}, {2}, {3}, {4}, {5}, {6}, {7}, {8}, {9})",
+                        Guid.NewGuid(), txnId, bk.Id, bk.ItemName ?? "Book",
+                        bk.AuthorMaster?.AuthorName ?? "B. Jain Author",
+                        bk.CoverImagePath ?? "/images/default-cover.png",
+                        bk.CategoryCode ?? "HOMEO", bk.NoOfPages, bk.Price, nowUtc);
+                }
             }
 
             return Ok(new

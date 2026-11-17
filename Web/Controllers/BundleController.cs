@@ -27,29 +27,42 @@ namespace Web.Controllers
         {
             try
             {
-                var bundles = await _dbContext.Bundles
+                var royaltyBookIds = await _dbContext.VendorRoyaltyRules
+                    .Where(r => r.IsRoyaltyApplicable && (r.LiveStatus == null || r.LiveStatus == "" || r.LiveStatus == "Live" || r.LiveStatus == "Active"))
+                    .Select(r => r.BookId)
+                    .Distinct()
+                    .ToListAsync();
+
+                var royaltySet = new HashSet<Guid>(royaltyBookIds);
+
+                var rawBundles = await _dbContext.Bundles
                     .Include(b => b.BundleItems)
                         .ThenInclude(bi => bi.Book)
+                            .ThenInclude(bk => bk!.AuthorMaster)
                     .OrderByDescending(b => b.CreatedAt)
-                    .Select(b => new
-                    {
-                        b.Id,
-                        b.BundleName,
-                        b.Description,
-                        b.NumberOfTitles,
-                        b.TotalPrice,
-                        b.DiscountPercentage,
-                        b.FinalPrice,
-                        b.IsActive,
-                        b.CreatedAt,
-                        BookTitles = b.BundleItems.Select(bi => new
-                        {
-                            bi.BookId,
-                            BookName = bi.Book != null ? bi.Book.ItemName : "N/A",
-                            Price = bi.Book != null ? bi.Book.Price : 0m
-                        }).ToList()
-                    })
                     .ToListAsync();
+
+                var bundles = rawBundles.Select(b => new
+                {
+                    b.Id,
+                    b.BundleName,
+                    b.Description,
+                    b.NumberOfTitles,
+                    b.TotalPrice,
+                    b.DiscountPercentage,
+                    b.FinalPrice,
+                    b.IsActive,
+                    b.CreatedAt,
+                    BookTitles = b.BundleItems.Select(bi => new
+                    {
+                        bi.BookId,
+                        BookName = bi.Book != null ? bi.Book.ItemName : "N/A",
+                        AuthorName = bi.Book != null && bi.Book.AuthorMaster != null ? bi.Book.AuthorMaster.AuthorName : "B. Jain Author",
+                        CoverImage = bi.Book != null ? (bi.Book.CoverImagePath ?? "/images/default-cover.png") : "/images/default-cover.png",
+                        Price = bi.Book != null ? bi.Book.Price : 0m,
+                        IsRoyalty = royaltySet.Contains(bi.BookId)
+                    }).ToList()
+                }).ToList();
 
                 return Ok(bundles);
             }

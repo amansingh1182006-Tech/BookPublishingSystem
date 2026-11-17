@@ -544,21 +544,18 @@ namespace Web.Areas.Author.Controllers
 
             try
             {
-                Book book = null;
+                Book? book = null;
 
-                
                 if (Guid.TryParse(cleanId, out Guid parsedGuid))
                 {
                     book = await _dbContext.Books.FirstOrDefaultAsync(b => b.Id == parsedGuid);
                 }
 
-                
                 if (book == null)
                 {
                     book = await _dbContext.Books.FirstOrDefaultAsync(b => b.ItemNo.ToLower() == cleanId.ToLower());
                 }
 
-               
                 if (book == null)
                 {
                     book = await _dbContext.Books.FirstOrDefaultAsync(b => b.ItemName.ToLower() == cleanId.ToLower());
@@ -571,21 +568,66 @@ namespace Web.Areas.Author.Controllers
 
                 Guid targetBookId = book.Id;
 
+                var readingProgress = await _dbContext.UserReadingProgress
+                    .Where(p => p.BookId == targetBookId)
+                    .ToListAsync();
+                if (readingProgress.Any()) _dbContext.UserReadingProgress.RemoveRange(readingProgress);
+
+                var alphaSegments = await _dbContext.BookSegmentsAlpha
+                    .Where(s => s.BookId == targetBookId)
+                    .ToListAsync();
+                if (alphaSegments.Any()) _dbContext.BookSegmentsAlpha.RemoveRange(alphaSegments);
+
+                var betaSegments = await _dbContext.BookSegmentsBeta
+                    .Where(s => s.BookId == targetBookId)
+                    .ToListAsync();
+                if (betaSegments.Any()) _dbContext.BookSegmentsBeta.RemoveRange(betaSegments);
+
+                var gammaSegments = await _dbContext.BookSegmentsGamma
+                    .Where(s => s.BookId == targetBookId)
+                    .ToListAsync();
+                if (gammaSegments.Any()) _dbContext.BookSegmentsGamma.RemoveRange(gammaSegments);
+
+                var bundleItems = await _dbContext.BundleItems
+                    .Where(bi => bi.BookId == targetBookId)
+                    .ToListAsync();
+                if (bundleItems.Any()) _dbContext.BundleItems.RemoveRange(bundleItems);
+
+                var royaltyRules = await _dbContext.VendorRoyaltyRules
+                    .Where(r => r.BookId == targetBookId)
+                    .ToListAsync();
+                if (royaltyRules.Any()) _dbContext.VendorRoyaltyRules.RemoveRange(royaltyRules);
+
+                var royaltyTxns = await _dbContext.VendorRoyaltyTransactions
+                    .Where(t => t.BookId == targetBookId)
+                    .ToListAsync();
+                if (royaltyTxns.Any()) _dbContext.VendorRoyaltyTransactions.RemoveRange(royaltyTxns);
+
+                var linkedCustomers = await _dbContext.Customers
+                    .Where(c => c.BookId == targetBookId)
+                    .ToListAsync();
+
+                if (linkedCustomers.Any())
+                {
+                    var fallbackBook = await _dbContext.Books
+                        .FirstOrDefaultAsync(b => b.Id != targetBookId);
+
+                    if (fallbackBook != null)
+                    {
+                        foreach (var cust in linkedCustomers)
+                        {
+                            cust.BookId = fallbackBook.Id;
+                        }
+                    }
+                    else
+                    {
+                        _dbContext.Customers.RemoveRange(linkedCustomers);
+                    }
+                }
+
                 
-                try { await _dbContext.Database.ExecuteSqlRawAsync("DELETE FROM [UserReadingProgress] WHERE [BookId] = {0}", targetBookId); } catch { }
-                try { await _dbContext.Database.ExecuteSqlRawAsync("DELETE FROM [UserReadingProgresses] WHERE [BookId] = {0}", targetBookId); } catch { }
-
-                try { await _dbContext.Database.ExecuteSqlRawAsync("DELETE FROM [BookSegmentsAlpha] WHERE [BookId] = {0}", targetBookId); } catch { }
-                try { await _dbContext.Database.ExecuteSqlRawAsync("DELETE FROM [BookSegmentAlpha] WHERE [BookId] = {0}", targetBookId); } catch { }
-
-                try { await _dbContext.Database.ExecuteSqlRawAsync("DELETE FROM [BookSegmentsBeta] WHERE [BookId] = {0}", targetBookId); } catch { }
-                try { await _dbContext.Database.ExecuteSqlRawAsync("DELETE FROM [BookSegmentBeta] WHERE [BookId] = {0}", targetBookId); } catch { }
-
-                try { await _dbContext.Database.ExecuteSqlRawAsync("DELETE FROM [BookSegmentsGamma] WHERE [BookId] = {0}", targetBookId); } catch { }
-                try { await _dbContext.Database.ExecuteSqlRawAsync("DELETE FROM [BookSegmentGamma] WHERE [BookId] = {0}", targetBookId); } catch { }
-
-                
-                await _dbContext.Database.ExecuteSqlRawAsync("DELETE FROM [Books] WHERE [Id] = {0}", targetBookId);
+                _dbContext.Books.Remove(book);
+                await _dbContext.SaveChangesAsync();
 
                 return Ok(new { success = true, message = $"Book '{book.ItemName}' deleted successfully!" });
             }

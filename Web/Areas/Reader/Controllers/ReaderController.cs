@@ -53,7 +53,36 @@ namespace Web.Areas.Reader.Controllers
                     CREATE INDEX IX_PurchasedBundleSnapshots_TxnId ON PurchasedBundleSnapshots(TransactionId);
                 END";
             await _dbContext.Database.ExecuteSqlRawAsync(sql);
+            const string metaSql = @"
+                IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'PurchasedBookMetadataSnapshots')
+                BEGIN
+                    CREATE TABLE PurchasedBookMetadataSnapshots (
+                        Id UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
+                        TransactionId NVARCHAR(150) NOT NULL,
+                        BookId UNIQUEIDENTIFIER NOT NULL,
+                        ItemName NVARCHAR(300) NOT NULL,
+                        AuthorName NVARCHAR(200) NOT NULL,
+                        CoverImage NVARCHAR(500) NOT NULL,
+                        CategoryCode NVARCHAR(100) NOT NULL,
+                        NoOfPages INT NOT NULL DEFAULT 0,
+                        PriceAtPurchase DECIMAL(18,2) NOT NULL DEFAULT 0,
+                        LockedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE()
+                    );
+                END";
+            await _dbContext.Database.ExecuteSqlRawAsync(metaSql);
         }
+
+        private class BookSnapshotMetaRow
+        {
+            public string TransactionId { get; set; } = "";
+            public Guid BookId { get; set; }
+            public string ItemName { get; set; } = "";
+            public string AuthorName { get; set; } = "";
+            public string CoverImage { get; set; } = "";
+            public string CategoryCode { get; set; } = "";
+            public int NoOfPages { get; set; }
+        }
+        
 
         private static DateTime ParseValidTill(string? planType, DateTime startDate)
         {
@@ -175,10 +204,22 @@ namespace Web.Areas.Reader.Controllers
                 .Include(b => b.AuthorMaster)
                 .ToDictionaryAsync(b => b.Id);
 
+            var royaltyBookIds = await _dbContext.VendorRoyaltyRules
+                .Where(r => r.IsRoyaltyApplicable && (r.LiveStatus == null || r.LiveStatus == "" || r.LiveStatus == "Live" || r.LiveStatus == "Active"))
+                .Select(r => r.BookId)
+                .Distinct()
+                .ToListAsync();
+            var royaltySet = new HashSet<Guid>(royaltyBookIds);
+
             var allBundles = await _dbContext.Bundles
                 .Include(b => b.BundleItems)
                     .ThenInclude(bi => bi.Book)
                         .ThenInclude(bk => bk!.AuthorMaster)
+                .ToListAsync();
+
+            var allFrozenMeta = await _dbContext.Database
+                .SqlQueryRaw<BookSnapshotMetaRow>(
+                    "SELECT TransactionId, BookId, ItemName, AuthorName, CoverImage, CategoryCode, NoOfPages FROM PurchasedBookMetadataSnapshots")
                 .ToListAsync();
 
             var nowUtc = DateTime.UtcNow;
@@ -218,21 +259,48 @@ namespace Web.Areas.Reader.Controllers
                     }
                 }
 
-                var bundleBooksList = lockedBookIds
-                    .Where(id => allBooksMap.ContainsKey(id))
-                    .Select(id =>
+                var bundleBooksList = new List<object>();
+                foreach (var id in lockedBookIds)
+                {
+                    var snap = allFrozenMeta.FirstOrDefault(m => m.TransactionId == br.TransactionId && m.BookId == id);
+                    if (snap == null && allBooksMap.TryGetValue(id, out var bkToFreeze))
                     {
-                        var bk = allBooksMap[id];
-                        return (object)new
+                        string aName = bkToFreeze.AuthorMaster != null ? bkToFreeze.AuthorMaster.AuthorName : "B. Jain Author";
+                        string cImg = bkToFreeze.CoverImagePath ?? "/images/default-cover.png";
+                        string cCode = bkToFreeze.CategoryCode ?? "HOMEO";
+
+                        await _dbContext.Database.ExecuteSqlRawAsync(
+                            @"INSERT INTO PurchasedBookMetadataSnapshots 
+                              (Id, TransactionId, BookId, ItemName, AuthorName, CoverImage, CategoryCode, NoOfPages, PriceAtPurchase, LockedAt) 
+                              VALUES ({0}, {1}, {2}, {3}, {4}, {5}, {6}, {7}, {8}, {9})",
+                            Guid.NewGuid(), br.TransactionId, bkToFreeze.Id, bkToFreeze.ItemName, aName, cImg, cCode, bkToFreeze.NoOfPages, bkToFreeze.Price, nowUtc);
+
+                        snap = new BookSnapshotMetaRow
                         {
-                            bookId = bk.Id,
-                            itemName = bk.ItemName,
-                            authorName = bk.AuthorMaster != null ? bk.AuthorMaster.AuthorName : "B. Jain Author",
-                            coverImage = bk.CoverImagePath ?? "/images/default-cover.png",
-                            pages = bk.NoOfPages
+                            TransactionId = br.TransactionId!,
+                            BookId = bkToFreeze.Id,
+                            ItemName = bkToFreeze.ItemName,
+                            AuthorName = aName,
+                            CoverImage = cImg,
+                            CategoryCode = cCode,
+                            NoOfPages = bkToFreeze.NoOfPages
                         };
-                    })
-                    .ToList();
+                        allFrozenMeta.Add(snap);
+                    }
+
+                    if (snap != null)
+                    {
+                        bundleBooksList.Add(new
+                        {
+                            bookId = snap.BookId,
+                            itemName = snap.ItemName,
+                            authorName = snap.AuthorName,
+                            coverImage = snap.CoverImage,
+                            pages = snap.NoOfPages,
+                            isRoyalty = royaltySet.Contains(snap.BookId)
+                        });
+                    }
+                }
 
                 bundlesResult.Add(new
                 {
@@ -248,30 +316,55 @@ namespace Web.Areas.Reader.Controllers
                 });
             }
 
-            var singleBooks = customerRecords
-                .Where(c => c.PlanType != null && c.PlanType.StartsWith("SingleBook") && c.Book != null)
-                .Select(sr =>
-                {
-                    DateTime validTill = ParseValidTill(sr.PlanType, sr.PurchasedAt);
-                    int daysLeft = Math.Max(0, (int)Math.Ceiling((validTill - nowUtc).TotalDays));
+            var singleBooks = new List<object>();
+            foreach (var sr in customerRecords.Where(c => c.PlanType != null && c.PlanType.StartsWith("SingleBook") && c.Book != null))
+            {
+                DateTime validTill = ParseValidTill(sr.PlanType, sr.PurchasedAt);
+                int daysLeft = Math.Max(0, (int)Math.Ceiling((validTill - nowUtc).TotalDays));
 
-                    return new
+                var snap = allFrozenMeta.FirstOrDefault(m => m.TransactionId == sr.TransactionId && m.BookId == sr.BookId);
+                if (snap == null)
+                {
+                    string aName = sr.Book!.AuthorMaster != null ? sr.Book.AuthorMaster.AuthorName : "B. Jain Author";
+                    string cImg = sr.Book.CoverImagePath ?? "/images/default-cover.png";
+                    string cCode = sr.Book.CategoryCode ?? "HOMEO";
+
+                    await _dbContext.Database.ExecuteSqlRawAsync(
+                        @"INSERT INTO PurchasedBookMetadataSnapshots 
+                          (Id, TransactionId, BookId, ItemName, AuthorName, CoverImage, CategoryCode, NoOfPages, PriceAtPurchase, LockedAt) 
+                          VALUES ({0}, {1}, {2}, {3}, {4}, {5}, {6}, {7}, {8}, {9})",
+                        Guid.NewGuid(), sr.TransactionId, sr.BookId, sr.Book.ItemName, aName, cImg, cCode, sr.Book.NoOfPages, sr.AmountPaid, nowUtc);
+
+                    snap = new BookSnapshotMetaRow
                     {
-                        transactionId = sr.TransactionId,
-                        bookId = sr.BookId,
-                        itemName = sr.Book!.ItemName,
-                        authorName = sr.Book.AuthorMaster != null ? sr.Book.AuthorMaster.AuthorName : "B. Jain Author",
-                        categoryCode = sr.Book.CategoryCode,
-                        coverImage = sr.Book.CoverImagePath ?? "/images/default-cover.png",
-                        pages = sr.Book.NoOfPages,
-                        amountPaid = sr.AmountPaid,
-                        validFrom = sr.PurchasedAt,
-                        validTill = validTill,
-                        isExpired = validTill < nowUtc,
-                        remainingDays = daysLeft
+                        TransactionId = sr.TransactionId!,
+                        BookId = sr.BookId,
+                        ItemName = sr.Book.ItemName,
+                        AuthorName = aName,
+                        CoverImage = cImg,
+                        CategoryCode = cCode,
+                        NoOfPages = sr.Book.NoOfPages
                     };
-                })
-                .ToList();
+                    allFrozenMeta.Add(snap);
+                }
+
+                singleBooks.Add(new
+                {
+                    transactionId = sr.TransactionId,
+                    bookId = snap.BookId,
+                    itemName = snap.ItemName,
+                    authorName = snap.AuthorName,
+                    categoryCode = snap.CategoryCode,
+                    coverImage = snap.CoverImage,
+                    pages = snap.NoOfPages,
+                    isRoyalty = royaltySet.Contains(snap.BookId),
+                    amountPaid = sr.AmountPaid,
+                    validFrom = sr.PurchasedAt,
+                    validTill = validTill,
+                    isExpired = validTill < nowUtc,
+                    remainingDays = daysLeft
+                });
+            }
 
             return Ok(new { bundles = bundlesResult, singleBooks });
         }

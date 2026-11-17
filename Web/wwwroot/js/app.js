@@ -750,7 +750,7 @@ function App() {
 
     const fetchPlansMaster = async () => {
         try {
-            const res = await fetch('/api/plan/all');
+            const res = await fetch('/api/plan/get-all');
             if (res.ok) {
                 const data = await res.json();
                 setPlansList(data);
@@ -2069,7 +2069,7 @@ function App() {
                                         />
                                     ) : null
                                     ) : selectedMaster === 'plans' ? (
-                                        <PlanMaster triggerToast={triggerToast} />
+                                        <PlanMaster booksList={myAuthorBooks} triggerToast={triggerToast} />
                                     ) : selectedMaster === 'bundles' ? (
                                         typeof window.BundleMaster !== 'undefined' ? (
                                             <window.BundleMaster triggerToast={triggerToast} />

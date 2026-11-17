@@ -125,7 +125,7 @@ function PlanMaster({ booksList = [], triggerToast }) {
             setIsActive(plan.isActive ?? plan.IsActive ?? true);
 
             const rawBookIds = plan.bookIds || plan.BookIds ||
-                (plan.planBooks || plan.PlanBooks || []).map(pb => pb.bookId || pb.BookId || pb.id) || [];
+                (plan.includedBooks || plan.IncludedBooks || plan.planBooks || plan.PlanBooks || []).map(pb => pb.bookId || pb.BookId || pb.id) || [];
             setSelectedPlanBookIds(rawBookIds.map(id => String(id)));
 
             const fetchedFeatures = plan.features || plan.Features || [];
@@ -313,8 +313,6 @@ function PlanMaster({ booksList = [], triggerToast }) {
 
         return (
             <div className="w-full bg-white p-6 rounded-lg shadow-md border border-slate-200 space-y-6">
-
-                {/* PAGE HEADER WITH BACK BUTTON */}
                 <div className="flex items-center justify-between border-b pb-4">
                     <div className="flex items-center gap-4">
                         <button
@@ -341,10 +339,8 @@ function PlanMaster({ booksList = [], triggerToast }) {
                     </button>
                 </div>
 
-                {/* MASTER PAGE FORM BODY */}
                 <form onSubmit={handleSavePlan} className="space-y-6 text-xs">
-
-                    {/* SECTION 1: PLAN NAME, BILLING CYCLE & PRICE */}
+                    {/* SECTION 1 */}
                     <div className="bg-slate-50 p-5 rounded-lg border border-slate-200 space-y-4">
                         <h4 className="font-bold text-slate-800 text-sm border-b pb-2 flex items-center gap-2">
                             <i className="fa-solid fa-pen text-indigo-600"></i> 1. Manual Plan Name, Billing Cycle & Pricing Configuration
@@ -419,7 +415,7 @@ function PlanMaster({ booksList = [], triggerToast }) {
                         </div>
                     </div>
 
-                    {/* SECTION 2: BOOK LIMITS */}
+                    {/* SECTION 2 */}
                     <div className="bg-amber-50/60 p-5 rounded-lg border border-amber-200 space-y-4">
                         <h4 className="font-bold text-amber-900 text-sm border-b border-amber-200 pb-2 flex items-center gap-2">
                             <i className="fa-solid fa-book text-amber-600"></i> 2. Book Access & Royalty Limits
@@ -458,7 +454,7 @@ function PlanMaster({ booksList = [], triggerToast }) {
                         </div>
                     </div>
 
-                    {/* SECTION 3: SELECT BOOKS INCLUDED IN THIS PLAN WITH ROYALTY % BADGE */}
+                    {/* SECTION 3: SELECT BOOKS WITH COVER IMAGE & ROYALTY % BADGE */}
                     <div className="bg-blue-50/50 p-5 rounded-lg border border-blue-200 space-y-4">
                         <div className="flex flex-wrap justify-between items-center border-b border-blue-200 pb-2 gap-2">
                             <div>
@@ -510,42 +506,48 @@ function PlanMaster({ booksList = [], triggerToast }) {
                                         ? (pages / rule.threshold).toFixed(2)
                                         : '0.00';
                                     const vName = b.vendorName || b.VendorName || 'In-House';
+                                    const coverImg = b.image || b.Image || b.coverImagePath || b.CoverImagePath || '/images/default-cover.png';
 
                                     return (
                                         <label
                                             key={bId}
-                                            className={`flex items-start justify-between p-3 rounded border cursor-pointer transition ${isChecked
-                                                    ? 'bg-blue-100/70 border-blue-500 shadow-sm'
-                                                    : 'bg-white border-slate-200 hover:bg-slate-50'
+                                            className={`flex items-start justify-between p-3 rounded border cursor-pointer transition gap-2 ${isChecked
+                                                ? 'bg-blue-100/70 border-blue-500 shadow-sm'
+                                                : 'bg-white border-slate-200 hover:bg-slate-50'
                                                 }`}>
-                                            <div className="flex items-start gap-2.5">
+                                            <div className="flex items-start gap-2.5 min-w-0">
                                                 <input
                                                     type="checkbox"
                                                     checked={isChecked}
                                                     onChange={() => togglePlanBookSelection(bId)}
-                                                    className="mt-1 w-4 h-4 accent-blue-600 cursor-pointer"
+                                                    className="mt-1 w-4 h-4 accent-blue-600 cursor-pointer shrink-0"
                                                 />
-                                                <div>
-                                                    <div className="font-bold text-slate-900 text-xs line-clamp-1">
+                                                <img
+                                                    src={coverImg}
+                                                    alt={b.itemName || b.ItemName}
+                                                    className="w-10 h-14 object-cover rounded border border-slate-200 shrink-0"
+                                                />
+                                                <div className="min-w-0">
+                                                    <div className="font-bold text-slate-900 text-xs truncate">
                                                         {b.itemName || b.ItemName}
                                                     </div>
-                                                    <div className="text-[10px] text-slate-500">
+                                                    <div className="text-[10px] text-slate-500 truncate">
                                                         {b.authorName || b.AuthorName} | {pages} Pages
                                                     </div>
                                                     <div className="flex flex-wrap items-center gap-1 mt-1">
                                                         {rule && rule.isRoyalty ? (
                                                             <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 font-bold px-1.5 py-0.5 rounded text-[9px]">
-                                                                Royalty: Yes ({rule.percentage}% | {pts} Pts &bull; {rule.vendorName})
+                                                                Royalty: Yes ({rule.percentage}% | {pts} Pts)
                                                             </span>
                                                         ) : (
                                                             <span className="bg-slate-200 text-slate-700 font-semibold px-1.5 py-0.5 rounded text-[9px]">
-                                                                Royalty: No (Basic &bull; {vName})
+                                                                Royalty: No ({vName})
                                                             </span>
                                                         )}
                                                     </div>
                                                 </div>
                                             </div>
-                                            <span className="font-extrabold text-emerald-700 text-xs">
+                                            <span className="font-extrabold text-emerald-700 text-xs shrink-0">
                                                 ₹{b.price !== undefined ? b.price : b.Price}
                                             </span>
                                         </label>
@@ -554,7 +556,6 @@ function PlanMaster({ booksList = [], triggerToast }) {
                             </div>
                         )}
 
-                        {/* LIVE 30% ROYALTY POOL SPLIT PREVIEW */}
                         {selectedPlanBookIds.length > 0 && (
                             <div className="bg-white p-4 rounded-lg border border-blue-300 space-y-2 mt-2">
                                 <div className="flex flex-wrap justify-between items-center">
@@ -603,7 +604,7 @@ function PlanMaster({ booksList = [], triggerToast }) {
                         )}
                     </div>
 
-                    {/* SECTION 4: FEATURES & LIMITATIONS */}
+                    {/* SECTION 4 */}
                     <div className="bg-indigo-50/40 p-5 rounded-lg border border-indigo-200 space-y-4">
                         <div className="flex justify-between items-center border-b border-indigo-200 pb-2">
                             <h4 className="font-bold text-indigo-900 text-sm flex items-center gap-2">
@@ -701,7 +702,7 @@ function PlanMaster({ booksList = [], triggerToast }) {
         );
     }
 
-    // GRID LIST VIEW MODE
+    // GRID LIST VIEW MODE (WITH INCLUDED 5 BOOKS COVER IMAGES & ROYALTY BADGES)
     return (
         <div className="w-full space-y-6">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-4 rounded-lg shadow border border-slate-200 gap-3">
@@ -728,7 +729,8 @@ function PlanMaster({ booksList = [], triggerToast }) {
                     {plansList.map(plan => {
                         const pName = plan.planName || plan.PlanName;
                         const pFeatures = plan.features || plan.Features || [];
-                        const mappedCount = (plan.bookIds || plan.BookIds || plan.planBooks || plan.PlanBooks || []).length;
+                        const includedBooks = plan.includedBooks || plan.IncludedBooks || [];
+                        const mappedCount = includedBooks.length || (plan.bookIds || plan.BookIds || []).length;
                         const isPopular = pName.toLowerCase().includes('advance') || pName.toLowerCase().includes('gold') || pName.toLowerCase().includes('vip');
 
                         return (
@@ -763,7 +765,7 @@ function PlanMaster({ booksList = [], triggerToast }) {
                                             <span className="text-indigo-700">{(plan.royaltyBookLimit ?? plan.RoyaltyBookLimit) === -1 ? 'Unlimited' : `${plan.royaltyBookLimit ?? plan.RoyaltyBookLimit} Books`}</span>
                                         </div>
                                         <div className="flex justify-between font-bold text-blue-700 border-t pt-1">
-                                            <span>Mapped Specific Books:</span>
+                                            <span>Included Books:</span>
                                             <span>{mappedCount} Books Selected</span>
                                         </div>
                                         <div className="flex justify-between text-[11px] text-slate-500 font-semibold border-t pt-1">
@@ -772,7 +774,64 @@ function PlanMaster({ booksList = [], triggerToast }) {
                                         </div>
                                     </div>
 
+                                    {/* INCLUDED BOOKS LIST WITH COVER IMAGE & ROYALTY BADGE */}
                                     <div className="space-y-2 text-xs">
+                                        <span className="font-bold text-slate-700 flex items-center justify-between">
+                                            <span>Included Books ({includedBooks.length}):</span>
+                                            <span className="text-[10px] text-amber-700 font-extrabold">Cover & Royalty Set</span>
+                                        </span>
+
+                                        {includedBooks.length === 0 ? (
+                                            <p className="text-slate-400 italic text-[11px]">No published books available yet.</p>
+                                        ) : (
+                                            <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                                                {includedBooks.map((bk, idx) => {
+                                                    const bkId = String(bk.bookId || bk.BookId || bk.id || '').toLowerCase();
+                                                    const isRoyalty = (bk.isRoyalty ?? bk.IsRoyalty) || (royaltyRulesMap[bkId]?.isRoyalty);
+                                                    const cover = bk.coverImage || bk.CoverImage || '/images/default-cover.png';
+                                                    const title = bk.itemName || bk.ItemName || 'Book';
+                                                    const author = bk.authorName || bk.AuthorName || 'B. Jain Author';
+                                                    const price = bk.price ?? bk.Price ?? 0;
+
+                                                    return (
+                                                        <div key={idx} className="flex items-center justify-between gap-2.5 p-2 rounded-lg border border-slate-200 bg-slate-50/70 hover:bg-white transition">
+                                                            <div className="flex items-center gap-2.5 min-w-0">
+                                                                <img
+                                                                    src={cover}
+                                                                    alt={title}
+                                                                    className="w-9 h-12 object-cover rounded border border-slate-300 shrink-0 shadow-xs"
+                                                                />
+                                                                <div className="min-w-0">
+                                                                    <div className="font-bold text-slate-900 text-[11px] truncate" title={title}>
+                                                                        {title}
+                                                                    </div>
+                                                                    <div className="text-[10px] text-slate-500 truncate">
+                                                                        by {author}
+                                                                    </div>
+                                                                    <div className="mt-0.5">
+                                                                        {isRoyalty ? (
+                                                                            <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-900 border border-amber-300 text-[9px] font-extrabold px-1.5 py-0.2 rounded-full">
+                                                                                <i className="fa-solid fa-crown text-amber-600"></i> Royalty Set
+                                                                            </span>
+                                                                        ) : (
+                                                                            <span className="inline-block bg-emerald-100 text-emerald-800 text-[9px] font-bold px-1.5 py-0.2 rounded">
+                                                                                Basic Book
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <span className="font-extrabold text-slate-800 text-[11px] shrink-0">
+                                                                ₹{price}
+                                                            </span>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="space-y-2 text-xs border-t pt-3">
                                         <span className="font-bold text-slate-700 block">Included Features & Limits:</span>
                                         {pFeatures.length === 0 ? (
                                             <p className="text-slate-400 italic">No features specified.</p>

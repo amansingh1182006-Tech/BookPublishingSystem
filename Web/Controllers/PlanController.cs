@@ -43,6 +43,23 @@ namespace Web.Controllers
                     CREATE INDEX IX_PurchasedPlanSnapshots_TxnId ON PurchasedPlanSnapshots(TransactionId);
                 END";
             await _dbContext.Database.ExecuteSqlRawAsync(sql);
+            const string metaSql = @"
+                IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'PurchasedBookMetadataSnapshots')
+                BEGIN
+                    CREATE TABLE PurchasedBookMetadataSnapshots (
+                        Id UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
+                        TransactionId NVARCHAR(150) NOT NULL,
+                        BookId UNIQUEIDENTIFIER NOT NULL,
+                        ItemName NVARCHAR(300) NOT NULL,
+                        AuthorName NVARCHAR(200) NOT NULL,
+                        CoverImage NVARCHAR(500) NOT NULL,
+                        CategoryCode NVARCHAR(100) NOT NULL,
+                        NoOfPages INT NOT NULL DEFAULT 0,
+                        PriceAtPurchase DECIMAL(18,2) NOT NULL DEFAULT 0,
+                        LockedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE()
+                    );
+                END";
+            await _dbContext.Database.ExecuteSqlRawAsync(metaSql);
         }
 
         // GET: api/plan/get-all
@@ -56,7 +73,75 @@ namespace Web.Controllers
                     .OrderBy(p => p.PriceIncludingTax)
                     .ToListAsync();
 
-                return Ok(plans);
+                var royaltyBookIds = await _dbContext.VendorRoyaltyRules
+                    .Where(r => r.IsRoyaltyApplicable && (r.LiveStatus == null || r.LiveStatus == "" || r.LiveStatus == "Live" || r.LiveStatus == "Active"))
+                    .Select(r => r.BookId)
+                    .Distinct()
+                    .ToListAsync();
+
+                var royaltySet = new HashSet<Guid>(royaltyBookIds);
+
+                var publishedBooks = await _dbContext.Books
+                    .Include(b => b.AuthorMaster)
+                    .Where(b => b.IsPublished)
+                    .OrderByDescending(b => b.CreatedAt)
+                    .ToListAsync();
+
+                var royaltyBooks = publishedBooks.Where(b => royaltySet.Contains(b.Id)).ToList();
+                var basicBooks = publishedBooks.Where(b => !royaltySet.Contains(b.Id)).ToList();
+
+                var result = plans.Select(p =>
+                {
+                    var previewBooks = new List<object>();
+
+                    if (p.RoyaltyBookLimit != 0)
+                    {
+                        var pickedR = p.RoyaltyBookLimit < 0 ? royaltyBooks : royaltyBooks.Take(p.RoyaltyBookLimit);
+                        previewBooks.AddRange(pickedR.Select(b => new
+                        {
+                            bookId = b.Id,
+                            itemName = b.ItemName,
+                            authorName = b.AuthorMaster != null ? b.AuthorMaster.AuthorName : "B. Jain Author",
+                            coverImage = b.CoverImagePath ?? "/images/default-cover.png",
+                            price = b.Price,
+                            isRoyalty = true
+                        }));
+                    }
+
+                    if (p.BasicBookLimit != 0)
+                    {
+                        var pickedB = p.BasicBookLimit < 0 ? basicBooks : basicBooks.Take(p.BasicBookLimit);
+                        previewBooks.AddRange(pickedB.Select(b => new
+                        {
+                            bookId = b.Id,
+                            itemName = b.ItemName,
+                            authorName = b.AuthorMaster != null ? b.AuthorMaster.AuthorName : "B. Jain Author",
+                            coverImage = b.CoverImagePath ?? "/images/default-cover.png",
+                            price = b.Price,
+                            isRoyalty = false
+                        }));
+                    }
+
+                    return new
+                    {
+                        p.Id,
+                        p.PlanName,
+                        p.Description,
+                        p.PriceIncludingTax,
+                        p.TaxPercentage,
+                        p.BillingPeriod,
+                        p.ValidityInDays,
+                        p.TargetUser,
+                        p.BasicBookLimit,
+                        p.RoyaltyBookLimit,
+                        p.MaxBookLimit,
+                        p.IsActive,
+                        p.Features,
+                        includedBooks = previewBooks
+                    };
+                }).ToList();
+
+                return Ok(result);
             }
             catch (Exception ex)
             {
@@ -348,6 +433,25 @@ namespace Web.Controllers
                                 "INSERT INTO PurchasedPlanSnapshots (Id, TransactionId, UserId, PlanName, BookId, IsRoyaltyBook, LockedAt) VALUES ({0}, {1}, {2}, {3}, {4}, {5}, {6})",
                                 Guid.NewGuid(), orderRef, appUser.Id, plan.PlanName, item.BookId, item.IsRoyalty, nowUtc);
                         }
+                        var planBooksMeta = await _dbContext.Books
+                            .Include(b => b.AuthorMaster)
+                            .Where(b => includedBookIds.Contains(b.Id))
+                            .ToDictionaryAsync(b => b.Id);
+
+                        foreach (var bId in includedBookIds)
+                        {
+                            if (planBooksMeta.TryGetValue(bId, out var bk))
+                            {
+                                await _dbContext.Database.ExecuteSqlRawAsync(
+                                    @"INSERT INTO PurchasedBookMetadataSnapshots 
+                                      (Id, TransactionId, BookId, ItemName, AuthorName, CoverImage, CategoryCode, NoOfPages, PriceAtPurchase, LockedAt) 
+                                      VALUES ({0}, {1}, {2}, {3}, {4}, {5}, {6}, {7}, {8}, {9})",
+                                    Guid.NewGuid(), orderRef, bk.Id, bk.ItemName ?? "Book",
+                                    bk.AuthorMaster?.AuthorName ?? "B. Jain Author",
+                                    bk.CoverImagePath ?? "/images/default-cover.png",
+                                    bk.CategoryCode ?? "HOMEO", bk.NoOfPages, bk.Price, nowUtc);
+                            }
+                        }
                     }
                 }
 
@@ -542,18 +646,38 @@ namespace Web.Controllers
 
                     if (lockedBookIds.Any())
                     {
+                        var frozenMeta = await _dbContext.Database
+                            .SqlQueryRaw<PurchasedBookMetaRow>(
+                                "SELECT TransactionId, BookId, ItemName, AuthorName, CoverImage, CategoryCode, NoOfPages FROM PurchasedBookMetadataSnapshots WHERE TransactionId = {0}",
+                                txnId)
+                            .ToListAsync();
+
                         return lockedBookIds
-                            .Where(id => booksByIdMap.ContainsKey(id))
+                            .Where(id => booksByIdMap.ContainsKey(id) || frozenMeta.Any(m => m.BookId == id))
                             .Select(id =>
                             {
-                                var bk = booksByIdMap[id];
-                                bool isRoy = royaltyBookIds.Contains(bk.Id.ToString());
-                                return MapBookSafe(bk, isRoy);
+                                bool isRoy = royaltyBookIds.Contains(id.ToString());
+                                var snap = frozenMeta.FirstOrDefault(m => m.BookId == id);
+                                if (snap != null)
+                                {
+                                    return (object)new
+                                    {
+                                        id = snap.BookId,
+                                        itemName = snap.ItemName,
+                                        authorName = snap.AuthorName,
+                                        coverImage = snap.CoverImage,
+                                        categoryCode = snap.CategoryCode,
+                                        pages = snap.NoOfPages,
+                                        isRoyalty = isRoy
+                                    };
+                                }
+                                return MapBookSafe(booksByIdMap[id], isRoy);
                             })
                             .ToList();
                     }
+
                     var result = new List<object>();
-                    var toFreeze = new List<(Guid BookId, bool IsRoyalty)>();
+                    var toFreeze = new List<(Book BookEntity, bool IsRoyalty)>();
 
                     if (matchedPlan != null)
                     {
@@ -562,7 +686,7 @@ namespace Web.Controllers
                             var rItems = allPublishedBooks.Where(x => x.IsRoyalty).ToList();
                             var pickedR = matchedPlan.RoyaltyBookLimit < 0 ? rItems : rItems.Take(matchedPlan.RoyaltyBookLimit).ToList();
                             result.AddRange(pickedR.Select(x => x.Mapped));
-                            toFreeze.AddRange(pickedR.Select(x => (x.BookEntity.Id, true)));
+                            toFreeze.AddRange(pickedR.Select(x => (x.BookEntity, true)));
                         }
 
                         if (matchedPlan.BasicBookLimit != 0)
@@ -570,18 +694,27 @@ namespace Web.Controllers
                             var bItems = allPublishedBooks.Where(x => !x.IsRoyalty).ToList();
                             var pickedB = matchedPlan.BasicBookLimit < 0 ? bItems : bItems.Take(matchedPlan.BasicBookLimit).ToList();
                             result.AddRange(pickedB.Select(x => x.Mapped));
-                            toFreeze.AddRange(pickedB.Select(x => (x.BookEntity.Id, false)));
+                            toFreeze.AddRange(pickedB.Select(x => (x.BookEntity, false)));
                         }
                     }
 
                     if (!string.IsNullOrWhiteSpace(txnId) && toFreeze.Any())
                     {
                         DateTime nowUtc = DateTime.UtcNow;
-                        foreach (var item in toFreeze.Distinct())
+                        foreach (var item in toFreeze.DistinctBy(x => x.BookEntity.Id))
                         {
                             await _dbContext.Database.ExecuteSqlRawAsync(
                                 "INSERT INTO PurchasedPlanSnapshots (Id, TransactionId, UserId, PlanName, BookId, IsRoyaltyBook, LockedAt) VALUES ({0}, {1}, {2}, {3}, {4}, {5}, {6})",
-                                Guid.NewGuid(), txnId, appUser.Id, planName, item.BookId, item.IsRoyalty, nowUtc);
+                                Guid.NewGuid(), txnId, appUser.Id, planName, item.BookEntity.Id, item.IsRoyalty, nowUtc);
+
+                            await _dbContext.Database.ExecuteSqlRawAsync(
+                                @"INSERT INTO PurchasedBookMetadataSnapshots 
+                                  (Id, TransactionId, BookId, ItemName, AuthorName, CoverImage, CategoryCode, NoOfPages, PriceAtPurchase, LockedAt) 
+                                  VALUES ({0}, {1}, {2}, {3}, {4}, {5}, {6}, {7}, {8}, {9})",
+                                Guid.NewGuid(), txnId, item.BookEntity.Id, item.BookEntity.ItemName ?? "Book",
+                                item.BookEntity.AuthorMaster?.AuthorName ?? "B. Jain Author",
+                                item.BookEntity.CoverImagePath ?? "/images/default-cover.png",
+                                item.BookEntity.CategoryCode ?? "HOMEO", item.BookEntity.NoOfPages, item.BookEntity.Price, nowUtc);
                         }
                     }
 
@@ -733,6 +866,16 @@ namespace Web.Controllers
             {
                 return BadRequest(new { success = false, message = ex.Message });
             }
+        }
+        private class PurchasedBookMetaRow
+        {
+            public string TransactionId { get; set; } = "";
+            public Guid BookId { get; set; }
+            public string ItemName { get; set; } = "";
+            public string AuthorName { get; set; } = "";
+            public string CoverImage { get; set; } = "";
+            public string CategoryCode { get; set; } = "";
+            public int NoOfPages { get; set; }
         }
     }
 }

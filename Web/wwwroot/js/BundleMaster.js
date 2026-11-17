@@ -51,13 +51,13 @@ function BundleMaster({ triggerToast }) {
                     itemName: b.itemName || b.ItemName || b.title || 'Untitled Book',
                     isbn: b.isbn || b.ISBN || 'N/A',
                     authorName: b.authorName || b.AuthorName || b.author || 'N/A',
+                    coverImage: b.image || b.Image || b.coverImagePath || b.CoverImagePath || '/images/default-cover.png',
                     noOfPages: parseInt(b.noOfPages || b.NoOfPages || 0, 10) || 0,
                     vendorName: b.vendorName || b.VendorName || 'In-House (B. Jain)',
                     price: parseFloat(b.price !== undefined ? b.price : (b.Price !== undefined ? b.Price : 0)) || 0
                 })));
             }
 
-            // Vendors ke Royalty Rules fetch karke exact Royalty % aur Points map karein
             const resVendors = await fetch('/api/vendor/get-all');
             if (resVendors.ok) {
                 const vendorsData = await resVendors.json();
@@ -92,14 +92,12 @@ function BundleMaster({ triggerToast }) {
         fetchBooksAndRoyalties();
     }, []);
 
-    // Calculate Total Original MRP & Auto Final Price based on Selected Books
     const calculatedMRP = React.useMemo(() => {
         return availableBooks
             .filter(b => selectedBookIds.includes(b.id))
             .reduce((sum, b) => sum + (b.price || 0), 0);
     }, [selectedBookIds, availableBooks]);
 
-    // Auto update Final Price when Discount or Selected Books change
     React.useEffect(() => {
         const discountAmount = (calculatedMRP * (parseFloat(discountPercentage) || 0)) / 100;
         const netPrice = Math.max(0, calculatedMRP - discountAmount);
@@ -194,7 +192,6 @@ function BundleMaster({ triggerToast }) {
 
     // PAGE VIEW MODE 1: FULL PAGE FORM
     if (viewMode === 'form') {
-        // Selected Royalty Books ka live 30% Pool calculation
         const sellingPriceNum = parseFloat(finalPrice) || 0;
         const pool30 = sellingPriceNum * 0.30;
 
@@ -217,7 +214,6 @@ function BundleMaster({ triggerToast }) {
 
         return (
             <div className="w-full bg-white p-6 rounded-lg shadow-md border border-slate-200 space-y-6 text-xs">
-                {/* PAGE HEADER */}
                 <div className="flex items-center justify-between border-b pb-4">
                     <div className="flex items-center gap-4">
                         <button
@@ -244,7 +240,7 @@ function BundleMaster({ triggerToast }) {
                 </div>
 
                 <form onSubmit={handleSaveBundle} className="space-y-6">
-                    {/* SECTION 1: BUNDLE DETAILS */}
+                    {/* SECTION 1 */}
                     <div className="bg-slate-50 p-5 rounded-lg border border-slate-200 space-y-4">
                         <h4 className="font-bold text-slate-800 text-sm border-b pb-2 flex items-center gap-2">
                             <i className="fa-solid fa-pen-to-square text-indigo-600"></i> 1. Basic Bundle Information
@@ -274,7 +270,7 @@ function BundleMaster({ triggerToast }) {
                         </div>
                     </div>
 
-                    {/* SECTION 2: BOOK SELECTION LIST WITH ROYALTY % BADGE */}
+                    {/* SECTION 2: BOOK SELECTION LIST WITH COVER IMAGE & ROYALTY % BADGE */}
                     <div className="bg-indigo-50/40 p-5 rounded-lg border border-indigo-200 space-y-4">
                         <div className="flex justify-between items-center border-b border-indigo-200 pb-2">
                             <h4 className="font-bold text-indigo-900 text-sm flex items-center gap-2">
@@ -304,33 +300,38 @@ function BundleMaster({ triggerToast }) {
                                         <div
                                             key={book.id}
                                             onClick={() => toggleBookSelection(book.id)}
-                                            className={`p-3 rounded border cursor-pointer flex items-start justify-between transition ${isChecked ? 'bg-indigo-50 border-indigo-500' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'}`}>
-                                            <div className="flex items-start gap-2.5">
+                                            className={`p-3 rounded border cursor-pointer flex items-start justify-between gap-2 transition ${isChecked ? 'bg-indigo-50 border-indigo-500' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'}`}>
+                                            <div className="flex items-start gap-2.5 min-w-0">
                                                 <input
                                                     type="checkbox"
                                                     checked={isChecked}
                                                     onChange={() => { }}
-                                                    className="mt-1 w-4 h-4 accent-indigo-600 cursor-pointer"
+                                                    className="mt-1 w-4 h-4 accent-indigo-600 cursor-pointer shrink-0"
                                                 />
-                                                <div>
-                                                    <span className="block text-slate-900 font-bold line-clamp-1">{book.itemName}</span>
-                                                    <span className="text-[10px] text-slate-500 block">
+                                                <img
+                                                    src={book.coverImage || '/images/default-cover.png'}
+                                                    alt={book.itemName}
+                                                    className="w-10 h-14 object-cover rounded border border-slate-200 shrink-0"
+                                                />
+                                                <div className="min-w-0">
+                                                    <span className="block text-slate-900 font-bold truncate">{book.itemName}</span>
+                                                    <span className="text-[10px] text-slate-500 block truncate">
                                                         {book.authorName} | {book.noOfPages} Pages
                                                     </span>
                                                     <div className="mt-1 flex flex-wrap items-center gap-1">
                                                         {rule && rule.isRoyalty ? (
                                                             <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 font-bold px-1.5 py-0.5 rounded text-[9px]">
-                                                                Royalty: Yes ({rule.percentage}% | {pts} Pts &bull; {rule.vendorName})
+                                                                Royalty: Yes ({rule.percentage}% | {pts} Pts)
                                                             </span>
                                                         ) : (
                                                             <span className="bg-slate-200 text-slate-700 font-semibold px-1.5 py-0.5 rounded text-[9px]">
-                                                                Royalty: No (Basic &bull; {book.vendorName})
+                                                                Royalty: No ({book.vendorName})
                                                             </span>
                                                         )}
                                                     </div>
                                                 </div>
                                             </div>
-                                            <span className="font-extrabold text-emerald-700">₹{book.price}</span>
+                                            <span className="font-extrabold text-emerald-700 shrink-0">₹{book.price}</span>
                                         </div>
                                     );
                                 })}
@@ -338,7 +339,7 @@ function BundleMaster({ triggerToast }) {
                         )}
                     </div>
 
-                    {/* SECTION 3: PRICING & DISCOUNT CALCULATOR */}
+                    {/* SECTION 3 */}
                     <div className="bg-emerald-50/60 p-5 rounded-lg border border-emerald-200 space-y-4">
                         <h4 className="font-bold text-emerald-900 text-sm border-b border-emerald-200 pb-2 flex items-center gap-2">
                             <i className="fa-solid fa-calculator text-emerald-600"></i> 3. Pricing, Discount & Final Offer Price
@@ -385,7 +386,6 @@ function BundleMaster({ triggerToast }) {
                             </div>
                         </div>
 
-                        {/* LIVE 30% ROYALTY POOL SPLIT PREVIEW */}
                         {selectedBookIds.length > 0 && (
                             <div className="bg-white p-4 rounded-lg border border-emerald-300 space-y-2 mt-3">
                                 <div className="flex flex-wrap justify-between items-center">
@@ -434,7 +434,6 @@ function BundleMaster({ triggerToast }) {
                         )}
                     </div>
 
-                    {/* BOTTOM SAVE BAR */}
                     <div className="flex justify-between items-center pt-4 border-t">
                         <label className="flex items-center gap-2 font-bold text-slate-800 cursor-pointer">
                             <input
@@ -464,7 +463,7 @@ function BundleMaster({ triggerToast }) {
         );
     }
 
-    // PAGE VIEW MODE 2: DIRECTORY LIST GRID
+    // PAGE VIEW MODE 2: DIRECTORY LIST GRID (WITH COVER IMAGES & ROYALTY SET BADGE)
     return (
         <div className="w-full space-y-6 text-xs">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-4 rounded-lg shadow border border-slate-200 gap-3">
@@ -526,15 +525,55 @@ function BundleMaster({ triggerToast }) {
                                         </div>
                                     </div>
 
-                                    <div className="space-y-1 pt-1">
-                                        <span className="font-bold text-slate-700 block">Included Titles ({booksList.length}):</span>
-                                        <div className="space-y-1 max-h-24 overflow-y-auto">
-                                            {booksList.map((bk, i) => (
-                                                <div key={i} className="flex justify-between text-[11px] text-slate-600 border-b border-dashed pb-0.5">
-                                                    <span className="truncate max-w-[180px]">{bk.bookName || bk.BookName}</span>
-                                                    <span className="font-semibold">₹{bk.price || bk.Price}</span>
-                                                </div>
-                                            ))}
+                                    {/* INCLUDED TITLES WITH COVER IMAGE & ROYALTY SET BADGE */}
+                                    <div className="space-y-2 pt-1">
+                                        <span className="font-bold text-slate-700 flex items-center justify-between">
+                                            <span>Included Titles ({booksList.length}):</span>
+                                            <span className="text-[10px] text-amber-700 font-extrabold">Cover & Royalty Set</span>
+                                        </span>
+                                        <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                                            {booksList.map((bk, i) => {
+                                                const bkId = String(bk.bookId || bk.BookId || '').toLowerCase();
+                                                const matchedBook = availableBooks.find(ab => String(ab.id).toLowerCase() === bkId);
+                                                const cover = bk.coverImage || bk.CoverImage || matchedBook?.coverImage || '/images/default-cover.png';
+                                                const title = bk.bookName || bk.BookName || matchedBook?.itemName || 'Book';
+                                                const author = bk.authorName || bk.AuthorName || matchedBook?.authorName || 'B. Jain Author';
+                                                const isRoyalty = (bk.isRoyalty ?? bk.IsRoyalty) || (royaltyRulesMap[bkId]?.isRoyalty);
+
+                                                return (
+                                                    <div key={i} className="flex items-center justify-between gap-2.5 p-2 rounded-lg border border-slate-200 bg-slate-50/70 hover:bg-white transition">
+                                                        <div className="flex items-center gap-2.5 min-w-0">
+                                                            <img
+                                                                src={cover}
+                                                                alt={title}
+                                                                className="w-9 h-12 object-cover rounded border border-slate-300 shrink-0"
+                                                            />
+                                                            <div className="min-w-0">
+                                                                <div className="font-bold text-slate-900 text-[11px] truncate" title={title}>
+                                                                    {title}
+                                                                </div>
+                                                                <div className="text-[10px] text-slate-500 truncate">
+                                                                    by {author}
+                                                                </div>
+                                                                <div className="mt-0.5">
+                                                                    {isRoyalty ? (
+                                                                        <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-900 border border-amber-300 text-[9px] font-extrabold px-1.5 py-0.2 rounded-full">
+                                                                            <i className="fa-solid fa-crown text-amber-600"></i> Royalty Set
+                                                                        </span>
+                                                                    ) : (
+                                                                        <span className="inline-block bg-slate-200 text-slate-700 text-[9px] font-bold px-1.5 py-0.2 rounded">
+                                                                            Basic Book
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        <span className="font-extrabold text-slate-800 text-[11px] shrink-0">
+                                                            ₹{bk.price ?? bk.Price}
+                                                        </span>
+                                                    </div>
+                                                );
+                                            })}
                                         </div>
                                     </div>
                                 </div>
