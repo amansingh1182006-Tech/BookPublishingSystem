@@ -414,6 +414,7 @@ function App() {
     const [keywordsList, setKeywordsList] = useState([]);
     const [plansList, setPlansList] = useState([]);
     const [storeBooks, setStoreBooks] = useState([]);
+    const [storeJournals, setStoreJournals] = useState([]);
     const [myAuthorBooks, setMyAuthorBooks] = useState([]);
     const [loadingBooks, setLoadingBooks] = useState(false);
 
@@ -706,6 +707,9 @@ function App() {
         (user.role && user.role.toString().toLowerCase() === 'admin') ||
         user.email === 'admin@booksystem.com'
     );
+    const isVendor = user.isLoggedIn && (
+        user.role && user.role.toString().toLowerCase() === 'vendor'
+    );
 
     const openAuthModal = (mode = 'login') => {
         setAuthError('');
@@ -857,6 +861,18 @@ function App() {
             setLoadingBooks(false);
         }
     };
+    const fetchStoreJournals = async () => {
+        try {
+            const res = await fetch('/api/journal/all');
+            if (res.ok) {
+                const data = await res.json();
+                const activeOnly = Array.isArray(data) ? data.filter(j => j.isActive !== false) : [];
+                setStoreJournals(activeOnly);
+            }
+        } catch (e) {
+            console.error("Fetch store journals error:", e);
+        }
+    };
 
     const getBookAuthorName = (b) => {
         if (!b) return 'Dr. Samuel Hahnemann';
@@ -983,6 +999,7 @@ function App() {
 
     useEffect(() => {
         fetchStoreBooks();
+        fetchStoreJournals();
         fetchCategories();
         fetchLanguagesMaster();
         fetchKeywordsMaster();
@@ -996,7 +1013,9 @@ function App() {
             .then(res => res.ok ? res.json() : null)
             .then(data => {
                 if (data && data.email && localStorage.getItem('isExplicitLogin') === 'true') {
-                    const primaryRole = data.roles && data.roles.length > 0 ? data.roles[0] : 'Reader';
+                    const primaryRole = data.roles && data.roles.includes('Vendor')
+                        ? 'Vendor'
+                        : (data.roles && data.roles.length > 0 ? data.roles[0] : 'Reader');
                     setUser({
                         isLoggedIn: true,
                         fullName: data.fullName || data.email.split('@')[0],
@@ -1459,7 +1478,9 @@ function App() {
                     setPasswordInput('');
                     changeNavState({ activeTab: 'store' });
                 } else {
-                    const assignedRole = data.roles && data.roles.length > 0 ? data.roles[0] : 'Reader';
+                    const assignedRole = data.roles && data.roles.includes('Vendor')
+                        ? 'Vendor'
+                        : (data.roles && data.roles.length > 0 ? data.roles[0] : 'Reader');
                     localStorage.setItem('isExplicitLogin', 'true');
                     if (data.sessionToken) {
                         localStorage.setItem('sessionToken', data.sessionToken);
@@ -1473,6 +1494,10 @@ function App() {
                     setIsAuthOpen(false);
                     setEmailInput('');
                     setPasswordInput('');
+
+                    if (assignedRole.toLowerCase() === 'vendor') {
+                        changeNavState({ activeTab: 'vendor-profile' });
+                    }
 
                     triggerToast(`Welcome back, ${data.fullName || 'User'}!`);
                 }
@@ -1638,6 +1663,15 @@ function App() {
         return itemName.toLowerCase().includes(q) || author.toLowerCase().includes(q) || categoryCode.toLowerCase().includes(q);
     });
 
+    const filteredStoreJournals = storeJournals.filter(j => {
+        if (!searchQuery.trim()) return true;
+        const q = searchQuery.toLowerCase();
+        return (j.name || '').toLowerCase().includes(q) ||
+            (j.publisherName || '').toLowerCase().includes(q) ||
+            (j.issn || '').toLowerCase().includes(q) ||
+            (j.categoryName || '').toLowerCase().includes(q);
+    });
+
     const isAllSelected = currentMasterData.length > 0 && currentMasterData.every(item => selectedMasterIds.includes(item.id));
 
     const AddBookFormComp = typeof window.AddBookForm !== 'undefined' ? window.AddBookForm : (typeof AddBookForm !== 'undefined' ? AddBookForm : null);
@@ -1650,6 +1684,8 @@ function App() {
     const ExternalEditAuthorFormComp = typeof window.EditAuthorForm !== 'undefined' ? window.EditAuthorForm : (typeof EditAuthorForm !== 'undefined' ? EditAuthorForm : null);
     const AddPlanFormComp = typeof window.AddPlanForm !== 'undefined' ? window.AddPlanForm : (typeof AddPlanForm !== 'undefined' ? AddPlanForm : null);
     const VendorMasterComp = typeof window.VendorMaster !== 'undefined' ? window.VendorMaster : (typeof VendorMaster !== 'undefined' ? VendorMaster : null);
+    const PlatformRevenueMasterComp = typeof window.PlatformRevenueMaster !== 'undefined' ? window.PlatformRevenueMaster : (typeof PlatformRevenueMaster !== 'undefined' ? PlatformRevenueMaster : null);
+    const JournalMasterComp = typeof window.JournalMaster !== 'undefined' ? window.JournalMaster : (typeof JournalMaster !== 'undefined' ? JournalMaster : null);
 
     return (
         <div className="min-h-screen flex flex-col bg-gray-100 text-slate-800 w-full overflow-x-hidden relative">
@@ -1701,7 +1737,7 @@ function App() {
                                 </button>
                                 {profileDropdown && (
                                     <div className="absolute right-0 mt-2 w-56 bg-white border border-gray-200 text-slate-800 rounded-lg shadow-2xl py-2 z-50 text-xs">
-                                        {!isAdmin && (
+                                        {!isAdmin && !isVendor && (
                                             <button
                                                 onClick={() => window.location.href = '/Reader/Profile'}
                                                 className="w-full text-left px-4 py-2 hover:bg-slate-100 text-slate-800 font-bold flex items-center gap-2 border-b border-slate-100">
@@ -1741,11 +1777,19 @@ function App() {
                         </button>
                     )}
 
-                    {user.isLoggedIn && !isAdmin && (
+                    {user.isLoggedIn && !isAdmin && !isVendor && (
                         <button
                             onClick={() => window.location.href = '/Reader/Profile'}
                             className="font-bold flex items-center gap-1.5 text-gray-200 hover:text-amber-400 transition cursor-pointer">
                             <i className="fa-solid fa-user"></i> My Profile
+                        </button>
+                    )}
+
+                    {isVendor && (
+                        <button
+                            onClick={() => changeNavState({ activeTab: 'vendor-profile' })}
+                            className={`font-bold flex items-center gap-1.5 cursor-pointer ${activeTab === 'vendor-profile' ? 'text-amber-400 border-b-2 border-amber-400 pb-0.5' : 'text-gray-200 hover:text-amber-400'}`}>
+                            <i className="fa-solid fa-user-gear"></i> Vendor Profile
                         </button>
                     )}
 
@@ -1769,6 +1813,20 @@ function App() {
                                 </h1>
                                 <p className="text-xs text-gray-300 mt-1">Manage users, books, approvals and platform settings in one place.</p>
                             </div>
+                            <div className="flex flex-wrap items-center gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        changeNavState({ selectedMaster: 'platform-revenue' });
+                                        setMasterDropdownOpen(false);
+                                    }}
+                                    className={`font-black px-4 py-2.5 rounded shadow text-xs flex items-center gap-2 transition cursor-pointer ${selectedMaster === 'platform-revenue'
+                                            ? 'bg-emerald-400 text-slate-950 ring-2 ring-white'
+                                            : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                                        }`}>
+                                    <i className="fa-solid fa-vault"></i> Platform Revenue (70%)
+                                </button>
+                            </div>
                             <div className="relative">
                                 <button
                                     onClick={() => setMasterDropdownOpen(!masterDropdownOpen)}
@@ -1788,7 +1846,10 @@ function App() {
                                             { key: 'languages', label: 'Languages ', icon: 'fa-language' },
                                             { key: 'keywords', label: 'Keywords ', icon: 'fa-key' },
                                             { key: 'customers', label: 'Customers ', icon: 'fa-users' },
-                                            { key: 'vendors', label: 'Vendor Master ', icon: 'fa-user-gear' }
+                                            { key: 'vendors', label: 'Vendor Master ', icon: 'fa-user-gear' },
+                                            { key: 'platform-revenue', label: 'Platform Revenue (70%) ', icon: 'fa-vault' },
+                                            { key: 'journals', label: 'Journal Master ', icon: 'fa-newspaper' }
+
                                         ].map(m => (
                                             <button
                                                 key={m.key}
@@ -1813,109 +1874,110 @@ function App() {
                             </div>
                         </div>
 
-                        <div className="w-full bg-white p-4 rounded-lg border border-gray-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
-                            <div className="flex items-center gap-3">
-                                <span className="text-xs font-black uppercase text-slate-500 flex items-center gap-1">
-                                    <i className="fa-solid fa-list-check text-[#e31b23]"></i> {currentHeaderConfig.title}
-                                </span>
+                        {selectedMaster !== 'vendors' && selectedMaster !== 'journals' && selectedMaster !== 'platform-revenue' && (
+                            <div className="w-full bg-white p-4 rounded-lg border border-gray-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
+                                <div className="flex items-center gap-3">
+                                    <span className="text-xs font-black uppercase text-slate-500 flex items-center gap-1">
+                                        <i className="fa-solid fa-list-check text-[#e31b23]"></i> {currentHeaderConfig.title}
+                                    </span>
 
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        if (selectedMaster === 'items') {
-                                            changeNavState({ bookPageMode: 'add-book-page' });
-                                        } else if (selectedMaster === 'authors') {
-                                            changeNavState({ authorPageMode: 'add-author-page' });
-                                        } else if (selectedMaster === 'categories') {
-                                            changeNavState({ categoryPageMode: 'add-category-page' });
-                                        } else if (selectedMaster === 'languages') {
-                                            changeNavState({ languagePageMode: 'add-language-page' });
-                                        } else if (selectedMaster === 'plans') {
-                                            changeNavState({ planPageMode: 'add-plan-page' });
-                                        } else {
-                                            setShowAddModal(true);
-                                        }
-                                    }}
-                                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3.5 py-1.5 rounded shadow flex items-center gap-1.5 transition cursor-pointer">
-                                    <i className="fa-solid fa-plus"></i> {currentHeaderConfig.buttonText}
-                                </button>
-                                {/* BULK UPLOAD BUTTONS FOR ALL MASTERS */}
-                                {selectedMaster === 'items' && (
-                                    <button
-                                        type="button"
-                                        onClick={() => changeNavState({ bookPageMode: 'bulk-grid-page' })}
-                                        className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs px-3.5 py-1.5 rounded shadow flex items-center gap-1.5 transition cursor-pointer">
-                                        <i className="fa-solid fa-file-excel"></i> Bulk Upload Books
-                                    </button>
-                                )}
-
-                                {selectedMaster === 'authors' && (
-                                    <button
-                                        type="button"
-                                        onClick={() => changeNavState({ authorPageMode: 'bulk-author-grid-page' })}
-                                        className="bg-blue-700 hover:bg-blue-800 text-white font-bold text-xs px-3.5 py-1.5 rounded shadow flex items-center gap-1.5 transition cursor-pointer">
-                                        <i className="fa-solid fa-file-excel"></i> Bulk Upload Authors
-                                    </button>
-                                )}
-
-                                {selectedMaster === 'categories' && (
-                                    <button
-                                        type="button"
-                                        onClick={() => changeNavState({ categoryPageMode: 'bulk-category-grid-page' })}
-                                        className="bg-amber-700 hover:bg-amber-800 text-white font-bold text-xs px-3.5 py-1.5 rounded shadow flex items-center gap-1.5 transition cursor-pointer">
-                                        <i className="fa-solid fa-file-excel"></i> Bulk Upload Categories
-                                    </button>
-                                )}
-
-                                {selectedMaster === 'languages' && (
-                                    <button
-                                        type="button"
-                                        onClick={() => changeNavState({ languagePageMode: 'bulk-language-grid-page' })}
-                                        className="bg-indigo-700 hover:bg-indigo-800 text-white font-bold text-xs px-3.5 py-1.5 rounded shadow flex items-center gap-1.5 transition cursor-pointer">
-                                        <i className="fa-solid fa-file-excel"></i> Bulk Upload Languages
-                                    </button>
-                                )}
-
-                                {selectedMasterIds.length > 0 && (
                                     <button
                                         type="button"
                                         onClick={() => {
-                                            setDeleteConfirmModal({
-                                                show: true,
-                                                id: null,
-                                                ids: selectedMasterIds,
-                                                title: `${selectedMasterIds.length} Selected Record(s)`,
-                                                type: selectedMaster
-                                            });
+                                            if (selectedMaster === 'items') {
+                                                changeNavState({ bookPageMode: 'add-book-page' });
+                                            } else if (selectedMaster === 'authors') {
+                                                changeNavState({ authorPageMode: 'add-author-page' });
+                                            } else if (selectedMaster === 'categories') {
+                                                changeNavState({ categoryPageMode: 'add-category-page' });
+                                            } else if (selectedMaster === 'languages') {
+                                                changeNavState({ languagePageMode: 'add-language-page' });
+                                            } else if (selectedMaster === 'plans') {
+                                                changeNavState({ planPageMode: 'add-plan-page' });
+                                            } else {
+                                                setShowAddModal(true);
+                                            }
                                         }}
-                                        className="bg-red-600 hover:bg-red-700 text-white font-bold text-xs px-3.5 py-1.5 rounded shadow flex items-center gap-1.5 transition cursor-pointer animate-pulse">
-                                        <i className="fa-solid fa-trash-can"></i> Delete Selected ({selectedMasterIds.length})
+                                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3.5 py-1.5 rounded shadow flex items-center gap-1.5 transition cursor-pointer">
+                                        <i className="fa-solid fa-plus"></i> {currentHeaderConfig.buttonText}
                                     </button>
-                                )}
-                            </div>
+                                    {/* BULK UPLOAD BUTTONS FOR ALL MASTERS */}
+                                    {selectedMaster === 'items' && (
+                                        <button
+                                            type="button"
+                                            onClick={() => changeNavState({ bookPageMode: 'bulk-grid-page' })}
+                                            className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs px-3.5 py-1.5 rounded shadow flex items-center gap-1.5 transition cursor-pointer">
+                                            <i className="fa-solid fa-file-excel"></i> Bulk Upload Books
+                                        </button>
+                                    )}
 
-                            <div className="flex items-center gap-4 text-xs">
-                                <div className="flex items-center gap-1.5">
-                                    <label className="font-bold text-slate-600">Rows Count:</label>
-                                    <select
-                                        value={rowsPerPage}
-                                        onChange={e => setRowsPerPage(Number(e.target.value))}
-                                        className="border rounded px-2 py-1 font-bold bg-gray-50 outline-none">
-                                        <option value={5}>5 Rows</option>
-                                        <option value={10}>10 Rows</option>
-                                        <option value={20}>20 Rows</option>
-                                    </select>
+                                    {selectedMaster === 'authors' && (
+                                        <button
+                                            type="button"
+                                            onClick={() => changeNavState({ authorPageMode: 'bulk-author-grid-page' })}
+                                            className="bg-blue-700 hover:bg-blue-800 text-white font-bold text-xs px-3.5 py-1.5 rounded shadow flex items-center gap-1.5 transition cursor-pointer">
+                                            <i className="fa-solid fa-file-excel"></i> Bulk Upload Authors
+                                        </button>
+                                    )}
+
+                                    {selectedMaster === 'categories' && (
+                                        <button
+                                            type="button"
+                                            onClick={() => changeNavState({ categoryPageMode: 'bulk-category-grid-page' })}
+                                            className="bg-amber-700 hover:bg-amber-800 text-white font-bold text-xs px-3.5 py-1.5 rounded shadow flex items-center gap-1.5 transition cursor-pointer">
+                                            <i className="fa-solid fa-file-excel"></i> Bulk Upload Categories
+                                        </button>
+                                    )}
+
+                                    {selectedMaster === 'languages' && (
+                                        <button
+                                            type="button"
+                                            onClick={() => changeNavState({ languagePageMode: 'bulk-language-grid-page' })}
+                                            className="bg-indigo-700 hover:bg-indigo-800 text-white font-bold text-xs px-3.5 py-1.5 rounded shadow flex items-center gap-1.5 transition cursor-pointer">
+                                            <i className="fa-solid fa-file-excel"></i> Bulk Upload Languages
+                                        </button>
+                                    )}
+
+                                    {selectedMasterIds.length > 0 && (
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setDeleteConfirmModal({
+                                                    show: true,
+                                                    id: null,
+                                                    ids: selectedMasterIds,
+                                                    title: `${selectedMasterIds.length} Selected Record(s)`,
+                                                    type: selectedMaster
+                                                });
+                                            }}
+                                            className="bg-red-600 hover:bg-red-700 text-white font-bold text-xs px-3.5 py-1.5 rounded shadow flex items-center gap-1.5 transition cursor-pointer animate-pulse">
+                                            <i className="fa-solid fa-trash-can"></i> Delete Selected ({selectedMasterIds.length})
+                                        </button>
+                                    )}
                                 </div>
 
-                                <div className="flex items-center gap-2 border-l pl-4">
-                                    <span className="font-bold text-slate-600">Toggle Columns:</span>
-                                    <button onClick={() => toggleColumn('col1')} className={`px-2 py-1 text-[10px] font-bold rounded cursor-pointer ${visibleColumns.col1 ? 'bg-blue-100 text-blue-800' : 'bg-gray-200 text-gray-500 line-through'}`}>ID/Code</button>
-                                    <button onClick={() => toggleColumn('col2')} className={`px-2 py-1 text-[10px] font-bold rounded cursor-pointer ${visibleColumns.col2 ? 'bg-blue-100 text-blue-800' : 'bg-gray-200 text-gray-500 line-through'}`}>Name</button>
-                                    <button onClick={() => toggleColumn('col3')} className={`px-2 py-1 text-[10px] font-bold rounded cursor-pointer ${visibleColumns.col3 ? 'bg-blue-100 text-blue-800' : 'bg-gray-200 text-gray-500 line-through'}`}>Details</button>
+                                <div className="flex items-center gap-4 text-xs">
+                                    <div className="flex items-center gap-1.5">
+                                        <label className="font-bold text-slate-600">Rows Count:</label>
+                                        <select
+                                            value={rowsPerPage}
+                                            onChange={e => setRowsPerPage(Number(e.target.value))}
+                                            className="border rounded px-2 py-1 font-bold bg-gray-50 outline-none">
+                                            <option value={5}>5 Rows</option>
+                                            <option value={10}>10 Rows</option>
+                                            <option value={20}>20 Rows</option>
+                                        </select>
+                                    </div>
+
+                                    <div className="flex items-center gap-2 border-l pl-4">
+                                        <span className="font-bold text-slate-600">Toggle Columns:</span>
+                                        <button onClick={() => toggleColumn('col1')} className={`px-2 py-1 text-[10px] font-bold rounded cursor-pointer ${visibleColumns.col1 ? 'bg-blue-100 text-blue-800' : 'bg-gray-200 text-gray-500 line-through'}`}>ID/Code</button>
+                                        <button onClick={() => toggleColumn('col2')} className={`px-2 py-1 text-[10px] font-bold rounded cursor-pointer ${visibleColumns.col2 ? 'bg-blue-100 text-blue-800' : 'bg-gray-200 text-gray-500 line-through'}`}>Name</button>
+                                        <button onClick={() => toggleColumn('col3')} className={`px-2 py-1 text-[10px] font-bold rounded cursor-pointer ${visibleColumns.col3 ? 'bg-blue-100 text-blue-800' : 'bg-gray-200 text-gray-500 line-through'}`}>Details</button>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-
+                        )}
                         {(selectedMaster === 'vendors') ? (
                             VendorMasterComp ? (
                                 <VendorMasterComp
@@ -1923,7 +1985,21 @@ function App() {
                                     triggerToast={triggerToast}
                                 />
                             ) : <div>Vendor Master Component Not Loaded</div>
-                        ) : (selectedMaster === 'items' && bookPageMode === 'add-book-page') ? (
+                        ) : (selectedMaster === 'journals') ? (
+                            JournalMasterComp ? (
+                                <JournalMasterComp
+                                    categoriesList={categoriesList}
+                                    languagesList={languagesList}
+                                    authorsList={authorsList}
+                                    vendorsList={vendorsList}
+                                    triggerToast={triggerToast}
+                                />
+                                ) : <div className="p-6 text-center font-bold">Journal Master Component Not Loaded</div>
+                            ) : (selectedMaster === 'platform-revenue') ? (
+                                PlatformRevenueMasterComp ? (
+                                    <PlatformRevenueMasterComp triggerToast={triggerToast} />
+                                ) : <div className="p-6 text-center font-bold">Platform Revenue Component Not Loaded</div>
+                            ) : (selectedMaster === 'items' && bookPageMode === 'add-book-page') ? (
                             AddBookFormComp ? (
                                 <AddBookFormComp
                                     categoriesList={categoriesList}
@@ -2364,6 +2440,15 @@ function App() {
                         )}
                     </div>
                 )}
+                {activeTab === 'vendor-profile' && isVendor && (
+                    VendorMasterComp ? (
+                        <VendorMasterComp
+                            booksList={storeBooks}
+                            triggerToast={triggerToast}
+                            isVendorSelfView={true}
+                        />
+                    ) : <div className="p-6 text-center font-bold">Loading Vendor Profile...</div>
+                )}
 
                 {activeTab === 'user-plans' && (
                     window.UserPlansPage ? (
@@ -2499,6 +2584,92 @@ function App() {
                                 </div>
                             </div>
                         )}
+                        {/* ACADEMIC & CLINICAL JOURNALS SECTION FOR USERS */}
+                        {filteredStoreJournals.length > 0 && (
+                            <div className="space-y-4 pt-6 border-t border-gray-200">
+                                <div className="flex items-center justify-between border-b pb-2">
+                                    <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                                        <i className="fa-solid fa-newspaper text-indigo-600"></i> Academic & Clinical Journals
+                                    </h2>
+                                    <span className="text-xs font-bold text-slate-500">
+                                        {filteredStoreJournals.length} Published Issue(s)
+                                    </span>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 w-full">
+                                    {filteredStoreJournals.map(j => (
+                                        <div key={j.id} className="bg-white border border-slate-200 rounded-lg p-4 flex gap-4 hover:shadow-lg transition">
+                                            <div className="w-28 h-40 bg-gray-100 rounded border overflow-hidden shrink-0">
+                                                <img
+                                                    src={j.coverImagePath || '/images/default-cover.png'}
+                                                    alt={j.name}
+                                                    className="w-full h-full object-cover"
+                                                />
+                                            </div>
+                                            <div className="flex-1 flex flex-col justify-between text-xs min-w-0">
+                                                <div className="space-y-1">
+                                                    <div className="flex flex-wrap items-center gap-1">
+                                                        <span className="bg-indigo-100 text-indigo-900 text-[9px] font-bold px-2 py-0.5 rounded border border-indigo-200 uppercase">
+                                                            {j.frequency || 'Journal'}
+                                                        </span>
+                                                        {j.issn && (
+                                                            <span className="bg-slate-100 text-slate-700 text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border">
+                                                                ISSN: {j.issn}
+                                                            </span>
+                                                        )}
+                                                    </div>
+
+                                                    <h3 className="font-bold text-slate-900 text-sm line-clamp-2 mt-1" title={j.name}>
+                                                        {j.name}
+                                                    </h3>
+
+                                                    <p className="text-slate-600 text-[11px] font-semibold truncate">
+                                                        <i className="fa-solid fa-building text-slate-400 me-1"></i>
+                                                        {j.publisherName}
+                                                    </p>
+
+                                                    {j.volumeIssue && (
+                                                        <p className="text-indigo-700 text-[11px] font-bold truncate">
+                                                            {j.volumeIssue}
+                                                        </p>
+                                                    )}
+
+                                                    <p className="text-slate-400 text-[10px]">
+                                                        Published: {new Date(j.publishDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                                    </p>
+                                                </div>
+
+                                                <div className="pt-2 border-t mt-2">
+                                                    {j.pdfFilePath ? (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                if (!user.isLoggedIn) {
+                                                                    openAuthModal('login');
+                                                                    return;
+                                                                }
+                                                                window.open(j.pdfFilePath, '_blank', 'noopener,noreferrer');
+                                                            }}
+                                                            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-1.5 rounded text-[11px] shadow flex items-center justify-center gap-1.5 cursor-pointer">
+                                                            <i className="fa-solid fa-file-pdf"></i> Read Journal PDF
+                                                        </button>
+                                                    ) : (
+                                                        <span className="block text-center text-[10px] font-bold text-slate-400 bg-slate-100 py-1.5 rounded">
+                                                            Print / Issue Preview Only
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+
+
+
+
                     </main>
                 )}
             </div>

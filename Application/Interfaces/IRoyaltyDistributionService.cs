@@ -6,10 +6,7 @@ namespace Application.Interfaces
 {
     public interface IRoyaltyDistributionService
     {
-        Task DistributeOrderRoyaltyAsync(
-            string orderReferenceId,
-            string purchaseType,
-            decimal totalPaidAmount,
-            List<Guid> includedBookIds);
+        Task DistributeOrderRoyaltyAsync(string orderReferenceId, string purchaseType, decimal totalPaidAmount, List<Guid> includedBookIds);
+       
     }
 }

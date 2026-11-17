@@ -2,8 +2,11 @@
 using System.Linq;
 using System.Threading.Tasks;
 using Application.DTOs;
+using BookPublishingSystem.Domain.Entities;
 using Domain.Entities;
 using Infrastructure.Persistence;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -14,13 +17,16 @@ namespace Web.Controllers
     public class VendorController : ControllerBase
     {
         private readonly ApplicationDbContext _dbContext;
+        private readonly UserManager<ApplicationUser> _userManager;
+        private readonly RoleManager<ApplicationRole> _roleManager;
 
-        public VendorController(ApplicationDbContext dbContext)
+        public VendorController(ApplicationDbContext dbContext, UserManager<ApplicationUser> userManager, RoleManager<ApplicationRole> roleManager)
         {
             _dbContext = dbContext;
+            _userManager = userManager;
+            _roleManager = roleManager;
         }
 
-        // GET: api/vendor/get-all
         [HttpGet("get-all")]
         public async Task<IActionResult> GetAllVendors()
         {
@@ -39,7 +45,68 @@ namespace Web.Controllers
             }
         }
 
-        // POST: api/vendor/save-profile
+        [Authorize]
+        [HttpGet("my-profile")]
+        public async Task<IActionResult> GetMyVendorProfile()
+        {
+            try
+            {
+                var currentUser = await _userManager.GetUserAsync(User);
+                if (currentUser == null || string.IsNullOrWhiteSpace(currentUser.Email))
+                    return Unauthorized(new { success = false, message = "Please login first." });
+
+                string cleanEmail = currentUser.Email.Trim().ToLower();
+
+                var vendor = await _dbContext.Vendors
+                    .Include(v => v.RoyaltyRules)
+                    .FirstOrDefaultAsync(v => v.Email.ToLower() == cleanEmail);
+
+                if (vendor == null)
+                    return NotFound(new { success = false, message = "No Vendor profile found linked with this email." });
+
+                string cleanVendorName = (vendor.Name ?? "").Trim().ToLower();
+
+                var vendorBooks = await _dbContext.Books
+                    .Where(b => b.VendorId == vendor.Id || (!string.IsNullOrEmpty(b.VendorName) && b.VendorName.ToLower() == cleanVendorName))
+                    .OrderByDescending(b => b.CreatedAt)
+                    .Select(b => new
+                    {
+                        id = b.Id,
+                        itemNo = b.ItemNo,
+                        itemName = b.ItemName,
+                        noOfPages = b.NoOfPages,
+                        price = b.Price,
+                        vendorId = b.VendorId,
+                        vendorName = b.VendorName
+                    })
+                    .ToListAsync();
+
+                var transactions = await _dbContext.VendorRoyaltyTransactions
+                    .Where(t => t.VendorId == vendor.Id)
+                    .OrderByDescending(t => t.CreatedAt)
+                    .ToListAsync();
+
+                return Ok(new
+                {
+                    success = true,
+                    vendor = vendor,
+                    books = vendorBooks,
+                    earnings = new
+                    {
+                        totalEarned = transactions.Sum(t => t.EarnedRoyaltyAmount),
+                        singleSalesEarned = transactions.Where(t => t.PurchaseType == "SingleBook").Sum(t => t.EarnedRoyaltyAmount),
+                        bundleSalesEarned = transactions.Where(t => t.PurchaseType == "Bundle").Sum(t => t.EarnedRoyaltyAmount),
+                        planSalesEarned = transactions.Where(t => t.PurchaseType == "Plan").Sum(t => t.EarnedRoyaltyAmount),
+                        transactions = transactions
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { success = false, message = "Error fetching vendor profile: " + ex.Message });
+            }
+        }
+
         [HttpPost("save-profile")]
         [HttpPost("save")]
         public async Task<IActionResult> SaveVendorProfile([FromBody] VendorProfileCreateDto dto)
@@ -63,7 +130,6 @@ namespace Web.Controllers
 
                 if (existingVendor == null)
                 {
-                    
                     existingVendor = new Vendor
                     {
                         Id = Guid.NewGuid(),
@@ -84,9 +150,10 @@ namespace Web.Controllers
                 }
                 else
                 {
-                   
                     existingVendor.Name = dto.Name?.Trim() ?? existingVendor.Name;
                     existingVendor.Phone = dto.Phone?.Trim() ?? existingVendor.Phone;
+                    if (!string.IsNullOrWhiteSpace(cleanEmail))
+                        existingVendor.Email = cleanEmail;
                     existingVendor.Address = dto.Address?.Trim() ?? existingVendor.Address;
                     existingVendor.PostalCode = dto.PostalCode?.Trim() ?? existingVendor.PostalCode;
                     existingVendor.Gstin = dto.Gstin?.Trim() ?? existingVendor.Gstin;
@@ -94,7 +161,6 @@ namespace Web.Controllers
                     existingVendor.IFSC = dto.IFSC?.Trim() ?? existingVendor.IFSC;
                 }
 
-               
                 if (dto.RoyaltyRules != null && dto.RoyaltyRules.Count > 0)
                 {
                     foreach (var r in dto.RoyaltyRules)
@@ -122,7 +188,49 @@ namespace Web.Controllers
 
                 await _dbContext.SaveChangesAsync();
 
-                return Ok(new { success = true, message = "Vendor Profile and Royalty Rules saved successfully!" });
+                string loginMessage = "";
+                if (!string.IsNullOrWhiteSpace(cleanEmail))
+                {
+                    if (!await _roleManager.RoleExistsAsync("Vendor"))
+                    {
+                        await _roleManager.CreateAsync(new ApplicationRole { Name = "Vendor" });
+                    }
+
+                    var appUser = await _userManager.FindByEmailAsync(cleanEmail);
+                    if (appUser == null)
+                    {
+                        appUser = new ApplicationUser
+                        {
+                            UserName = cleanEmail,
+                            Email = cleanEmail,
+                            FullName = existingVendor.Name,
+                            EmailConfirmed = true,
+                            CreatedAt = DateTime.UtcNow
+                        };
+                        string defaultPassword = "Vendor@123";
+                        var createRes = await _userManager.CreateAsync(appUser, defaultPassword);
+                        if (createRes.Succeeded)
+                        {
+                            await _userManager.AddToRoleAsync(appUser, "Vendor");
+                            loginMessage = $" (Vendor Login Created — Email: {cleanEmail}, Password: {defaultPassword})";
+                        }
+                    }
+                    else
+                    {
+                        if (!await _userManager.IsInRoleAsync(appUser, "Vendor"))
+                        {
+                            await _userManager.AddToRoleAsync(appUser, "Vendor");
+                        }
+                        if (!string.IsNullOrWhiteSpace(existingVendor.Name) && appUser.FullName != existingVendor.Name)
+                        {
+                            appUser.FullName = existingVendor.Name;
+                            await _userManager.UpdateAsync(appUser);
+                        }
+                        loginMessage = $" (Vendor Role Linked to {cleanEmail})";
+                    }
+                }
+
+                return Ok(new { success = true, message = "Vendor Profile saved successfully!" + loginMessage });
             }
             catch (Exception ex)
             {
@@ -134,7 +242,6 @@ namespace Web.Controllers
             }
         }
 
-        // DELETE: api/vendor/delete/{id}
         [HttpDelete("delete/{id}")]
         public async Task<IActionResult> DeleteVendor(Guid id)
         {
@@ -155,7 +262,6 @@ namespace Web.Controllers
             }
         }
 
-        // GET: api/vendor/vendor-books/{id}
         [HttpGet("vendor-books/{id}")]
         public async Task<IActionResult> GetVendorBooks(Guid id)
         {
@@ -183,7 +289,6 @@ namespace Web.Controllers
             return Ok(new { success = true, books = vendorBooks });
         }
 
-        // GET: api/vendor/earnings/{vendorId}
         [HttpGet("earnings/{vendorId}")]
         public async Task<IActionResult> GetVendorEarnings(Guid vendorId)
         {
@@ -203,7 +308,6 @@ namespace Web.Controllers
             });
         }
 
-        // POST: api/vendor/add-royalty-rule
         [HttpPost("add-royalty-rule")]
         public async Task<IActionResult> AddRoyaltyRule([FromBody] VendorRoyaltyRuleDto dto)
         {
@@ -219,7 +323,6 @@ namespace Web.Controllers
                     ? dto.BookName.Trim()
                     : (book?.ItemName ?? "Mapped Book");
 
-                // Agar is book ka rule pehle se bana hai toh update karein, warna naya banayein
                 var existingRule = await _dbContext.VendorRoyaltyRules
                     .FirstOrDefaultAsync(r => r.VendorId == dto.VendorId && r.BookId == dto.BookId);
 
@@ -264,7 +367,6 @@ namespace Web.Controllers
             }
         }
 
-        // DELETE: api/vendor/delete-royalty-rule/{id}
         [HttpDelete("delete-royalty-rule/{id}")]
         public async Task<IActionResult> DeleteRoyaltyRule(Guid id)
         {
@@ -283,7 +385,5 @@ namespace Web.Controllers
                 return BadRequest(new { success = false, message = "Delete Error: " + ex.Message });
             }
         }
-
-
     }
 }

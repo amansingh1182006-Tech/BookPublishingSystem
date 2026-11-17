@@ -19,22 +19,21 @@ namespace BookPublishingSystem.Domain.Entities
         [MaxLength(500)]
         public string? Description { get; set; }
 
-        public int NumberOfTitles { get; set; } = 0; // Calculated dynamically from Items count
+        public int NumberOfTitles { get; set; } = 0; 
 
         [Column(TypeName = "decimal(18,2)")]
-        public decimal TotalPrice { get; set; } = 0.00m; // Sum of individual book prices
+        public decimal TotalPrice { get; set; } = 0.00m; 
 
         [Column(TypeName = "decimal(18,2)")]
         public decimal DiscountPercentage { get; set; } = 0.00m;
 
         [Column(TypeName = "decimal(18,2)")]
-        public decimal FinalPrice { get; set; } = 0.00m; // Offer Selling Price
+        public decimal FinalPrice { get; set; } = 0.00m; 
 
         public bool IsActive { get; set; } = true;
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
-        // Navigation property for mapped books inside bundle
         public virtual ICollection<BundleItem> BundleItems { get; set; } = new List<BundleItem>();
     }
 

@@ -20,7 +20,6 @@ namespace Infrastructure.Identity
             identity.AddClaim(new Claim(ClaimTypes.Email, user.Email ?? string.Empty));
             identity.AddClaim(new Claim("FullName", user.FullName ?? string.Empty));
 
-            // Inject Custom Author Identification Claim
             identity.AddClaim(new Claim(CustomClaims.AuthorId, user.Id));
 
             return identity;

@@ -5,5 +5,6 @@ public enum SystemRole
     Admin,
     Author,
     Publisher,
-    Reader
+    Reader,
+    Vendor
 }

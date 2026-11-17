@@ -32,6 +32,25 @@ namespace Web.Controllers
             _royaltyService = royaltyService;
         }
 
+        // Auto-create PurchasedBundleSnapshots table from code if not already created
+        private async Task EnsureSnapshotTableAsync()
+        {
+            const string sql = @"
+                IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'PurchasedBundleSnapshots')
+                BEGIN
+                    CREATE TABLE PurchasedBundleSnapshots (
+                        Id UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
+                        TransactionId NVARCHAR(150) NOT NULL,
+                        UserId NVARCHAR(450) NOT NULL,
+                        BundleName NVARCHAR(250) NOT NULL,
+                        BookId UNIQUEIDENTIFIER NOT NULL,
+                        LockedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE()
+                    );
+                    CREATE INDEX IX_PurchasedBundleSnapshots_TxnId ON PurchasedBundleSnapshots(TransactionId);
+                END";
+            await _dbContext.Database.ExecuteSqlRawAsync(sql);
+        }
+
         // Helper: Parse ValidTill date from PlanType ("SingleBook|ValidTill:2027-11-14T00:00:00Z")
         private static DateTime? ParseSingleBookExpiry(string? planType, DateTime purchasedAt)
         {
@@ -47,7 +66,7 @@ namespace Web.Controllers
             return purchasedAt.AddDays(365);
         }
 
-        // 1. CHECK IF USER HAS ACTIVE ACCESS TO THIS BOOK (CHECKS SINGLE BOOK EXPIRY + PLAN + BUNDLE)
+        // 1. CHECK IF USER HAS ACTIVE ACCESS TO THIS BOOK (CHECKS SINGLE BOOK EXPIRY + PLAN + BUNDLE SNAPSHOT)
         [HttpGet("check-access/{bookId:guid}")]
         public async Task<IActionResult> CheckBookAccess(Guid bookId)
         {
@@ -89,7 +108,9 @@ namespace Web.Controllers
             if (hasActivePlan)
                 return Ok(new { hasAccess = true, isLoggedIn = true, accessType = "SubscriptionPlan" });
 
-            // 3. Check Purchased Bundle (With Expiry Validation)
+            // 3. Check Purchased Bundle (Using Immutable Snapshot Table)
+            await EnsureSnapshotTableAsync();
+
             var userBundleRecords = await _dbContext.Customers
                 .Where(c => c.UserId == user.Id &&
                             c.PlanType != null &&
@@ -104,9 +125,30 @@ namespace Web.Controllers
                 if (expiry != null && expiry < DateTime.UtcNow)
                     continue; // Bundle expired
 
-                string rawBundlePart = br.PlanType!.Split("|ValidTill:")[0];
-                string cleanBundleName = rawBundlePart.Replace("Bundle:", "").Trim();
+                string cleanBundleName = br.PlanType!.Split('|')[0].Replace("Bundle:", "").Trim();
 
+                // Read locked snapshot rows for this exact order
+                var lockedBooksForTxn = await _dbContext.Database
+                    .SqlQueryRaw<Guid>("SELECT BookId AS Value FROM PurchasedBundleSnapshots WHERE TransactionId = {0}", br.TransactionId)
+                    .ToListAsync();
+
+                if (lockedBooksForTxn.Any())
+                {
+                    if (lockedBooksForTxn.Contains(bookId))
+                    {
+                        return Ok(new
+                        {
+                            hasAccess = true,
+                            isLoggedIn = true,
+                            accessType = "Bundle",
+                            bundleName = cleanBundleName,
+                            validTill = expiry
+                        });
+                    }
+                    continue; // Do NOT unlock books added later by admin
+                }
+
+                // Fallback only if legacy order has no snapshot rows yet
                 bool inBundle = await _dbContext.BundleItems
                     .Include(bi => bi.Bundle)
                     .AnyAsync(bi => bi.BookId == bookId &&
@@ -200,7 +242,6 @@ namespace Web.Controllers
             });
         }
 
-        // 3. PURCHASE SINGLE BOOK WITH VALIDITY TIMING + ROYALTY DISTRIBUTION
         [HttpPost("purchase")]
         [Authorize]
         public async Task<IActionResult> PurchaseSingleBook([FromBody] SingleBookPurchaseRequestDto dto)
@@ -220,7 +261,6 @@ namespace Web.Controllers
             DateTime nowUtc = DateTime.UtcNow;
             DateTime validTillUtc = nowUtc.AddDays(validityDays);
 
-            // Check if user already has an active unexpired purchase for this book
             var existingPurchases = await _dbContext.Customers
                 .Where(c => c.UserId == user.Id &&
                             c.BookId == book.Id &&
@@ -248,7 +288,6 @@ namespace Web.Controllers
             string txnId = $"SBK-{nowUtc:yyyyMMddHHmmss}-{new Random().Next(100, 999)}";
             decimal totalPaid = book.Price;
 
-            // ROYALTY DISTRIBUTION (SAME AS PLAN CONTROLLER)
             decimal totalVendorShare = 0m;
             if (totalPaid > 0)
             {
@@ -308,7 +347,6 @@ namespace Web.Controllers
             });
         }
 
-        // 4. PURCHASE SUGGESTED COMBO BUNDLE WITH VALIDITY TIMING + ROYALTY DISTRIBUTION
         [HttpPost("purchase-bundle")]
         [Authorize]
         public async Task<IActionResult> PurchaseSuggestedBundle([FromBody] BundlePurchaseFromBookDto dto)
@@ -335,7 +373,6 @@ namespace Web.Controllers
             string txnId = $"BND-{nowUtc:yyyyMMddHHmmss}-{new Random().Next(100, 999)}";
             decimal totalPaid = bundle.FinalPrice;
 
-            // Collect all BookIds inside this Bundle for Royalty Distribution
             var bundleBookIds = bundle.BundleItems
                 .Select(bi => bi.BookId)
                 .Where(id => id != Guid.Empty)
@@ -390,12 +427,20 @@ namespace Web.Controllers
             _dbContext.Customers.Add(bundlePurchaseRecord);
             await _dbContext.SaveChangesAsync();
 
+            await EnsureSnapshotTableAsync();
+            foreach (var bId in bundleBookIds)
+            {
+                await _dbContext.Database.ExecuteSqlRawAsync(
+                    "INSERT INTO PurchasedBundleSnapshots (Id, TransactionId, UserId, BundleName, BookId, LockedAt) VALUES ({0}, {1}, {2}, {3}, {4}, {5})",
+                    Guid.NewGuid(), txnId, user.Id, bundle.BundleName, bId, nowUtc);
+            }
+
             return Ok(new
             {
                 success = true,
                 message = totalVendorShare > 0
-                    ? $"Bundle '{bundle.BundleName}' ({bundle.BundleItems.Count} Books) unlocked till {validTillUtc:dd MMM yyyy}! (Platform: ₹{platformShare:0.00} | Vendor Royalty: ₹{totalVendorShare:0.00})"
-                    : $"Bundle '{bundle.BundleName}' ({bundle.BundleItems.Count} Books) unlock ho gaya hai! Valid till: {validTillUtc:dd MMM yyyy}",
+                    ? $"Bundle '{bundle.BundleName}' ({bundleBookIds.Count} Books) unlocked till {validTillUtc:dd MMM yyyy}! (Platform: ₹{platformShare:0.00} | Vendor Royalty: ₹{totalVendorShare:0.00})"
+                    : $"Bundle '{bundle.BundleName}' ({bundleBookIds.Count} Books) unlocked! Valid till: {validTillUtc:dd MMM yyyy}",
                 transactionId = txnId,
                 bundleId = bundle.Id,
                 validTill = validTillUtc,

@@ -21,25 +21,40 @@ using System.Threading.Tasks;
 namespace Web.Areas.Reader.Controllers
 {
     [Area("Reader")]
-    [Route("Reader")] 
-    public class ReaderController : Controller 
+    [Route("Reader")]
+    public class ReaderController : Controller
     {
         private readonly ApplicationDbContext _dbContext;
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly SignInManager<ApplicationUser> _signInManager;
         private readonly IWebHostEnvironment _environment;
 
-        public ReaderController(
-            ApplicationDbContext dbContext,
-            UserManager<ApplicationUser> userManager,
-            SignInManager<ApplicationUser> signInManager,
-            IWebHostEnvironment environment)
+        public ReaderController(ApplicationDbContext dbContext, UserManager<ApplicationUser> userManager, SignInManager<ApplicationUser> signInManager, IWebHostEnvironment environment)
         {
             _dbContext = dbContext;
             _userManager = userManager;
             _signInManager = signInManager;
             _environment = environment;
         }
+
+        private async Task EnsureSnapshotTableAsync()
+        {
+            const string sql = @"
+                IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'PurchasedBundleSnapshots')
+                BEGIN
+                    CREATE TABLE PurchasedBundleSnapshots (
+                        Id UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
+                        TransactionId NVARCHAR(150) NOT NULL,
+                        UserId NVARCHAR(450) NOT NULL,
+                        BundleName NVARCHAR(250) NOT NULL,
+                        BookId UNIQUEIDENTIFIER NOT NULL,
+                        LockedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE()
+                    );
+                    CREATE INDEX IX_PurchasedBundleSnapshots_TxnId ON PurchasedBundleSnapshots(TransactionId);
+                END";
+            await _dbContext.Database.ExecuteSqlRawAsync(sql);
+        }
+
         private static DateTime ParseValidTill(string? planType, DateTime startDate)
         {
             if (!string.IsNullOrWhiteSpace(planType) && planType.Contains("|ValidTill:"))
@@ -53,14 +68,12 @@ namespace Web.Areas.Reader.Controllers
             return startDate.AddDays(365);
         }
 
-        // GET: /Reader/Watch
         [HttpGet("Watch")]
         public IActionResult Watch()
         {
             return View();
         }
 
-        // GET: /Reader/profile-status
         [HttpGet("profile-status")]
         public async Task<IActionResult> GetProfileStatus([FromQuery] string? userId = null)
         {
@@ -132,11 +145,12 @@ namespace Web.Areas.Reader.Controllers
                 }
             });
         }
+
         // GET: /Reader/Profile
         [HttpGet("Profile")]
         public IActionResult Profile()
         {
-            return View(); 
+            return View();
         }
 
         [HttpGet("api/my-purchases")]
@@ -148,12 +162,18 @@ namespace Web.Areas.Reader.Controllers
 
             if (user == null) return Unauthorized(new { message = "User session invalid." });
 
+            await EnsureSnapshotTableAsync();
+
             var customerRecords = await _dbContext.Customers
                 .Include(c => c.Book)
                     .ThenInclude(b => b!.AuthorMaster)
                 .Where(c => c.UserId == user.Id && c.TransactionId != "INIT-PROFILE")
                 .OrderByDescending(c => c.PurchasedAt)
                 .ToListAsync();
+
+            var allBooksMap = await _dbContext.Books
+                .Include(b => b.AuthorMaster)
+                .ToDictionaryAsync(b => b.Id);
 
             var allBundles = await _dbContext.Bundles
                 .Include(b => b.BundleItems)
@@ -162,42 +182,71 @@ namespace Web.Areas.Reader.Controllers
                 .ToListAsync();
 
             var nowUtc = DateTime.UtcNow;
-
-            var bundles = customerRecords
+            var bundleRecords = customerRecords
                 .Where(c => c.PlanType != null && c.PlanType.StartsWith("Bundle:"))
-                .Select(br =>
-                {
-                    string cleanBundleName = br.PlanType!.Split("|ValidTill:")[0].Replace("Bundle:", "").Trim();
-                    DateTime validTill = ParseValidTill(br.PlanType, br.PurchasedAt);
-                    int daysLeft = Math.Max(0, (int)Math.Ceiling((validTill - nowUtc).TotalDays));
-                    var matchedBundle = allBundles.FirstOrDefault(b => b.BundleName.Equals(cleanBundleName, StringComparison.OrdinalIgnoreCase));
-
-                    return new
-                    {
-                        transactionId = br.TransactionId,
-                        bundleName = cleanBundleName,
-                        amountPaid = br.AmountPaid,
-                        purchasedDate = br.PurchasedAt,
-                        validFrom = br.PurchasedAt,
-                        validTill = validTill,
-                        isExpired = validTill < nowUtc,
-                        remainingDays = daysLeft,
-                        books = matchedBundle == null
-                            ? new List<object>()
-                            : matchedBundle.BundleItems
-                                .Where(i => i.Book != null)
-                                .Select(i => (object)new
-                                {
-                                    bookId = i.Book!.Id,
-                                    itemName = i.Book.ItemName,
-                                    authorName = i.Book.AuthorMaster != null ? i.Book.AuthorMaster.AuthorName : "B. Jain Author",
-                                    coverImage = i.Book.CoverImagePath ?? "/images/default-cover.png",
-                                    pages = i.Book.NoOfPages
-                                })
-                                .ToList()
-                    };
-                })
                 .ToList();
+
+            var bundlesResult = new List<object>();
+
+            foreach (var br in bundleRecords)
+            {
+                string cleanBundleName = br.PlanType!.Split('|')[0].Replace("Bundle:", "").Trim();
+                DateTime validTill = ParseValidTill(br.PlanType, br.PurchasedAt);
+                int daysLeft = Math.Max(0, (int)Math.Ceiling((validTill - nowUtc).TotalDays));
+
+                var lockedBookIds = await _dbContext.Database
+                    .SqlQueryRaw<Guid>("SELECT BookId AS Value FROM PurchasedBundleSnapshots WHERE TransactionId = {0}", br.TransactionId)
+                    .ToListAsync();
+
+                if (!lockedBookIds.Any())
+                {
+                    var matchedBundle = allBundles.FirstOrDefault(b => b.BundleName.Equals(cleanBundleName, StringComparison.OrdinalIgnoreCase));
+                    if (matchedBundle != null)
+                    {
+                        lockedBookIds = matchedBundle.BundleItems
+                            .Where(i => i.Book != null)
+                            .Select(i => i.BookId)
+                            .Distinct()
+                            .ToList();
+
+                        foreach (var bId in lockedBookIds)
+                        {
+                            await _dbContext.Database.ExecuteSqlRawAsync(
+                                "INSERT INTO PurchasedBundleSnapshots (Id, TransactionId, UserId, BundleName, BookId, LockedAt) VALUES ({0}, {1}, {2}, {3}, {4}, {5})",
+                                Guid.NewGuid(), br.TransactionId, user.Id, cleanBundleName, bId, nowUtc);
+                        }
+                    }
+                }
+
+                var bundleBooksList = lockedBookIds
+                    .Where(id => allBooksMap.ContainsKey(id))
+                    .Select(id =>
+                    {
+                        var bk = allBooksMap[id];
+                        return (object)new
+                        {
+                            bookId = bk.Id,
+                            itemName = bk.ItemName,
+                            authorName = bk.AuthorMaster != null ? bk.AuthorMaster.AuthorName : "B. Jain Author",
+                            coverImage = bk.CoverImagePath ?? "/images/default-cover.png",
+                            pages = bk.NoOfPages
+                        };
+                    })
+                    .ToList();
+
+                bundlesResult.Add(new
+                {
+                    transactionId = br.TransactionId,
+                    bundleName = cleanBundleName,
+                    amountPaid = br.AmountPaid,
+                    purchasedDate = br.PurchasedAt,
+                    validFrom = br.PurchasedAt,
+                    validTill = validTill,
+                    isExpired = validTill < nowUtc,
+                    remainingDays = daysLeft,
+                    books = bundleBooksList
+                });
+            }
 
             var singleBooks = customerRecords
                 .Where(c => c.PlanType != null && c.PlanType.StartsWith("SingleBook") && c.Book != null)
@@ -224,7 +273,7 @@ namespace Web.Areas.Reader.Controllers
                 })
                 .ToList();
 
-            return Ok(new { bundles, singleBooks });
+            return Ok(new { bundles = bundlesResult, singleBooks });
         }
 
         // POST: /Reader/upsert-profile
@@ -234,11 +283,13 @@ namespace Web.Areas.Reader.Controllers
             var user = await _userManager.GetUserAsync(User);
             if (user == null) return Unauthorized(new { message = "User session invalid." });
 
-            var customer = await _dbContext.Customers.FirstOrDefaultAsync(c => c.UserId == user.Id);
+            var customer = await _dbContext.Customers
+                .Where(c => c.UserId == user.Id)
+                .OrderBy(c => c.TransactionId == "INIT-PROFILE" ? 0 : 1)
+                .FirstOrDefaultAsync();
 
             if (customer == null)
             {
-               
                 var defaultBook = await _dbContext.Books.FirstOrDefaultAsync();
                 Guid assignedBookId = defaultBook != null ? defaultBook.Id : Guid.NewGuid();
 
@@ -303,6 +354,7 @@ namespace Web.Areas.Reader.Controllers
                 }
             });
         }
+
         // GET: /Reader/stream-book/{bookId}
         [HttpGet("stream-book/{bookId:guid}")]
         [AllowAnonymous]
@@ -314,21 +366,19 @@ namespace Web.Areas.Reader.Controllers
                 return NotFound(new { message = "Book record not found in database." });
             }
 
-            
             var user = await _userManager.GetUserAsync(User);
             if (user != null)
             {
-                var customer = await _dbContext.Customers.FirstOrDefaultAsync(c => c.UserId == user.Id);
-                if (customer != null)
+                var initProfile = await _dbContext.Customers
+                    .FirstOrDefaultAsync(c => c.UserId == user.Id && c.TransactionId == "INIT-PROFILE");
+                if (initProfile != null)
                 {
-                    customer.BookId = bookId;
-                    customer.PlanType = "SingleBook";
-                    _dbContext.Customers.Update(customer);
+                    initProfile.BookId = bookId;
+                    _dbContext.Customers.Update(initProfile);
                     await _dbContext.SaveChangesAsync();
                 }
             }
 
-            
             var alphaSegments = await _dbContext.BookSegmentsAlpha.Where(s => s.BookId == bookId).ToListAsync();
             var betaSegments = await _dbContext.BookSegmentsBeta.Where(s => s.BookId == bookId).ToListAsync();
             var gammaSegments = await _dbContext.BookSegmentsGamma.Where(s => s.BookId == bookId).ToListAsync();
@@ -338,7 +388,6 @@ namespace Web.Areas.Reader.Controllers
             combinedList.AddRange(betaSegments.Select(b => new SegmentNode { Id = b.Id, ParentId = b.ParentChunkId, Path = b.StorageRelativePath }));
             combinedList.AddRange(gammaSegments.Select(g => new SegmentNode { Id = g.Id, ParentId = g.ParentChunkId, Path = g.StorageRelativePath }));
 
-            
             if (!combinedList.Any())
             {
                 string uploadsFolder = Path.Combine(_environment.WebRootPath, "uploads", "books");
@@ -350,7 +399,6 @@ namespace Web.Areas.Reader.Controllers
                     return File(fileBytes, "application/pdf");
                 }
 
-                
                 using (MemoryStream ms = new MemoryStream())
                 {
                     PdfDocument tempDoc = new PdfDocument();
@@ -370,7 +418,6 @@ namespace Web.Areas.Reader.Controllers
                 }
             }
 
-            
             var orderedSegments = new List<SegmentNode>();
             var current = combinedList.FirstOrDefault(s => s.ParentId == null);
 
@@ -417,15 +464,11 @@ namespace Web.Areas.Reader.Controllers
         [HttpPost("api/save-progress")]
         public async Task<IActionResult> SaveProgress([FromBody] ReadingProgressDto dto)
         {
-            
             var user = await _userManager.GetUserAsync(User);
-
-            
             string userId = user?.Id ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
 
             if (string.IsNullOrEmpty(userId))
             {
-                
                 var lastCust = await _dbContext.Customers.OrderByDescending(c => c.CreatedAt).FirstOrDefaultAsync();
                 if (lastCust != null) userId = lastCust.UserId;
             }
@@ -494,6 +537,7 @@ namespace Web.Areas.Reader.Controllers
 
             return Ok(library);
         }
+
         // POST: /Reader/logout
         [HttpPost("logout")]
         public async Task<IActionResult> Logout()
@@ -501,7 +545,6 @@ namespace Web.Areas.Reader.Controllers
             var user = await _userManager.GetUserAsync(User);
             if (user != null)
             {
-                
                 var customerRecords = await _dbContext.Customers
                     .Where(c => c.UserId == user.Id)
                     .ToListAsync();
@@ -511,7 +554,6 @@ namespace Web.Areas.Reader.Controllers
                     _dbContext.Customers.RemoveRange(customerRecords);
                 }
 
-                
                 var activeSessions = await _dbContext.UserSessions
                     .Where(s => s.UserId == user.Id && s.IsActive)
                     .ToListAsync();

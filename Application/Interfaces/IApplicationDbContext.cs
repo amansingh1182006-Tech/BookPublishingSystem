@@ -18,7 +18,7 @@ namespace Application.Interfaces
         DbSet<Keyword> Keywords { get; set; }
         DbSet<Customer> Customers { get; set; }
 
-        // Plans & Features
+        
         DbSet<BookPublishingSystem.Domain.Entities.Plan> Plans { get; set; }
         DbSet<BookPublishingSystem.Domain.Entities.PlanFeature> PlanFeatures { get; set; }
 
@@ -26,13 +26,14 @@ namespace Application.Interfaces
         DbSet<UserReadingProgress> UserReadingProgress { get; set; }
         DbSet<UserSession> UserSessions { get; set; }
 
-        // Vendor & Royalty
+        
         DbSet<Vendor> Vendors { get; set; }
         DbSet<VendorRoyaltyRule> VendorRoyaltyRules { get; set; }
 
          DbSet<Bundle> Bundles { get; set; }
          DbSet<BundleItem> BundleItems { get; set; }
          DbSet<VendorRoyaltyTransaction> VendorRoyaltyTransactions { get; set; }
+         DbSet<Journal> Journals { get; set; }
 
         Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
     }

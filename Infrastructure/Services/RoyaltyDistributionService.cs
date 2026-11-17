@@ -19,23 +19,17 @@ namespace Infrastructure.Services
             _dbContext = dbContext;
         }
 
-        public async Task DistributeOrderRoyaltyAsync(
-            string orderReferenceId,
-            string purchaseType, // "SingleBook", "Bundle", "Plan"
-            decimal totalPaidAmount,
-            List<Guid> includedBookIds)
+        public async Task DistributeOrderRoyaltyAsync(string orderReferenceId, string purchaseType, decimal totalPaidAmount, List<Guid> includedBookIds)
         {
             if (totalPaidAmount <= 0 || includedBookIds == null || !includedBookIds.Any())
                 return;
 
-            // 1. Order mein shamil sabhi books fetch karein
             var books = await _dbContext.Books
                 .Where(b => includedBookIds.Contains(b.Id))
                 .ToListAsync();
 
             if (!books.Any()) return;
 
-            // 2. Sirf un books ke active Royalty Rules uthayein jahan IsRoyaltyApplicable == true hai
             var activeRules = await _dbContext.VendorRoyaltyRules
                 .Where(r => includedBookIds.Contains(r.BookId)
                             && r.IsRoyaltyApplicable
@@ -44,9 +38,8 @@ namespace Infrastructure.Services
                 .ToListAsync();
 
             if (!activeRules.Any())
-                return; // Sabhi Basic books hain -> 100% revenue Publisher ke paas rahega
+                return; 
 
-            // 3. Har Royalty Book ke Points calculate karein: Pages / Threshold
             var bookPointEntries = new List<(VendorRoyaltyRule Rule, Book Book, decimal Points)>();
             decimal totalOrderPoints = 0m;
 
@@ -64,10 +57,8 @@ namespace Infrastructure.Services
 
             if (totalOrderPoints <= 0) return;
 
-            // 4. Total Revenue ka 30% Royalty Pool calculate karein
             decimal royaltyPoolAmount = Math.Round(totalPaidAmount * 0.30m, 2);
 
-            // 5. Har Vendor ko uske Book Points ke ratio mein 30% Pool se share credit karein
             foreach (var entry in bookPointEntries)
             {
                 decimal shareRatio = entry.Points / totalOrderPoints;

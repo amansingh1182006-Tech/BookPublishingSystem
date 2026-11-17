@@ -20,12 +20,29 @@ namespace Web.Controllers
         private readonly ApplicationDbContext _dbContext;
         private readonly IRoyaltyDistributionService _royaltyService;
 
-        public PlanController(
-            ApplicationDbContext dbContext,
-            IRoyaltyDistributionService royaltyService)
+        public PlanController(ApplicationDbContext dbContext, IRoyaltyDistributionService royaltyService)
         {
             _dbContext = dbContext;
             _royaltyService = royaltyService;
+        }
+
+        private async Task EnsurePlanSnapshotTableAsync()
+        {
+            const string sql = @"
+                IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'PurchasedPlanSnapshots')
+                BEGIN
+                    CREATE TABLE PurchasedPlanSnapshots (
+                        Id UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
+                        TransactionId NVARCHAR(150) NOT NULL,
+                        UserId NVARCHAR(450) NOT NULL,
+                        PlanName NVARCHAR(250) NOT NULL,
+                        BookId UNIQUEIDENTIFIER NOT NULL,
+                        IsRoyaltyBook BIT NOT NULL DEFAULT 0,
+                        LockedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE()
+                    );
+                    CREATE INDEX IX_PurchasedPlanSnapshots_TxnId ON PurchasedPlanSnapshots(TransactionId);
+                END";
+            await _dbContext.Database.ExecuteSqlRawAsync(sql);
         }
 
         // GET: api/plan/get-all
@@ -70,7 +87,6 @@ namespace Web.Controllers
                 if (dto.Id.HasValue && dto.Id.Value != Guid.Empty)
                 {
                     plan = await _dbContext.Plans
-                        .Include(p => p.Features)
                         .FirstOrDefaultAsync(p => p.Id == dto.Id.Value);
                 }
 
@@ -86,9 +102,13 @@ namespace Web.Controllers
                 }
                 else
                 {
-                    if (plan.Features != null && plan.Features.Any())
+                    var oldFeatures = await _dbContext.PlanFeatures
+                        .Where(f => f.PlanId == plan.Id)
+                        .ToListAsync();
+
+                    if (oldFeatures.Any())
                     {
-                        _dbContext.PlanFeatures.RemoveRange(plan.Features);
+                        _dbContext.PlanFeatures.RemoveRange(oldFeatures);
                     }
                 }
 
@@ -165,6 +185,7 @@ namespace Web.Controllers
                 return BadRequest(new { success = false, message = "Delete Error: " + ex.Message });
             }
         }
+
         // POST: api/plan/subscribe-direct
         [HttpPost("subscribe-direct")]
         public async Task<IActionResult> SubscribePlanDirect([FromBody] DirectPlanPurchaseDto dto)
@@ -180,27 +201,32 @@ namespace Web.Controllers
                 if (plan == null)
                     return NotFound(new { success = false, message = "Subscription Plan not found or inactive." });
 
-                // 1. Plan ki limits ke hisab se included books collect karein
-                List<Guid> includedBookIds = new List<Guid>();
+                var royaltyBookIds = await _dbContext.VendorRoyaltyRules
+                    .Where(r => r.IsRoyaltyApplicable && (r.LiveStatus == null || r.LiveStatus == "" || r.LiveStatus == "Live" || r.LiveStatus == "Active"))
+                    .Select(r => r.BookId)
+                    .Distinct()
+                    .ToListAsync();
+
+                var royaltySet = new HashSet<Guid>(royaltyBookIds);
+                var snapshotItems = new List<(Guid BookId, bool IsRoyalty)>();
 
                 if (dto.SelectedBookIds != null && dto.SelectedBookIds.Any())
                 {
-                    includedBookIds = dto.SelectedBookIds;
+                    foreach (var bId in dto.SelectedBookIds.Distinct())
+                    {
+                        snapshotItems.Add((bId, royaltySet.Contains(bId)));
+                    }
                 }
                 else
                 {
-                    var royaltyBookIds = await _dbContext.VendorRoyaltyRules
-                        .Where(r => r.IsRoyaltyApplicable && r.LiveStatus == "Live")
-                        .Select(r => r.BookId)
-                        .Distinct()
-                        .ToListAsync();
-
                     if (plan.RoyaltyBookLimit != 0 && royaltyBookIds.Any())
                     {
                         var pickedRoyalty = plan.RoyaltyBookLimit < 0
                             ? royaltyBookIds
                             : royaltyBookIds.Take(plan.RoyaltyBookLimit).ToList();
-                        includedBookIds.AddRange(pickedRoyalty);
+
+                        foreach (var bId in pickedRoyalty)
+                            snapshotItems.Add((bId, true));
                     }
 
                     if (plan.BasicBookLimit != 0)
@@ -212,20 +238,22 @@ namespace Web.Controllers
                         var pickedBasic = plan.BasicBookLimit < 0
                             ? await basicQuery.ToListAsync()
                             : await basicQuery.Take(plan.BasicBookLimit).ToListAsync();
-                        includedBookIds.AddRange(pickedBasic);
+
+                        foreach (var bId in pickedBasic)
+                            snapshotItems.Add((bId, false));
                     }
                 }
+
+                var includedBookIds = snapshotItems.Select(x => x.BookId).Distinct().ToList();
 
                 string orderRef = $"PLAN-ORD-{DateTime.UtcNow:yyyyMMddHHmmss}";
                 decimal totalPaid = plan.PriceIncludingTax;
 
-                // TaxAmount calculate karein
                 decimal basePrice = plan.TaxPercentage > 0
                     ? Math.Round(totalPaid / (1 + (plan.TaxPercentage / 100m)), 2)
                     : totalPaid;
                 decimal taxAmount = Math.Max(0, totalPaid - basePrice);
 
-                // 2. 30% Royalty Pool ko Vendor Profiles mein distribute karein
                 if (includedBookIds.Any() && totalPaid > 0)
                 {
                     await _royaltyService.DistributeOrderRoyaltyAsync(
@@ -243,7 +271,6 @@ namespace Web.Controllers
                 decimal totalVendorShare = vendorCredits.Sum(t => t.EarnedRoyaltyAmount);
                 decimal platformShare = totalPaid - totalVendorShare;
 
-                // 3. Logged-in User ko dhundhein
                 string targetEmail = !string.IsNullOrWhiteSpace(dto.UserEmail)
                     ? dto.UserEmail.Trim()
                     : (User?.Identity?.Name ?? "");
@@ -259,7 +286,6 @@ namespace Web.Controllers
                         int validityDays = plan.ValidityInDays > 0 ? plan.ValidityInDays : 30;
                         DateTime expiryUtc = nowUtc.AddDays(validityDays);
 
-                        // A. dbo.UserSubscriptions table mein save karein (Exact SSMS columns ke hisab se)
                         var newSub = new UserSubscription
                         {
                             Id = Guid.NewGuid(),
@@ -275,7 +301,6 @@ namespace Web.Controllers
                         };
                         _dbContext.UserSubscriptions.Add(newSub);
 
-                        // B. dbo.Customers table mein bhi Customer record link/update karein
                         var customer = await _dbContext.Customers.FirstOrDefaultAsync(c =>
                             c.UserId == appUser.Id || c.EmailId == targetEmail);
 
@@ -315,6 +340,14 @@ namespace Web.Controllers
                         }
 
                         await _dbContext.SaveChangesAsync();
+
+                        await EnsurePlanSnapshotTableAsync();
+                        foreach (var item in snapshotItems.Distinct())
+                        {
+                            await _dbContext.Database.ExecuteSqlRawAsync(
+                                "INSERT INTO PurchasedPlanSnapshots (Id, TransactionId, UserId, PlanName, BookId, IsRoyaltyBook, LockedAt) VALUES ({0}, {1}, {2}, {3}, {4}, {5}, {6})",
+                                Guid.NewGuid(), orderRef, appUser.Id, plan.PlanName, item.BookId, item.IsRoyalty, nowUtc);
+                        }
                     }
                 }
 
@@ -349,7 +382,6 @@ namespace Web.Controllers
             if (appUser == null)
                 return Ok(new { hasActivePlan = false, hasProfile = false });
 
-            // 1. UserSubscriptions table check karein
             var activeSub = await _dbContext.UserSubscriptions
                 .Where(s => s.UserId == appUser.Id && s.Status == "Active" && s.ExpiryDate >= DateTime.UtcNow)
                 .OrderByDescending(s => s.CreatedAt)
@@ -412,9 +444,9 @@ namespace Web.Controllers
                 if (appUser == null)
                     return Ok(new { plans = new List<object>(), bundles = new List<object>() });
 
+                await EnsurePlanSnapshotTableAsync();
                 string email = appUser.Email ?? appUser.UserName ?? "";
 
-                // Safe helper: Book entity se real Author, Pages, CoverImage nikalne ke liye
                 object MapBookSafe(Book b, bool isRoyalty = false)
                 {
                     var t = b.GetType();
@@ -467,7 +499,6 @@ namespace Web.Controllers
                     .ThenInclude(bi => bi.Book)
                     .ToListAsync();
 
-                // Sabhi Royalty Rules (chahe LiveStatus "Live" ho ya "Active" ya blank)
                 var royaltyBookIdList = await _dbContext.VendorRoyaltyRules
                     .Where(r => r.IsRoyaltyApplicable && (r.LiveStatus == null || r.LiveStatus == "" || r.LiveStatus == "Live" || r.LiveStatus == "Active"))
                     .Select(r => r.BookId.ToString())
@@ -476,16 +507,16 @@ namespace Web.Controllers
 
                 var royaltyBookIds = new HashSet<string>(royaltyBookIdList, StringComparer.OrdinalIgnoreCase);
 
-                // Books ke saath Author navigation property bhi load karein
                 var rawBooks = await _dbContext.Books
                     .Include(b => b.Author)
                     .Where(b => b.IsPublished)
                     .ToListAsync();
 
+                var booksByIdMap = rawBooks.ToDictionary(b => b.Id);
+
                 var allPublishedBooks = rawBooks
                     .Select(b =>
                     {
-                        // Book entity par bhi check karein agar IsRoyalty / VendorId set hai
                         var bType = b.GetType();
                         bool bookFlagRoyalty = false;
                         var isRoyProp = bType.GetProperty("IsRoyalty")?.GetValue(b) ?? bType.GetProperty("IsRoyaltyBook")?.GetValue(b);
@@ -503,24 +534,55 @@ namespace Web.Controllers
                         };
                     })
                     .ToList();
-
-                List<object> BuildPlanBooks(Plan? matchedPlan)
+                async Task<List<object>> ResolvePlanBooksWithSnapshotAsync(string txnId, string planName, Plan? matchedPlan)
                 {
-                    var result = new List<object>();
-                    if (matchedPlan == null) return result;
+                    var lockedBookIds = await _dbContext.Database
+                        .SqlQueryRaw<Guid>("SELECT BookId AS Value FROM PurchasedPlanSnapshots WHERE TransactionId = {0}", txnId)
+                        .ToListAsync();
 
-                    // 1. Royalty Books (RoyaltyBookLimit ke hisab se)
-                    if (matchedPlan.RoyaltyBookLimit != 0)
+                    if (lockedBookIds.Any())
                     {
-                        var rBooks = allPublishedBooks.Where(x => x.IsRoyalty).Select(x => x.Mapped).ToList();
-                        result.AddRange(matchedPlan.RoyaltyBookLimit < 0 ? rBooks : rBooks.Take(matchedPlan.RoyaltyBookLimit));
+                        return lockedBookIds
+                            .Where(id => booksByIdMap.ContainsKey(id))
+                            .Select(id =>
+                            {
+                                var bk = booksByIdMap[id];
+                                bool isRoy = royaltyBookIds.Contains(bk.Id.ToString());
+                                return MapBookSafe(bk, isRoy);
+                            })
+                            .ToList();
+                    }
+                    var result = new List<object>();
+                    var toFreeze = new List<(Guid BookId, bool IsRoyalty)>();
+
+                    if (matchedPlan != null)
+                    {
+                        if (matchedPlan.RoyaltyBookLimit != 0)
+                        {
+                            var rItems = allPublishedBooks.Where(x => x.IsRoyalty).ToList();
+                            var pickedR = matchedPlan.RoyaltyBookLimit < 0 ? rItems : rItems.Take(matchedPlan.RoyaltyBookLimit).ToList();
+                            result.AddRange(pickedR.Select(x => x.Mapped));
+                            toFreeze.AddRange(pickedR.Select(x => (x.BookEntity.Id, true)));
+                        }
+
+                        if (matchedPlan.BasicBookLimit != 0)
+                        {
+                            var bItems = allPublishedBooks.Where(x => !x.IsRoyalty).ToList();
+                            var pickedB = matchedPlan.BasicBookLimit < 0 ? bItems : bItems.Take(matchedPlan.BasicBookLimit).ToList();
+                            result.AddRange(pickedB.Select(x => x.Mapped));
+                            toFreeze.AddRange(pickedB.Select(x => (x.BookEntity.Id, false)));
+                        }
                     }
 
-                    // 2. Basic Books (BasicBookLimit ke hisab se)
-                    if (matchedPlan.BasicBookLimit != 0)
+                    if (!string.IsNullOrWhiteSpace(txnId) && toFreeze.Any())
                     {
-                        var bBooks = allPublishedBooks.Where(x => !x.IsRoyalty).Select(x => x.Mapped).ToList();
-                        result.AddRange(matchedPlan.BasicBookLimit < 0 ? bBooks : bBooks.Take(matchedPlan.BasicBookLimit));
+                        DateTime nowUtc = DateTime.UtcNow;
+                        foreach (var item in toFreeze.Distinct())
+                        {
+                            await _dbContext.Database.ExecuteSqlRawAsync(
+                                "INSERT INTO PurchasedPlanSnapshots (Id, TransactionId, UserId, PlanName, BookId, IsRoyaltyBook, LockedAt) VALUES ({0}, {1}, {2}, {3}, {4}, {5}, {6})",
+                                Guid.NewGuid(), txnId, appUser.Id, planName, item.BookId, item.IsRoyalty, nowUtc);
+                        }
                     }
 
                     return result;
@@ -529,8 +591,6 @@ namespace Web.Controllers
                 var activePlansList = new List<object>();
                 var purchasedBundlesList = new List<object>();
                 var addedTxnIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-                // 1. Primary Source: dbo.UserSubscriptions table
                 var userSubs = await _dbContext.UserSubscriptions
                     .Where(s => s.UserId == appUser.Id)
                     .OrderByDescending(s => s.CreatedAt)
@@ -540,12 +600,17 @@ namespace Web.Controllers
                 {
                     var matchedPlan = allPlans.FirstOrDefault(p => p.Id == sub.PlanId);
                     string pName = matchedPlan?.PlanName ?? "Subscription Plan";
+                    string txnId = !string.IsNullOrWhiteSpace(sub.TransactionId)
+                        ? sub.TransactionId
+                        : $"SUB-{sub.Id.ToString("N").Substring(0, 8).ToUpper()}";
+
                     int validityDays = matchedPlan?.ValidityInDays ?? Math.Max(1, (int)(sub.ExpiryDate - sub.StartDate).TotalDays);
                     int remainingDays = Math.Max(0, (int)Math.Ceiling((sub.ExpiryDate - DateTime.UtcNow).TotalDays));
                     bool isCurrentlyActive = (sub.Status == "Active") && (DateTime.UtcNow <= sub.ExpiryDate);
 
-                    if (!string.IsNullOrWhiteSpace(sub.TransactionId))
-                        addedTxnIds.Add(sub.TransactionId);
+                    addedTxnIds.Add(txnId);
+
+                    var planBooks = await ResolvePlanBooksWithSnapshotAsync(txnId, pName, matchedPlan);
 
                     activePlansList.Add(new
                     {
@@ -557,12 +622,10 @@ namespace Web.Controllers
                         remainingDays = remainingDays,
                         isActive = isCurrentlyActive,
                         amountPaid = sub.AmountPaid,
-                        transactionId = sub.TransactionId,
-                        books = BuildPlanBooks(matchedPlan)
+                        transactionId = txnId,
+                        books = planBooks
                     });
                 }
-
-                // 2. Customers table se Purchased Bundles aur legacy records check karein
                 var customerRecords = await _dbContext.Customers
                     .Where(c => c.UserId == appUser.Id || (!string.IsNullOrEmpty(email) && c.EmailId.ToLower() == email.ToLower()))
                     .OrderByDescending(c => c.PurchasedAt)
@@ -593,12 +656,33 @@ namespace Web.Controllers
                         string resolvedBundleName = (matchedBundle.GetType().GetProperty("BundleName")?.GetValue(matchedBundle)
                                                   ?? matchedBundle.GetType().GetProperty("Name")?.GetValue(matchedBundle)
                                                   ?? matchedBundle.GetType().GetProperty("Title")?.GetValue(matchedBundle))?.ToString()
-                                                  ?? rec.PlanType;
+                                                  ?? rec.PlanType.Split('|')[0].Replace("Bundle:", "").Trim();
 
-                        var bundleBooks = matchedBundle.BundleItems
-                            .Where(bi => bi.Book != null)
-                            .Select(bi => MapBookSafe(bi.Book!, royaltyBookIds.Contains(bi.Book!.Id.ToString())))
-                            .ToList();
+                   
+                        List<object> bundleBooks;
+                        var lockedBundleIds = new List<Guid>();
+                        try
+                        {
+                            lockedBundleIds = await _dbContext.Database
+                                .SqlQueryRaw<Guid>("SELECT BookId AS Value FROM PurchasedBundleSnapshots WHERE TransactionId = {0}", rec.TransactionId)
+                                .ToListAsync();
+                        }
+                        catch { /* Ignore if table not yet initialized */ }
+
+                        if (lockedBundleIds.Any())
+                        {
+                            bundleBooks = lockedBundleIds
+                                .Where(id => booksByIdMap.ContainsKey(id))
+                                .Select(id => MapBookSafe(booksByIdMap[id], royaltyBookIds.Contains(id.ToString())))
+                                .ToList();
+                        }
+                        else
+                        {
+                            bundleBooks = matchedBundle.BundleItems
+                                .Where(bi => bi.Book != null)
+                                .Select(bi => MapBookSafe(bi.Book!, royaltyBookIds.Contains(bi.Book!.Id.ToString())))
+                                .ToList();
+                        }
 
                         purchasedBundlesList.Add(new
                         {
@@ -611,8 +695,6 @@ namespace Web.Controllers
                         });
                         continue;
                     }
-
-                    // Agar UserSubscriptions mein koi record nahi tha toh hi legacy Customer plan dikhayein
                     if (userSubs.Any()) continue;
 
                     var matchedPlan = allPlans.FirstOrDefault(p =>
@@ -622,6 +704,9 @@ namespace Web.Controllers
                     DateTime startDate = rec.PurchasedAt != default ? rec.PurchasedAt : rec.CreatedAt;
                     if (startDate == default) startDate = DateTime.UtcNow;
                     DateTime endDate = startDate.AddDays(validityDays);
+                    string legacyTxn = !string.IsNullOrWhiteSpace(rec.TransactionId) ? rec.TransactionId : $"LEG-{rec.Id:N}";
+
+                    var legacyPlanBooks = await ResolvePlanBooksWithSnapshotAsync(legacyTxn, rec.PlanType, matchedPlan);
 
                     activePlansList.Add(new
                     {
@@ -633,8 +718,8 @@ namespace Web.Controllers
                         remainingDays = Math.Max(0, (int)Math.Ceiling((endDate - DateTime.UtcNow).TotalDays)),
                         isActive = DateTime.UtcNow <= endDate,
                         amountPaid = rec.AmountPaid,
-                        transactionId = rec.TransactionId,
-                        books = BuildPlanBooks(matchedPlan)
+                        transactionId = legacyTxn,
+                        books = legacyPlanBooks
                     });
                 }
 

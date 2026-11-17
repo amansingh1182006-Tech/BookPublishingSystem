@@ -323,7 +323,7 @@ namespace Web.Areas.Author.Controllers
                 var categoriesMap = await _dbContext.Categories
                     .ToDictionaryAsync(c => c.CategoryCode.Trim().ToLower(), c => c.CategoryName);
 
-                // Sirf Yes/No flag ke liye active royalty books fetch karein (percentage backend mein safe rahega)
+                
                 var royaltyBookIds = await _dbContext.VendorRoyaltyRules
                     .Where(r => r.IsRoyaltyApplicable && r.LiveStatus == "Live")
                     .Select(r => r.BookId)

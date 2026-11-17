@@ -22,7 +22,6 @@ namespace Web.Controllers
             _dbContext = dbContext;
         }
 
-        
         [HttpGet("get-all")]
         public async Task<IActionResult> GetAllBundles()
         {
@@ -60,7 +59,6 @@ namespace Web.Controllers
             }
         }
 
-        
         [HttpGet("get/{id}")]
         public async Task<IActionResult> GetBundleById(Guid id)
         {
@@ -86,7 +84,6 @@ namespace Web.Controllers
             });
         }
 
-       
         [HttpPost("save")]
         public async Task<IActionResult> SaveBundle([FromBody] SaveBundleDto dto)
         {
@@ -98,9 +95,13 @@ namespace Web.Controllers
 
             try
             {
-                
+                var distinctBookIds = dto.SelectedBookIds
+                    .Where(id => id != Guid.Empty)
+                    .Distinct()
+                    .ToList();
+
                 var selectedBooks = await _dbContext.Books
-                    .Where(b => dto.SelectedBookIds.Contains(b.Id))
+                    .Where(b => distinctBookIds.Contains(b.Id))
                     .ToListAsync();
 
                 decimal calculatedMRP = selectedBooks.Sum(b => b.Price);
@@ -108,12 +109,9 @@ namespace Web.Controllers
 
                 Bundle bundle;
 
-                
                 if (dto.Id.HasValue && dto.Id.Value != Guid.Empty)
                 {
-                    bundle = await _dbContext.Bundles
-                        .Include(b => b.BundleItems)
-                        .FirstOrDefaultAsync(b => b.Id == dto.Id.Value);
+                    bundle = await _dbContext.Bundles.FirstOrDefaultAsync(b => b.Id == dto.Id.Value);
 
                     if (bundle == null)
                         return NotFound(new { message = "Bundle not found." });
@@ -126,10 +124,15 @@ namespace Web.Controllers
                     bundle.FinalPrice = dto.FinalPrice;
                     bundle.IsActive = dto.IsActive;
 
-                   
-                    _dbContext.BundleItems.RemoveRange(bundle.BundleItems);
+                    var existingItems = await _dbContext.BundleItems
+                        .Where(bi => bi.BundleId == bundle.Id)
+                        .ToListAsync();
+
+                    if (existingItems.Any())
+                    {
+                        _dbContext.BundleItems.RemoveRange(existingItems);
+                    }
                 }
-                
                 else
                 {
                     bundle = new Bundle
@@ -146,11 +149,9 @@ namespace Web.Controllers
                     };
                     _dbContext.Bundles.Add(bundle);
                 }
-
-                
-                foreach (var bookId in dto.SelectedBookIds)
+                foreach (var bookId in distinctBookIds)
                 {
-                    bundle.BundleItems.Add(new BundleItem
+                    _dbContext.BundleItems.Add(new BundleItem
                     {
                         Id = Guid.NewGuid(),
                         BundleId = bundle.Id,
@@ -169,24 +170,30 @@ namespace Web.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Error saving bundle: " + ex.Message });
+                return StatusCode(500, new { message = "Error saving bundle: " + (ex.InnerException?.Message ?? ex.Message) });
             }
         }
 
-        
         [HttpDelete("delete/{id}")]
         public async Task<IActionResult> DeleteBundle(Guid id)
         {
             try
             {
                 var bundle = await _dbContext.Bundles
-                    .Include(b => b.BundleItems)
                     .FirstOrDefaultAsync(b => b.Id == id);
 
                 if (bundle == null)
                     return NotFound(new { message = "Bundle not found." });
 
-                _dbContext.BundleItems.RemoveRange(bundle.BundleItems);
+                var existingItems = await _dbContext.BundleItems
+                    .Where(bi => bi.BundleId == id)
+                    .ToListAsync();
+
+                if (existingItems.Any())
+                {
+                    _dbContext.BundleItems.RemoveRange(existingItems);
+                }
+
                 _dbContext.Bundles.Remove(bundle);
 
                 await _dbContext.SaveChangesAsync();
@@ -195,7 +202,7 @@ namespace Web.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Error deleting bundle: " + ex.Message });
+                return StatusCode(500, new { message = "Error deleting bundle: " + (ex.InnerException?.Message ?? ex.Message) });
             }
         }
     }

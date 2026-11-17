@@ -11,8 +11,6 @@ namespace Domain.Entities
         public int LastReadPage { get; set; } = 1;
         public int TotalPages { get; set; } = 1;
         public DateTime LastReadAt { get; set; } = DateTime.UtcNow;
-
-        // Navigation Property
         public virtual Book? Book { get; set; }
     }
 }

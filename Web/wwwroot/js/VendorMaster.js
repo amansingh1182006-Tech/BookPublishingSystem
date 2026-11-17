@@ -1,6 +1,6 @@
 ﻿// wwwroot/js/VendorMaster.js
 
-function VendorMaster({ booksList = [], triggerToast }) {
+function VendorMaster({ booksList = [], triggerToast, isVendorSelfView = false }) {
     const [vendors, setVendors] = React.useState([]);
     const [vendorBooks, setVendorBooks] = React.useState([]);
     const [earningsData, setEarningsData] = React.useState({
@@ -13,7 +13,7 @@ function VendorMaster({ booksList = [], triggerToast }) {
     const [loading, setLoading] = React.useState(false);
 
     // Page Modes: 'list' (Directory Table), 'vendorForm' (Add/Edit Vendor), 'profile' (Vendor Detail), 'royaltyForm' (Configure Per-Book Royalty)
-    const [viewMode, setViewMode] = React.useState('list');
+    const [viewMode, setViewMode] = React.useState(isVendorSelfView ? 'profile' : 'list');
     const [selectedVendor, setSelectedVendor] = React.useState(null);
     const [editingVendor, setEditingVendor] = React.useState(null);
 
@@ -227,6 +227,31 @@ function VendorMaster({ booksList = [], triggerToast }) {
     };
 
     React.useEffect(() => {
+        if (isVendorSelfView) {
+            setLoading(true);
+            fetch('/api/vendor/my-profile')
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success && data.vendor) {
+                        setSelectedVendor(data.vendor);
+                        setVendorBooks(data.books || []);
+                        if (data.earnings) {
+                            setEarningsData({
+                                totalEarned: data.earnings.totalEarned || 0,
+                                singleSalesEarned: data.earnings.singleSalesEarned || 0,
+                                bundleSalesEarned: data.earnings.bundleSalesEarned || 0,
+                                planSalesEarned: data.earnings.planSalesEarned || 0,
+                                transactions: data.earnings.transactions || []
+                            });
+                        }
+                        setViewMode('profile');
+                    }
+                })
+                .catch(e => console.error("Vendor self profile load error:", e))
+                .finally(() => setLoading(false));
+            return;
+        }
+
         fetchVendors();
 
         const handleGlobalOpenVendor = () => openVendorFormPage(null);
@@ -249,7 +274,7 @@ function VendorMaster({ booksList = [], triggerToast }) {
             window.removeEventListener('open-vendor-create-modal', handleGlobalOpenVendor);
             clearTimeout(timer);
         };
-    }, []);
+    }, [isVendorSelfView]);
 
     const handleSaveVendor = async (e) => {
         e.preventDefault();
@@ -376,9 +401,9 @@ function VendorMaster({ booksList = [], triggerToast }) {
     };
 
     // -------------------------------------------------------------
-    // PAGE VIEW 1: VENDOR PROFILE & BANK FORM PAGE
+    // PAGE VIEW 1: VENDOR PROFILE & BANK FORM PAGE (ADMIN ONLY)
     // -------------------------------------------------------------
-    if (viewMode === 'vendorForm') {
+    if (!isVendorSelfView && viewMode === 'vendorForm') {
         return (
             <div className="w-full bg-white p-6 rounded-lg shadow-md border border-slate-200 space-y-6">
                 <div className="flex items-center justify-between border-b pb-4">
@@ -471,9 +496,9 @@ function VendorMaster({ booksList = [], triggerToast }) {
     }
 
     // -------------------------------------------------------------
-    // PAGE VIEW 2: CONFIGURE PER-BOOK ROYALTY RULE PAGE
+    // PAGE VIEW 2: CONFIGURE PER-BOOK ROYALTY RULE PAGE (ADMIN ONLY)
     // -------------------------------------------------------------
-    if (viewMode === 'royaltyForm') {
+    if (!isVendorSelfView && viewMode === 'royaltyForm') {
         const displayVendorName = selectedVendor?.name || selectedVendor?.Name || selectedVendor?.vendorName || selectedVendor?.VendorName || '';
         const selectedBk = vendorBooks.find(b => String(b.id || b.Id) === String(selectedBookId));
         const totalPg = selectedBk ? (selectedBk.noOfPages || selectedBk.NoOfPages || 0) : 0;
@@ -628,8 +653,27 @@ function VendorMaster({ booksList = [], triggerToast }) {
         );
     }
 
+    // Loading / Not Linked Fallback for Logged-in Vendor Self View
+    if (isVendorSelfView && loading) {
+        return (
+            <div className="w-full bg-white p-12 rounded-lg border text-center text-xs font-bold text-slate-500">
+                <i className="fa-solid fa-spinner fa-spin text-2xl text-indigo-600 mb-2 block"></i>
+                Loading Your Vendor Profile & Royalty Ledger...
+            </div>
+        );
+    }
+
+    if (isVendorSelfView && !loading && !selectedVendor) {
+        return (
+            <div className="w-full bg-red-50 border border-red-200 text-red-700 p-8 rounded-lg text-center text-xs font-bold">
+                Is email ID se koi Vendor Profile linked nahi hai. Kripya Admin se sampark karein.
+            </div>
+        );
+    }
+
     // -------------------------------------------------------------
     // PAGE VIEW 3: DETAILED VENDOR PROFILE & ROYALTY LEDGER PAGE
+    // (ADMIN VIEW + LOGGED-IN VENDOR SELF VIEW)
     // -------------------------------------------------------------
     if (viewMode === 'profile' && selectedVendor) {
         const rules = selectedVendor.royaltyRules || selectedVendor.RoyaltyRules || [];
@@ -640,33 +684,42 @@ function VendorMaster({ booksList = [], triggerToast }) {
             <div className="w-full bg-white p-6 rounded-lg shadow-md border border-slate-200 space-y-6 text-xs">
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b pb-4 gap-3">
                     <div className="flex items-center gap-3">
-                        <button
-                            onClick={() => { setSelectedVendor(null); setViewMode('list'); }}
-                            className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3 py-1.5 rounded cursor-pointer flex items-center gap-1.5">
-                            <i className="fa-solid fa-arrow-left"></i> Back to Directory Page
-                        </button>
+                        {!isVendorSelfView && (
+                            <button
+                                onClick={() => { setSelectedVendor(null); setViewMode('list'); }}
+                                className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3 py-1.5 rounded cursor-pointer flex items-center gap-1.5">
+                                <i className="fa-solid fa-arrow-left"></i> Back to Directory Page
+                            </button>
+                        )}
                         <div>
                             <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
                                 {displayVendorName}
                                 <span className="bg-indigo-50 text-indigo-700 text-xs px-2 py-0.5 rounded font-bold border border-indigo-200">
                                     {selectedVendor.vendorCode || selectedVendor.VendorCode}
                                 </span>
+                                {isVendorSelfView && (
+                                    <span className="bg-emerald-100 text-emerald-800 text-[10px] px-2.5 py-0.5 rounded-full font-extrabold uppercase">
+                                        My Vendor Profile
+                                    </span>
+                                )}
                             </h2>
                             <p className="text-slate-500 text-[11px]">Vendor Master Profile, Per-Book Royalty Config & 30% Pool Revenue Ledger</p>
                         </div>
                     </div>
-                    <div className="flex gap-2">
-                        <button
-                            onClick={() => openVendorFormPage(selectedVendor)}
-                            className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold px-4 py-2 rounded cursor-pointer">
-                            <i className="fa-solid fa-pen"></i> Edit Profile Page
-                        </button>
-                        <button
-                            onClick={() => openRoyaltyFormPage()}
-                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-2 rounded shadow cursor-pointer flex items-center gap-1.5">
-                            <i className="fa-solid fa-plus"></i> Configure Book Royalty
-                        </button>
-                    </div>
+                    {!isVendorSelfView && (
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => openVendorFormPage(selectedVendor)}
+                                className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold px-4 py-2 rounded cursor-pointer">
+                                <i className="fa-solid fa-pen"></i> Edit Profile Page
+                            </button>
+                            <button
+                                onClick={() => openRoyaltyFormPage()}
+                                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-2 rounded shadow cursor-pointer flex items-center gap-1.5">
+                                <i className="fa-solid fa-plus"></i> Configure Book Royalty
+                            </button>
+                        </div>
+                    )}
                 </div>
 
                 {/* 30% ROYALTY POOL EARNINGS SUMMARY CARDS */}
@@ -744,7 +797,7 @@ function VendorMaster({ booksList = [], triggerToast }) {
                                         <th className="p-3">Pages</th>
                                         <th className="p-3">MRP</th>
                                         <th className="p-3">Royalty Status</th>
-                                        <th className="p-3 text-right">Action</th>
+                                        {!isVendorSelfView && <th className="p-3 text-right">Action</th>}
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -773,13 +826,15 @@ function VendorMaster({ booksList = [], triggerToast }) {
                                                         </span>
                                                     )}
                                                 </td>
-                                                <td className="p-3 text-right">
-                                                    <button
-                                                        onClick={() => openRoyaltyFormPage(b)}
-                                                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-1 rounded text-[11px] cursor-pointer">
-                                                        {mappedRule ? 'Edit Royalty' : 'Set Royalty'}
-                                                    </button>
-                                                </td>
+                                                {!isVendorSelfView && (
+                                                    <td className="p-3 text-right">
+                                                        <button
+                                                            onClick={() => openRoyaltyFormPage(b)}
+                                                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-1 rounded text-[11px] cursor-pointer">
+                                                            {mappedRule ? 'Edit Royalty' : 'Set Royalty'}
+                                                        </button>
+                                                    </td>
+                                                )}
                                             </tr>
                                         );
                                     })}
@@ -797,9 +852,11 @@ function VendorMaster({ booksList = [], triggerToast }) {
                     {rules.length === 0 ? (
                         <div className="text-center py-8 bg-slate-50 rounded border border-dashed text-slate-400 space-y-2">
                             <p className="font-semibold">No royalty rules configured for this vendor yet.</p>
-                            <button onClick={() => openRoyaltyFormPage()} className="text-indigo-600 font-bold hover:underline cursor-pointer">
-                                + Click here to map a book and set royalty parameters
-                            </button>
+                            {!isVendorSelfView && (
+                                <button onClick={() => openRoyaltyFormPage()} className="text-indigo-600 font-bold hover:underline cursor-pointer">
+                                    + Click here to map a book and set royalty parameters
+                                </button>
+                            )}
                         </div>
                     ) : (
                         <div className="overflow-x-auto border rounded-lg">
@@ -812,7 +869,7 @@ function VendorMaster({ booksList = [], triggerToast }) {
                                         <th className="p-3">Book Points</th>
                                         <th className="p-3">Pool Share %</th>
                                         <th className="p-3">Status</th>
-                                        <th className="p-3 text-right">Action</th>
+                                        {!isVendorSelfView && <th className="p-3 text-right">Action</th>}
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -845,13 +902,15 @@ function VendorMaster({ booksList = [], triggerToast }) {
                                                         {r.liveStatus || r.LiveStatus || 'Live'}
                                                     </span>
                                                 </td>
-                                                <td className="p-3 text-right">
-                                                    <button
-                                                        onClick={() => handleDeleteRoyaltyRule(r.id || r.Id)}
-                                                        className="text-red-600 font-bold hover:underline cursor-pointer">
-                                                        Delete
-                                                    </button>
-                                                </td>
+                                                {!isVendorSelfView && (
+                                                    <td className="p-3 text-right">
+                                                        <button
+                                                            onClick={() => handleDeleteRoyaltyRule(r.id || r.Id)}
+                                                            className="text-red-600 font-bold hover:underline cursor-pointer">
+                                                            Delete
+                                                        </button>
+                                                    </td>
+                                                )}
                                             </tr>
                                         );
                                     })}
@@ -910,7 +969,7 @@ function VendorMaster({ booksList = [], triggerToast }) {
     }
 
     // -------------------------------------------------------------
-    // PAGE VIEW 4: DIRECTORY MASTER LIST PAGE (DEFAULT)
+    // PAGE VIEW 4: DIRECTORY MASTER LIST PAGE (DEFAULT - ADMIN ONLY)
     // -------------------------------------------------------------
     return (
         <div className="w-full space-y-6">
