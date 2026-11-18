@@ -22,17 +22,14 @@ namespace Web.Controllers
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly IRoyaltyDistributionService _royaltyService;
 
-        public SingleBookPurchaseController(
-            ApplicationDbContext dbContext,
-            UserManager<ApplicationUser> userManager,
-            IRoyaltyDistributionService royaltyService)
+        public SingleBookPurchaseController(ApplicationDbContext dbContext, UserManager<ApplicationUser> userManager, IRoyaltyDistributionService royaltyService)
         {
             _dbContext = dbContext;
             _userManager = userManager;
             _royaltyService = royaltyService;
         }
 
-        // Auto-create PurchasedBundleSnapshots table from code if not already created
+       
         private async Task EnsureSnapshotTableAsync()
         {
             const string sql = @"
@@ -81,13 +78,15 @@ namespace Web.Controllers
             }
             return purchasedAt.AddDays(365);
         }
-
         [HttpGet("check-access/{bookId:guid}")]
         public async Task<IActionResult> CheckBookAccess(Guid bookId)
         {
             var user = await _userManager.GetUserAsync(User);
             if (user == null)
                 return Ok(new { hasAccess = false, isLoggedIn = false });
+
+            if (User.IsInRole("Admin"))
+                return Ok(new { hasAccess = true, isLoggedIn = true, accessType = "Admin" });
 
             var singlePurchases = await _dbContext.Customers
                 .Where(c => c.UserId == user.Id &&
@@ -113,14 +112,40 @@ namespace Web.Controllers
                 }
             }
 
-            bool hasActivePlan = await _dbContext.UserSubscriptions.AnyAsync(s =>
-                s.UserId == user.Id &&
-                s.Status == "Active" &&
-                s.ExpiryDate >= DateTime.UtcNow);
+           
+            var activePlanTxns = await _dbContext.UserSubscriptions
+                .Where(s => s.UserId == user.Id &&
+                            s.Status == "Active" &&
+                            s.ExpiryDate >= DateTime.UtcNow &&
+                            s.TransactionId != null)
+                .Select(s => s.TransactionId!)
+                .ToListAsync();
 
-            if (hasActivePlan)
-                return Ok(new { hasAccess = true, isLoggedIn = true, accessType = "SubscriptionPlan" });
+            if (activePlanTxns.Any())
+            {
+                try
+                {
+                    foreach (var txnId in activePlanTxns)
+                    {
+                        var lockedPlanBooks = await _dbContext.Database
+                            .SqlQueryRaw<Guid>("SELECT BookId AS Value FROM PurchasedPlanSnapshots WHERE TransactionId = {0} AND BookId = {1}", txnId, bookId)
+                            .ToListAsync();
 
+                        if (lockedPlanBooks.Any())
+                        {
+                            return Ok(new
+                            {
+                                hasAccess = true,
+                                isLoggedIn = true,
+                                accessType = "SubscriptionPlan"
+                            });
+                        }
+                    }
+                }
+                catch { /* Fallback Table Create or Not */ }
+            }
+
+            
             await EnsureSnapshotTableAsync();
 
             var userBundleRecords = await _dbContext.Customers
@@ -135,7 +160,7 @@ namespace Web.Controllers
             {
                 var expiry = ParseSingleBookExpiry(br.PlanType, br.PurchasedAt);
                 if (expiry != null && expiry < DateTime.UtcNow)
-                    continue; 
+                    continue;
 
                 string cleanBundleName = br.PlanType!.Split('|')[0].Replace("Bundle:", "").Trim();
 
@@ -178,6 +203,7 @@ namespace Web.Controllers
                 }
             }
 
+            
             return Ok(new { hasAccess = false, isLoggedIn = true });
         }
 
@@ -286,7 +312,7 @@ namespace Web.Controllers
                     return Ok(new
                     {
                         success = true,
-                        message = $"Aapke paas yeh book pehle se {exp.Value:dd MMM yyyy} tak active hai!",
+                        message = $"This Book already Exist you {exp.Value:dd MMM yyyy} to active !",
                         bookId = book.Id,
                         validTill = exp
                     });

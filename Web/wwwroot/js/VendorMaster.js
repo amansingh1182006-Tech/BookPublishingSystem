@@ -1,5 +1,4 @@
-﻿// wwwroot/js/VendorMaster.js
-
+﻿
 function VendorMaster({ booksList = [], triggerToast, isVendorSelfView = false }) {
     const [vendors, setVendors] = React.useState([]);
     const [vendorBooks, setVendorBooks] = React.useState([]);
@@ -12,12 +11,12 @@ function VendorMaster({ booksList = [], triggerToast, isVendorSelfView = false }
     });
     const [loading, setLoading] = React.useState(false);
 
-    // Page Modes: 'list' (Directory Table), 'vendorForm' (Add/Edit Vendor), 'profile' (Vendor Detail), 'royaltyForm' (Configure Per-Book Royalty)
+   
     const [viewMode, setViewMode] = React.useState(isVendorSelfView ? 'profile' : 'list');
     const [selectedVendor, setSelectedVendor] = React.useState(null);
     const [editingVendor, setEditingVendor] = React.useState(null);
 
-    // Vendor Form Fields State
+    
     const [vendorCode, setVendorCode] = React.useState('');
     const [vendorName, setVendorName] = React.useState('');
     const [phone, setPhone] = React.useState('');
@@ -28,7 +27,7 @@ function VendorMaster({ booksList = [], triggerToast, isVendorSelfView = false }
     const [ifscCode, setIfscCode] = React.useState('');
     const [address, setAddress] = React.useState('');
 
-    // Per-Book Royalty Rule Form Fields State
+    
     const [selectedBookId, setSelectedBookId] = React.useState('');
     const [isRoyaltyApplicable, setIsRoyaltyApplicable] = React.useState(true);
     const [thresholdPages, setThresholdPages] = React.useState(100);
@@ -56,7 +55,7 @@ function VendorMaster({ booksList = [], triggerToast, isVendorSelfView = false }
         }
     };
 
-    // Is Vendor ke naam (VendorName) ya VendorId se upload hui sabhi books fetch karein
+    
     const fetchBooksForVendor = async (vendorObj) => {
         if (!vendorObj) return [];
         const vId = vendorObj.id || vendorObj.Id;
@@ -75,7 +74,7 @@ function VendorMaster({ booksList = [], triggerToast, isVendorSelfView = false }
             console.warn("Vendor books API fallback:", e);
         }
 
-        // Fallback: booksList prop ya /api/author/book/my-books se match karein
+        
         let sourceBooks = booksList;
         if (!sourceBooks || sourceBooks.length === 0) {
             try {
@@ -104,7 +103,7 @@ function VendorMaster({ booksList = [], triggerToast, isVendorSelfView = false }
         return matched;
     };
 
-    // Vendor ki 30% Pool Royalty Earnings (Single, Bundle & Plan) fetch karein
+    
     const fetchVendorEarnings = async (vendorId) => {
         if (!vendorId) return;
         try {
@@ -181,7 +180,7 @@ function VendorMaster({ booksList = [], triggerToast, isVendorSelfView = false }
         const targetBookId = targetBook ? (targetBook.id || targetBook.Id) : '';
         setSelectedBookId(targetBookId);
 
-        // Agar is book ka rule pehle se bana hai toh values pre-fill karein
+        
         const existingRules = selectedVendor?.royaltyRules || selectedVendor?.RoyaltyRules || [];
         const existingRule = existingRules.find(r => String(r.bookId || r.BookId) === String(targetBookId));
 
@@ -205,7 +204,7 @@ function VendorMaster({ booksList = [], triggerToast, isVendorSelfView = false }
         setViewMode('royaltyForm');
     };
 
-    // Jab dropdown mein book change ho, toh uska existing rule check karke auto-fill karein
+    
     const handleBookDropdownChange = (newBookId) => {
         setSelectedBookId(newBookId);
         const existingRules = selectedVendor?.royaltyRules || selectedVendor?.RoyaltyRules || [];
@@ -400,9 +399,7 @@ function VendorMaster({ booksList = [], triggerToast, isVendorSelfView = false }
         }
     };
 
-    // -------------------------------------------------------------
-    // PAGE VIEW 1: VENDOR PROFILE & BANK FORM PAGE (ADMIN ONLY)
-    // -------------------------------------------------------------
+    
     if (!isVendorSelfView && viewMode === 'vendorForm') {
         return (
             <div className="w-full bg-white p-6 rounded-lg shadow-md border border-slate-200 space-y-6">
@@ -495,9 +492,7 @@ function VendorMaster({ booksList = [], triggerToast, isVendorSelfView = false }
         );
     }
 
-    // -------------------------------------------------------------
-    // PAGE VIEW 2: CONFIGURE PER-BOOK ROYALTY RULE PAGE (ADMIN ONLY)
-    // -------------------------------------------------------------
+    
     if (!isVendorSelfView && viewMode === 'royaltyForm') {
         const displayVendorName = selectedVendor?.name || selectedVendor?.Name || selectedVendor?.vendorName || selectedVendor?.VendorName || '';
         const selectedBk = vendorBooks.find(b => String(b.id || b.Id) === String(selectedBookId));
@@ -653,7 +648,7 @@ function VendorMaster({ booksList = [], triggerToast, isVendorSelfView = false }
         );
     }
 
-    // Loading / Not Linked Fallback for Logged-in Vendor Self View
+    
     if (isVendorSelfView && loading) {
         return (
             <div className="w-full bg-white p-12 rounded-lg border text-center text-xs font-bold text-slate-500">
@@ -671,10 +666,7 @@ function VendorMaster({ booksList = [], triggerToast, isVendorSelfView = false }
         );
     }
 
-    // -------------------------------------------------------------
-    // PAGE VIEW 3: DETAILED VENDOR PROFILE & ROYALTY LEDGER PAGE
-    // (ADMIN VIEW + LOGGED-IN VENDOR SELF VIEW)
-    // -------------------------------------------------------------
+   
     if (viewMode === 'profile' && selectedVendor) {
         const rules = selectedVendor.royaltyRules || selectedVendor.RoyaltyRules || [];
         const displayIfsc = selectedVendor.ifsc || selectedVendor.IFSC || selectedVendor.ifscCode || selectedVendor.IfscCode;
@@ -968,9 +960,7 @@ function VendorMaster({ booksList = [], triggerToast, isVendorSelfView = false }
         );
     }
 
-    // -------------------------------------------------------------
-    // PAGE VIEW 4: DIRECTORY MASTER LIST PAGE (DEFAULT - ADMIN ONLY)
-    // -------------------------------------------------------------
+    
     return (
         <div className="w-full space-y-6">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-4 rounded-lg shadow border border-slate-200 gap-3">

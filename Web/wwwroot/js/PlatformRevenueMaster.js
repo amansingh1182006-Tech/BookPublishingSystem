@@ -1,6 +1,4 @@
-﻿// wwwroot/js/PlatformRevenueMaster.js
-
-function PlatformRevenueMaster({ triggerToast }) {
+﻿function PlatformRevenueMaster({ triggerToast }) {
     const [loading, setLoading] = React.useState(false);
     const [kpis, setKpis] = React.useState({
         totalTransactions: 0,

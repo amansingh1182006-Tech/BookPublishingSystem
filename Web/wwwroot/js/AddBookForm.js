@@ -1,5 +1,4 @@
-﻿// wwwroot/js/components/AddBookForm.js
-
+﻿
 function AddBookForm({
     categoriesList,
     languagesList,
@@ -24,7 +23,7 @@ function AddBookForm({
     const [mainPdfFile, setMainPdfFile] = React.useState(null);
     const [isPublishingBook, setIsPublishingBook] = React.useState(false);
 
-    // Auto-extract last 5 alphanumeric characters from ISBN to populate Item Code
+    
     const handleIsbnChange = (e) => {
         const val = e.target.value;
         setIsbnInput(val);

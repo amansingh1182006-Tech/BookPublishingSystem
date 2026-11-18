@@ -365,7 +365,6 @@ namespace Web.Areas.Author.Controllers
                         vendorId = b.VendorId,
                         vendorName = !string.IsNullOrWhiteSpace(b.VendorName) ? b.VendorName : "In-House (B. Jain)",
 
-                        // Home Page ke liye sirf Yes/No flag
                         isRoyaltyApplicable = royaltySet.Contains(b.Id),
 
                         isPublished = b.IsPublished,

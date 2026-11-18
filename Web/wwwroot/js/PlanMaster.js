@@ -1,4 +1,4 @@
-﻿// wwwroot/js/PlanMaster.js
+﻿
 
 function PlanMaster({ booksList = [], triggerToast }) {
     const [plansList, setPlansList] = React.useState([]);
@@ -6,11 +6,11 @@ function PlanMaster({ booksList = [], triggerToast }) {
     const [royaltyRulesMap, setRoyaltyRulesMap] = React.useState({});
     const [loading, setLoading] = React.useState(false);
 
-    // Page Mode State: 'list' (Grid View) OR 'form' (Add/Edit Master Page)
+    
     const [viewMode, setViewMode] = React.useState('list');
     const [editingPlan, setEditingPlan] = React.useState(null);
 
-    // Form Field States
+    
     const [planNameInput, setPlanNameInput] = React.useState('Basic Plan');
     const [description, setDescription] = React.useState('');
     const [priceIncludingTax, setPriceIncludingTax] = React.useState(199);
@@ -25,7 +25,7 @@ function PlanMaster({ booksList = [], triggerToast }) {
     const [bookSearchQuery, setBookSearchQuery] = React.useState('');
     const [isActive, setIsActive] = React.useState(true);
 
-    // Dynamic Features List State
+    
     const [features, setFeatures] = React.useState([
         { featureName: 'Standard E-Book Reading Mode', limitation: 'Available on Web & Mobile', isEnabled: true },
         { featureName: 'Offline Book Downloads', limitation: 'Up to 2 Devices', isEnabled: true }
@@ -273,7 +273,7 @@ function PlanMaster({ booksList = [], triggerToast }) {
         }
     };
 
-    // FULL PAGE FORM VIEW MODE
+    
     if (viewMode === 'form') {
         const planPriceNum = parseFloat(priceIncludingTax) || 0;
         const pool30 = planPriceNum * 0.30;
@@ -702,7 +702,7 @@ function PlanMaster({ booksList = [], triggerToast }) {
         );
     }
 
-    // GRID LIST VIEW MODE (WITH INCLUDED 5 BOOKS COVER IMAGES & ROYALTY BADGES)
+    
     return (
         <div className="w-full space-y-6">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-4 rounded-lg shadow border border-slate-200 gap-3">

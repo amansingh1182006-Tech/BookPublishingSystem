@@ -43,7 +43,6 @@ public class KeywordController : ControllerBase
             return BadRequest(new { message = "Keyword Name is required." });
         }
 
-        // AUTO SYSTEM GENERATED KEYWORD CODE
         string code = $"KW_{Guid.NewGuid().ToString("N").Substring(0, 6).ToUpper()}";
 
         var newKeyword = new Keyword

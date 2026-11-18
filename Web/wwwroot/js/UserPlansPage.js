@@ -2,8 +2,6 @@
     const [plans, setPlans] = React.useState([]);
     const [loading, setLoading] = React.useState(true);
     const [purchasingId, setPurchasingId] = React.useState(null);
-
-    // Step Switch: 'plans' (Step 1) -> 'profile' (Step 2 attached right after plan buy)
     const [step, setStep] = React.useState('plans');
     const [purchasedPlanName, setPurchasedPlanName] = React.useState('');
     const [isSavingProfile, setIsSavingProfile] = React.useState(false);

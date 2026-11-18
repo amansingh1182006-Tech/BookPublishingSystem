@@ -45,7 +45,7 @@ function CustomerProfilePage({ initialProfile, onProfileSaved, onCancel }) {
                 setSuccessMsg(data.message || "Profile successfully save ho gayi hai!");
                 setTimeout(() => {
                     if (onProfileSaved) onProfileSaved();
-                    else window.location.href = '/'; // Direct Home Page Redirection
+                    else window.location.href = '/'; 
                 }, 1200);
             } else {
                 setErrorMsg(data.message || 'Profile save karne me error aayi.');

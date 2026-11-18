@@ -1,4 +1,4 @@
-﻿// wwwroot/js/BundleMaster.js
+﻿
 
 function BundleMaster({ triggerToast }) {
     const [bundles, setBundles] = React.useState([]);
@@ -7,11 +7,11 @@ function BundleMaster({ triggerToast }) {
     const [loading, setLoading] = React.useState(false);
     const [loadingBooks, setLoadingBooks] = React.useState(false);
 
-    // Page Modes: 'list' (Grid View) | 'form' (Add/Edit Full Page Form)
+    
     const [viewMode, setViewMode] = React.useState('list');
     const [editingBundle, setEditingBundle] = React.useState(null);
 
-    // Form States
+    
     const [bundleName, setBundleName] = React.useState('');
     const [description, setDescription] = React.useState('');
     const [selectedBookIds, setSelectedBookIds] = React.useState([]);
@@ -190,7 +190,7 @@ function BundleMaster({ triggerToast }) {
         }
     };
 
-    // PAGE VIEW MODE 1: FULL PAGE FORM
+    
     if (viewMode === 'form') {
         const sellingPriceNum = parseFloat(finalPrice) || 0;
         const pool30 = sellingPriceNum * 0.30;
@@ -463,7 +463,7 @@ function BundleMaster({ triggerToast }) {
         );
     }
 
-    // PAGE VIEW MODE 2: DIRECTORY LIST GRID (WITH COVER IMAGES & ROYALTY SET BADGE)
+    
     return (
         <div className="w-full space-y-6 text-xs">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-4 rounded-lg shadow border border-slate-200 gap-3">

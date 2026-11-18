@@ -175,7 +175,7 @@ namespace Web.Areas.Reader.Controllers
             });
         }
 
-        // GET: /Reader/Profile
+       
         [HttpGet("Profile")]
         public IActionResult Profile()
         {
@@ -450,7 +450,7 @@ namespace Web.Areas.Reader.Controllers
 
         // GET: /Reader/stream-book/{bookId}
         [HttpGet("stream-book/{bookId:guid}")]
-        [AllowAnonymous]
+        [Authorize]
         public async Task<IActionResult> StreamBook(Guid bookId)
         {
             var book = await _dbContext.Books.FirstOrDefaultAsync(b => b.Id == bookId);

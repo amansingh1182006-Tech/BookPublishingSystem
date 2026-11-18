@@ -575,6 +575,86 @@ function App() {
 
     const [selectedBookForDrm, setSelectedBookForDrm] = useState(null);
     const [pendingBookForPlan, setPendingBookForPlan] = useState(null);
+    const [hasEverPurchasedPlan, setHasEverPurchasedPlan] = useState(false);
+
+    const checkUserPlanHistory = async () => {
+        try {
+            
+            const statusRes = await fetch('/api/plan/my-subscription-status');
+            if (statusRes.ok) {
+                const statusData = await statusRes.json();
+                if (statusData?.hasActivePlan) {
+                    setHasEverPurchasedPlan(true);
+                    return true;
+                }
+            }
+
+            
+            const memberRes = await fetch('/api/plan/my-profile-membership');
+            if (memberRes.ok) {
+                const memberData = await memberRes.json();
+                if (Array.isArray(memberData?.plans) && memberData.plans.length > 0) {
+                    setHasEverPurchasedPlan(true);
+                    return true;
+                }
+            }
+        } catch (err) {
+            console.warn("Plan history check warning:", err);
+        }
+        return false;
+    };
+    const checkBookOwnership = async (targetBookId) => {
+        if (!targetBookId) return false;
+        const cleanTarget = String(targetBookId).toLowerCase().trim();
+
+        // 1. Direct Single Book / Access API check
+        try {
+            const accessRes = await fetch(`/api/single-book/check-access/${encodeURIComponent(targetBookId)}`);
+            if (accessRes.ok) {
+                const accessData = await accessRes.json();
+                if (accessData?.hasAccess === true) {
+                    return true;
+                }
+            }
+        } catch (e) {
+            console.warn("Single book access check warning:", e);
+        }
+
+        // 2. Active Subscription Plans & Purchased Bundles ke andar check karein
+        try {
+            const memberRes = await fetch('/api/plan/my-profile-membership');
+            if (memberRes.ok) {
+                const memberData = await memberRes.json();
+
+                // Active Plans ke andar ki books check karein
+                if (Array.isArray(memberData?.plans)) {
+                    for (const plan of memberData.plans) {
+                        if (plan.isActive === false) continue; // Expired plan skip karein
+                        const planBooks = Array.isArray(plan.books) ? plan.books : [];
+                        const foundInPlan = planBooks.some(b =>
+                            String(b.id || b.bookId || '').toLowerCase().trim() === cleanTarget
+                        );
+                        if (foundInPlan) return true;
+                    }
+                }
+
+                // Purchased Bundles ke andar ki books check karein
+                if (Array.isArray(memberData?.bundles)) {
+                    for (const bundle of memberData.bundles) {
+                        const bundleBooks = Array.isArray(bundle.books) ? bundle.books : [];
+                        const foundInBundle = bundleBooks.some(b =>
+                            String(b.id || b.bookId || '').toLowerCase().trim() === cleanTarget
+                        );
+                        if (foundInBundle) return true;
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn("Plan/Bundle ownership check warning:", e);
+        }
+
+        return false;
+    };
 
     const [user, setUser] = useState({
         isLoggedIn: false,
@@ -978,23 +1058,29 @@ function App() {
             return;
         }
 
-        const targetId = bookObj.id || bookObj.Id;
-        try {
-            const accessRes = await fetch(`/api/single-book/check-access/${targetId}`);
-            if (accessRes.ok) {
-                const accessData = await accessRes.json();
-                if (accessData.hasAccess) {
-                    saveReadingProgressToBackend(bookObj, 1);
-                    window.history.pushState({ modal: 'reader' }, '');
-                    setSelectedBookForDrm(bookObj);
-                    return;
-                }
-            }
-        } catch (e) {
-            console.warn("Access check warning:", e);
+        const targetId = bookObj.id || bookObj.Id || bookObj.bookId;
+
+        
+        const isOwned = await checkBookOwnership(targetId);
+
+        if (isOwned) {
+            saveReadingProgressToBackend(bookObj, 1);
+            window.history.pushState({ modal: 'reader' }, '');
+            setSelectedBookForDrm(bookObj);
+            return;
         }
 
-        setSingleBookCheckoutModal(bookObj);
+        
+        const hasPlanHistory = hasEverPurchasedPlan || await checkUserPlanHistory();
+        if (!hasPlanHistory) {
+            setPendingBookForPlan(bookObj);
+            changeNavState({ activeTab: 'user-plans' });
+            triggerToast("You Don't have this book please Purchase the plane!");
+            return;
+        }
+
+        triggerToast("You don't have this book in your bundle and Subscription plane .", "error");
+        handleOpenSingleBookCheckoutWithSuggestion(bookObj);
     };
 
     useEffect(() => {
@@ -1022,6 +1108,7 @@ function App() {
                         email: data.email,
                         role: primaryRole
                     });
+                    checkUserPlanHistory();
                 } else {
                     setUser({ isLoggedIn: false, fullName: '', email: '', role: '' });
                 }
@@ -1491,6 +1578,7 @@ function App() {
                         email: emailInput,
                         role: assignedRole
                     });
+                    checkUserPlanHistory();
                     setIsAuthOpen(false);
                     setEmailInput('');
                     setPasswordInput('');
@@ -1644,7 +1732,7 @@ function App() {
             case 'keywords':
                 return { title: 'KEYWORD LIST', buttonText: 'Add Keyword' };
             case 'customers':
-                return { title: 'CUSTOMER LIST', buttonText: 'Add Customer' };
+                return { title: 'CUSTOMER LIST' };
             case 'items':
             default:
                 return { title: 'BOOK LIST', buttonText: 'Add Item' };
@@ -1813,20 +1901,7 @@ function App() {
                                 </h1>
                                 <p className="text-xs text-gray-300 mt-1">Manage users, books, approvals and platform settings in one place.</p>
                             </div>
-                            <div className="flex flex-wrap items-center gap-3">
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        changeNavState({ selectedMaster: 'platform-revenue' });
-                                        setMasterDropdownOpen(false);
-                                    }}
-                                    className={`font-black px-4 py-2.5 rounded shadow text-xs flex items-center gap-2 transition cursor-pointer ${selectedMaster === 'platform-revenue'
-                                            ? 'bg-emerald-400 text-slate-950 ring-2 ring-white'
-                                            : 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                                        }`}>
-                                    <i className="fa-solid fa-vault"></i> Platform Revenue (70%)
-                                </button>
-                            </div>
+                            
                             <div className="relative">
                                 <button
                                     onClick={() => setMasterDropdownOpen(!masterDropdownOpen)}
@@ -2041,6 +2116,7 @@ function App() {
                                     categoriesList={categoriesList}
                                     languagesList={languagesList}
                                     authorsList={authorsList}
+                                    vendorsList={vendorsList}
                                     onSuccess={async (msg) => {
                                         triggerToast(msg);
                                         await fetchAuthorBooks();
@@ -2457,6 +2533,7 @@ function App() {
                             pendingBook={pendingBookForPlan}
                             triggerToast={triggerToast}
                             onCompleteAccess={(bookToOpen) => {
+                                setHasEverPurchasedPlan(true);
                                 setPendingBookForPlan(null);
                                 changeNavState({ activeTab: 'store' });
                                 if (bookToOpen) {
@@ -2564,8 +2641,19 @@ function App() {
                                                     <div className="font-black text-slate-900 text-base">₹{b.price !== undefined ? b.price : b.Price}</div>
                                                     <div className="flex gap-1.5">
                                                         <button
-                                                            onClick={() => {
-                                                                if (!user.isLoggedIn) { openAuthModal('login'); return; }
+                                                            onClick={async () => {
+                                                                if (!user.isLoggedIn) {
+                                                                    setPendingBookForPlan(b);
+                                                                    openAuthModal('login');
+                                                                    return;
+                                                                }
+                                                                const hasPlanHistory = hasEverPurchasedPlan || await checkUserPlanHistory();
+                                                                if (!hasPlanHistory) {
+                                                                    setPendingBookForPlan(b);
+                                                                    changeNavState({ activeTab: 'user-plans' });
+                                                                    triggerToast("Please choose a Subscription Plan first!");
+                                                                    return;
+                                                                }
                                                                 handleOpenSingleBookCheckoutWithSuggestion(b);
                                                             }}
                                                             className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-1.5 rounded text-[11px] shadow flex items-center justify-center gap-1 cursor-pointer">
@@ -3557,6 +3645,156 @@ function BulkGridFormContainer({ categoriesList, languagesList, authorsList, ven
         }
         setRows(rows.filter((_, i) => i !== index));
     };
+    // 1. SAMPLE EXCEL TEMPLATE DOWNLOAD
+    const handleDownloadExcelTemplate = () => {
+        if (!window.XLSX) {
+            alert("Excel library load ho rahi hai, 2 second baad dubara try karein.");
+            return;
+        }
+
+        const sampleCat = categoriesList.length > 0
+            ? (categoriesList[0].categoryName || categoriesList[0].CategoryName || 'Homoeopathy')
+            : 'Homoeopathy';
+        const sampleAuth = authorsList.length > 0
+            ? (authorsList[0].name || 'Dr. Samuel Hahnemann')
+            : 'Dr. Samuel Hahnemann';
+        const sampleLang = languagesList.length > 0
+            ? (languagesList[0].name || languagesList[0].languageName || 'English')
+            : 'English';
+
+        const sampleData = [
+            {
+                "ISBN Number": "9788131901234",
+                "Book Name": "Organon of Medicine",
+                "Author Name": sampleAuth,
+                "Language Name": sampleLang,
+                "Categories Name": sampleCat,
+                "Page": 320,
+                "Vendor Name": "B. Jain Group",
+                "Price": 499
+            }
+        ];
+
+        const ws = window.XLSX.utils.json_to_sheet(sampleData);
+        const wb = window.XLSX.utils.book_new();
+        window.XLSX.utils.book_append_sheet(wb, ws, "BooksBulkTemplate");
+        window.XLSX.writeFile(wb, "BJain_Bulk_Books_Template.xlsx");
+    };
+
+    // 2. DIRECT EXCEL FILE ATTACH (.xlsx / .xls / .csv) & AUTO-FILL TABLE
+    const handleExcelFileUpload = (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+
+        if (!window.XLSX) {
+            alert("Excel library load nahi hui hai. Page ko Ctrl+Shift+R se refresh karein.");
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+            try {
+                const data = new Uint8Array(evt.target.result);
+                const workbook = window.XLSX.read(data, { type: 'array' });
+                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                const jsonRows = window.XLSX.utils.sheet_to_json(firstSheet, { defval: "" });
+
+                if (!jsonRows || jsonRows.length === 0) {
+                    alert("Excel sheet khali hai! Kam se kam 1 book row bharein.");
+                    return;
+                }
+
+                // Helper: Column header ke spelling variations ko safely match karna
+                const getCol = (row, possibleHeaders) => {
+                    const keys = Object.keys(row);
+                    for (const h of possibleHeaders) {
+                        const matchKey = keys.find(k => k.trim().toLowerCase() === h.toLowerCase());
+                        if (matchKey !== undefined && String(row[matchKey]).trim() !== "") {
+                            return String(row[matchKey]).trim();
+                        }
+                    }
+                    return "";
+                };
+
+                const defaultCatCode = categoriesList.length > 0
+                    ? (categoriesList[0].categoryCode || categoriesList[0].CategoryCode || '')
+                    : '';
+                const defaultAuthorName = authorsList.length > 0 ? authorsList[0].name : '';
+                const defaultLangName = languagesList.length > 0
+                    ? (languagesList[0].name || languagesList[0].languageName || 'English')
+                    : 'English';
+
+                const importedRows = jsonRows.map((row) => {
+                    const itemNo = getCol(row, ["item code", "code", "book code", "itemno"]);
+                    const isbn = getCol(row, ["isbn number", "isbn", "isbn no"]);
+                    const itemName = getCol(row, ["book name", "item name", "title", "book"]);
+                    const authorRaw = getCol(row, ["author name", "auther name", "author", "auther"]);
+                    const langRaw = getCol(row, ["language name", "language", "lang"]);
+                    const catRaw = getCol(row, ["categories name", "category name", "category", "catgories name", "categories"]);
+                    const pagesRaw = getCol(row, ["page", "pages", "no of pages", "total pages"]);
+                    const vendorRaw = getCol(row, ["vendor name", "vendor", "publisher"]);
+                    const priceRaw = getCol(row, ["price", "mrp", "amount", "price (₹)"]);
+
+                    // Category Code match karna
+                    let matchedCatCode = defaultCatCode;
+                    if (catRaw && categoriesList.length > 0) {
+                        const foundCat = categoriesList.find(c =>
+                            (c.categoryName || c.CategoryName || '').toLowerCase() === catRaw.toLowerCase() ||
+                            (c.categoryCode || c.CategoryCode || '').toLowerCase() === catRaw.toLowerCase()
+                        );
+                        if (foundCat) {
+                            matchedCatCode = foundCat.categoryCode || foundCat.CategoryCode;
+                        }
+                    }
+
+                    // Author Name match karna
+                    let matchedAuthor = defaultAuthorName;
+                    if (authorRaw && authorsList.length > 0) {
+                        const foundAuth = authorsList.find(a =>
+                            (a.name || '').toLowerCase() === authorRaw.toLowerCase()
+                        );
+                        matchedAuthor = foundAuth ? foundAuth.name : authorRaw;
+                    }
+
+                    // Language Name match karna
+                    let matchedLang = defaultLangName;
+                    if (langRaw && languagesList.length > 0) {
+                        const foundLang = languagesList.find(l =>
+                            (l.name || l.languageName || '').toLowerCase() === langRaw.toLowerCase()
+                        );
+                        matchedLang = foundLang ? (foundLang.name || foundLang.languageName) : langRaw;
+                    }
+
+                    return {
+                        itemNo: itemNo,
+                        isbn: isbn,
+                        itemName: itemName,
+                        categoryCode: matchedCatCode,
+                        authorName: matchedAuthor,
+                        vendorName: vendorRaw || '',
+                        language: matchedLang,
+                        price: priceRaw || '',
+                        noOfPages: pagesRaw || '',
+                        mainPdf: null,
+                        coverImage: null
+                    };
+                }).filter(r => r.itemName.length > 0 || r.isbn.length > 0);
+
+                if (importedRows.length === 0) {
+                    alert("Excel columns match nahi hue! Kripya Sample Excel ke column headers use karein.");
+                    return;
+                }
+
+                setRows(importedRows);
+                alert(`${importedRows.length} books Excel file se table mein load ho gayi hain! Ab PDF files attach karke 'Upload All Books' dabayein.`);
+            } catch (err) {
+                console.error("Excel read error:", err);
+                alert("Excel file padhne mein error aaya. Valid .xlsx ya .csv file upload karein.");
+            }
+        };
+        reader.readAsArrayBuffer(file);
+        e.target.value = "";
+    };
 
     // SMART EXCEL PASTE PARSER LOGIC
     const handleParseExcelPaste = () => {
@@ -3655,6 +3893,37 @@ function BulkGridFormContainer({ categoriesList, languagesList, authorsList, ven
 
     return (
         <form onSubmit={handleSubmitGrid} className="space-y-4 text-xs">
+            {/* DIRECT EXCEL FILE ATTACH (.xlsx / .xls / .csv) BAR */}
+            <div className="bg-blue-50 p-4 rounded-lg border border-blue-200 flex flex-wrap items-center justify-between gap-4">
+                <div>
+                    <div className="flex items-center gap-2 font-bold text-blue-950 text-xs">
+                        <i className="fa-solid fa-file-excel text-emerald-600 text-lg"></i>
+                        <span>Attach Excel Sheet (.xlsx / .xls / .csv)</span>
+                    </div>
+                    <p className="text-[11px] text-blue-800 mt-1">
+                        Excel Headers: <strong>ISBN Number | Book Name | Author Name | Language Name | Categories Name | Page | Vendor Name | Price</strong>
+                    </p>
+                </div>
+
+                <div className="flex items-center gap-2.5">
+                    <button
+                        type="button"
+                        onClick={handleDownloadExcelTemplate}
+                        className="bg-white hover:bg-blue-100 text-blue-900 border border-blue-300 font-bold px-3.5 py-2 rounded text-xs shadow-sm transition cursor-pointer flex items-center gap-1.5">
+                        <i className="fa-solid fa-download"></i> Download Sample Excel
+                    </button>
+
+                    <label className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded text-xs shadow transition cursor-pointer flex items-center gap-1.5">
+                        <i className="fa-solid fa-file-arrow-up"></i> Attach Excel Sheet
+                        <input
+                            type="file"
+                            accept=".xlsx,.xls,.csv"
+                            onChange={handleExcelFileUpload}
+                            className="hidden"
+                        />
+                    </label>
+                </div>
+            </div>
             {/* EXCEL PASTE QUICK BAR */}
             <div className="bg-emerald-50 p-4 rounded-lg border border-emerald-300 space-y-3">
                 <div className="flex justify-between items-center">
@@ -3909,9 +4178,63 @@ function BulkAuthorGridContainer({ onSuccess, onCancel }) {
             setIsUploading(false);
         }
     };
+    const handleDownloadAuthorTemplate = () => {
+        if (!window.XLSX) return alert("Excel library load ho rahi hai, 2 second baad try karein.");
+        const ws = window.XLSX.utils.json_to_sheet([
+            { "Author Name": "Dr. Samuel Hahnemann" },
+            { "Author Name": "Dr. William Boericke" }
+        ]);
+        const wb = window.XLSX.utils.book_new();
+        window.XLSX.utils.book_append_sheet(wb, ws, "AuthorsTemplate");
+        window.XLSX.writeFile(wb, "BJain_Bulk_Authors_Template.xlsx");
+    };
 
+    const handleAuthorExcelUpload = (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        if (!window.XLSX) return alert("Excel library load nahi hui hai. Page refresh karein.");
+
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+            try {
+                const wb = window.XLSX.read(new Uint8Array(evt.target.result), { type: 'array' });
+                const jsonRows = window.XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" });
+                const parsed = jsonRows.map(row => {
+                    const keys = Object.keys(row);
+                    const matchKey = keys.find(k => ["author name", "auther name", "author", "name"].includes(k.trim().toLowerCase())) || keys[0];
+                    return { authorName: matchKey ? String(row[matchKey]).trim() : "" };
+                }).filter(r => r.authorName.length > 0);
+
+                if (parsed.length === 0) return alert("Excel sheet mein koi valid Author Name nahi mila.");
+                setRows(parsed);
+                alert(`${parsed.length} Authors Excel se load ho gaye hain! Ab 'Upload All Authors' par click karein.`);
+            } catch (err) {
+                alert("Excel file padhne mein error aaya.");
+            }
+        };
+        reader.readAsArrayBuffer(file);
+        e.target.value = "";
+    };
     return (
         <form onSubmit={handleSubmit} className="space-y-4 text-xs">
+            <div className="bg-blue-50 p-4 rounded-lg border border-blue-200 flex flex-wrap items-center justify-between gap-4">
+                <div>
+                    <div className="flex items-center gap-2 font-bold text-blue-950 text-xs">
+                        <i className="fa-solid fa-file-excel text-blue-600 text-lg"></i>
+                        <span>Attach Authors Excel Sheet (.xlsx / .xls / .csv)</span>
+                    </div>
+                    <p className="text-[11px] text-blue-800 mt-1">Excel Column Header: <strong>Author Name</strong></p>
+                </div>
+                <div className="flex items-center gap-2.5">
+                    <button type="button" onClick={handleDownloadAuthorTemplate} className="bg-white hover:bg-blue-100 text-blue-900 border border-blue-300 font-bold px-3.5 py-2 rounded text-xs shadow-sm cursor-pointer flex items-center gap-1.5">
+                        <i className="fa-solid fa-download"></i> Download Sample Excel
+                    </button>
+                    <label className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded text-xs shadow cursor-pointer flex items-center gap-1.5">
+                        <i className="fa-solid fa-file-arrow-up"></i> Attach Excel Sheet
+                        <input type="file" accept=".xlsx,.xls,.csv" onChange={handleAuthorExcelUpload} className="hidden" />
+                    </label>
+                </div>
+            </div>
             <div className="border border-slate-300 rounded bg-white overflow-hidden shadow-sm">
                 <table className="w-full text-left border-collapse">
                     <thead className="bg-slate-100 border-b border-slate-300 p-2 font-bold uppercase text-slate-700">
@@ -3998,9 +4321,68 @@ function BulkCategoryGridContainer({ onSuccess, onCancel }) {
             setIsUploading(false);
         }
     };
+    const handleDownloadCategoryTemplate = () => {
+        if (!window.XLSX) return alert("Excel library load ho rahi hai, 2 second baad try karein.");
+        const ws = window.XLSX.utils.json_to_sheet([
+            { "Categories Name": "Homoeopathy", "Description": "Core Homoeopathic Literature" },
+            { "Categories Name": "Materia Medica", "Description": "Drug Pictures & Remedies" }
+        ]);
+        const wb = window.XLSX.utils.book_new();
+        window.XLSX.utils.book_append_sheet(wb, ws, "CategoriesTemplate");
+        window.XLSX.writeFile(wb, "BJain_Bulk_Categories_Template.xlsx");
+    };
+
+    const handleCategoryExcelUpload = (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        if (!window.XLSX) return alert("Excel library load nahi hui hai. Page refresh karein.");
+
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+            try {
+                const wb = window.XLSX.read(new Uint8Array(evt.target.result), { type: 'array' });
+                const jsonRows = window.XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" });
+                const parsed = jsonRows.map(row => {
+                    const keys = Object.keys(row);
+                    const nameKey = keys.find(k => ["categories name", "category name", "catgories name", "category", "name"].includes(k.trim().toLowerCase())) || keys[0];
+                    const descKey = keys.find(k => ["description", "desc", "details"].includes(k.trim().toLowerCase()));
+                    return {
+                        categoryName: nameKey ? String(row[nameKey]).trim() : "",
+                        description: descKey ? String(row[descKey]).trim() : ""
+                    };
+                }).filter(r => r.categoryName.length > 0);
+
+                if (parsed.length === 0) return alert("Excel sheet mein koi valid Category Name nahi mila.");
+                setRows(parsed);
+                alert(`${parsed.length} Categories Excel se load ho gayi hain! Ab 'Upload All Categories' par click karein.`);
+            } catch (err) {
+                alert("Excel file padhne mein error aaya.");
+            }
+        };
+        reader.readAsArrayBuffer(file);
+        e.target.value = "";
+    };
 
     return (
         <form onSubmit={handleSubmit} className="space-y-4 text-xs">
+            <div className="bg-amber-50 p-4 rounded-lg border border-amber-200 flex flex-wrap items-center justify-between gap-4">
+                <div>
+                    <div className="flex items-center gap-2 font-bold text-amber-950 text-xs">
+                        <i className="fa-solid fa-file-excel text-amber-600 text-lg"></i>
+                        <span>Attach Categories Excel Sheet (.xlsx / .xls / .csv)</span>
+                    </div>
+                    <p className="text-[11px] text-amber-800 mt-1">Excel Column Headers: <strong>Categories Name | Description</strong></p>
+                </div>
+                <div className="flex items-center gap-2.5">
+                    <button type="button" onClick={handleDownloadCategoryTemplate} className="bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold px-3.5 py-2 rounded text-xs shadow-sm cursor-pointer flex items-center gap-1.5">
+                        <i className="fa-solid fa-download"></i> Download Sample Excel
+                    </button>
+                    <label className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-4 py-2 rounded text-xs shadow cursor-pointer flex items-center gap-1.5">
+                        <i className="fa-solid fa-file-arrow-up"></i> Attach Excel Sheet
+                        <input type="file" accept=".xlsx,.xls,.csv" onChange={handleCategoryExcelUpload} className="hidden" />
+                    </label>
+                </div>
+            </div>
             <div className="border border-slate-300 rounded bg-white overflow-hidden shadow-sm">
                 <table className="w-full text-left border-collapse">
                     <thead className="bg-slate-100 border-b border-slate-300 p-2 font-bold uppercase text-slate-700">
@@ -4101,9 +4483,65 @@ function BulkLanguageGridContainer({ onSuccess, onCancel }) {
             setIsUploading(false);
         }
     };
+    const handleDownloadLanguageTemplate = () => {
+        if (!window.XLSX) return alert("Excel library load ho rahi hai, 2 second baad try karein.");
+        const ws = window.XLSX.utils.json_to_sheet([
+            { "Language Name": "English" },
+            { "Language Name": "Hindi" },
+            { "Language Name": "German" }
+        ]);
+        const wb = window.XLSX.utils.book_new();
+        window.XLSX.utils.book_append_sheet(wb, ws, "LanguagesTemplate");
+        window.XLSX.writeFile(wb, "BJain_Bulk_Languages_Template.xlsx");
+    };
+
+    const handleLanguageExcelUpload = (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        if (!window.XLSX) return alert("Excel library load nahi hui hai. Page refresh karein.");
+
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+            try {
+                const wb = window.XLSX.read(new Uint8Array(evt.target.result), { type: 'array' });
+                const jsonRows = window.XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" });
+                const parsed = jsonRows.map(row => {
+                    const keys = Object.keys(row);
+                    const matchKey = keys.find(k => ["language name", "language", "lang", "name"].includes(k.trim().toLowerCase())) || keys[0];
+                    return { languageName: matchKey ? String(row[matchKey]).trim() : "" };
+                }).filter(r => r.languageName.length > 0);
+
+                if (parsed.length === 0) return alert("Excel sheet mein koi valid Language Name nahi mila.");
+                setRows(parsed);
+                alert(`${parsed.length} Languages Excel se load ho gayi hain! Ab 'Upload All Languages' par click karein.`);
+            } catch (err) {
+                alert("Excel file padhne mein error aaya.");
+            }
+        };
+        reader.readAsArrayBuffer(file);
+        e.target.value = "";
+    };
 
     return (
         <form onSubmit={handleSubmit} className="space-y-4 text-xs">
+            <div className="bg-indigo-50 p-4 rounded-lg border border-indigo-200 flex flex-wrap items-center justify-between gap-4">
+                <div>
+                    <div className="flex items-center gap-2 font-bold text-indigo-950 text-xs">
+                        <i className="fa-solid fa-file-excel text-indigo-600 text-lg"></i>
+                        <span>Attach Languages Excel Sheet (.xlsx / .xls / .csv)</span>
+                    </div>
+                    <p className="text-[11px] text-indigo-800 mt-1">Excel Column Header: <strong>Language Name</strong></p>
+                </div>
+                <div className="flex items-center gap-2.5">
+                    <button type="button" onClick={handleDownloadLanguageTemplate} className="bg-white hover:bg-indigo-100 text-indigo-900 border border-indigo-300 font-bold px-3.5 py-2 rounded text-xs shadow-sm cursor-pointer flex items-center gap-1.5">
+                        <i className="fa-solid fa-download"></i> Download Sample Excel
+                    </button>
+                    <label className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-2 rounded text-xs shadow cursor-pointer flex items-center gap-1.5">
+                        <i className="fa-solid fa-file-arrow-up"></i> Attach Excel Sheet
+                        <input type="file" accept=".xlsx,.xls,.csv" onChange={handleLanguageExcelUpload} className="hidden" />
+                    </label>
+                </div>
+            </div>
             <div className="border border-slate-300 rounded bg-white overflow-hidden shadow-sm">
                 <table className="w-full text-left border-collapse">
                     <thead className="bg-slate-100 border-b border-slate-300 p-2 font-bold uppercase text-slate-700">

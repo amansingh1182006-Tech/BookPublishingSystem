@@ -1,4 +1,4 @@
-﻿// wwwroot/js/EditBookForm.js
+﻿
 
 function EditBookForm({ editingBook, languagesList, vendorsList, onSuccess, onCancel }) {
     const [editBookItemName, setEditBookItemName] = React.useState(

@@ -1,16 +1,15 @@
-﻿// wwwroot/js/JournalMaster.js
-
+﻿
 function JournalMaster({ categoriesList = [], languagesList = [], triggerToast }) {
     const [journals, setJournals] = React.useState([]);
     const [loading, setLoading] = React.useState(false);
     const [searchQuery, setSearchQuery] = React.useState('');
     const [statusFilter, setStatusFilter] = React.useState('ALL');
 
-    // View Modes: 'list' | 'form' | 'bulk'
+   
     const [viewMode, setViewMode] = React.useState('list');
     const [editingJournal, setEditingJournal] = React.useState(null);
 
-    // Form State (Senior Required: Name, PublisherName, PublishDate + Industry Fields + PDF Upload)
+    
     const [journalCode, setJournalCode] = React.useState('');
     const [name, setName] = React.useState('');
     const [publisherName, setPublisherName] = React.useState('');
@@ -28,7 +27,7 @@ function JournalMaster({ categoriesList = [], languagesList = [], triggerToast }
     const [existingPdfPath, setExistingPdfPath] = React.useState('');
     const [saving, setSaving] = React.useState(false);
 
-    // Bulk Grid State
+    
     const [bulkRows, setBulkRows] = React.useState([
         { name: '', publisherName: '', publishDate: new Date().toISOString().split('T')[0], issn: '', volumeIssue: '', frequency: 'Quarterly', language: 'English' },
         { name: '', publisherName: '', publishDate: new Date().toISOString().split('T')[0], issn: '', volumeIssue: '', frequency: 'Monthly', language: 'English' }
@@ -185,7 +184,7 @@ function JournalMaster({ categoriesList = [], languagesList = [], triggerToast }
         }
     };
 
-    // Bulk Grid Handlers
+    
     const handleBulkRowChange = (idx, field, val) => {
         const updated = [...bulkRows];
         updated[idx][field] = val;
@@ -239,7 +238,7 @@ function JournalMaster({ categoriesList = [], languagesList = [], triggerToast }
         }
     };
 
-    // Filtered List
+    
     const filteredJournals = journals.filter(j => {
         const matchesSearch =
             (j.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -255,9 +254,7 @@ function JournalMaster({ categoriesList = [], languagesList = [], triggerToast }
         return matchesSearch && matchesStatus;
     });
 
-    // -------------------------------------------------------------
-    // VIEW 1: CREATE / EDIT JOURNAL FORM PAGE
-    // -------------------------------------------------------------
+    
     if (viewMode === 'form') {
         return (
             <div className="w-full bg-white p-6 rounded-xl shadow-md border border-slate-200 space-y-6 text-xs">
@@ -460,9 +457,7 @@ function JournalMaster({ categoriesList = [], languagesList = [], triggerToast }
         );
     }
 
-    // -------------------------------------------------------------
-    // VIEW 2: BULK GRID UPLOAD PAGE
-    // -------------------------------------------------------------
+    
     if (viewMode === 'bulk') {
         return (
             <div className="w-full bg-white p-6 rounded-xl shadow-md border border-slate-200 space-y-5 text-xs">
@@ -544,9 +539,7 @@ function JournalMaster({ categoriesList = [], languagesList = [], triggerToast }
         );
     }
 
-    // -------------------------------------------------------------
-    // VIEW 3: JOURNAL MASTER DIRECTORY LIST (DEFAULT)
-    // -------------------------------------------------------------
+    
     const activeCount = journals.filter(j => j.isActive).length;
     const uniquePublishers = new Set(journals.map(j => (j.publisherName || '').trim().toLowerCase()).filter(Boolean)).size;
 
