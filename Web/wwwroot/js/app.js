@@ -119,10 +119,12 @@ function SecurePdfViewerModal({ book, user, onClose }) {
     const [loading, setLoading] = useState(true);
     const [renderingPage, setRenderingPage] = useState(false);
     const [errorMsg, setErrorMsg] = useState('');
+    const startPage = Math.max(1, parseInt(book?.initialPage || 1, 10) || 1);
     const [numPages, setNumPages] = useState(0);
     const [pageNumber, setPageNumber] = useState(1);
     const [jumpPageInput, setJumpPageInput] = useState('1');
     const [pdfDoc, setPdfDoc] = useState(null);
+    const [zoomScale, setZoomScale] = useState(1.35);
 
    
     const realId = typeof book === 'object' && book !== null
@@ -186,6 +188,9 @@ function SecurePdfViewerModal({ book, user, onClose }) {
                 if (isMounted) {
                     setPdfDoc(pdf);
                     setNumPages(pdf.numPages);
+                    const safePage = Math.min(Math.max(1, startPage), pdf.numPages || 1);
+                    setPageNumber(safePage);
+                    setJumpPageInput(String(safePage));
                     setLoading(false);
                 }
             } catch (err) {
@@ -210,7 +215,7 @@ function SecurePdfViewerModal({ book, user, onClose }) {
         setRenderingPage(true);
         try {
             const page = await pdfDoc.getPage(num);
-            const viewport = page.getViewport({ scale: 1.35 });
+            const viewport = page.getViewport({ scale: zoomScale });
             const canvas = canvasRef.current;
             const context = canvas.getContext('2d');
 
@@ -240,7 +245,7 @@ function SecurePdfViewerModal({ book, user, onClose }) {
         } finally {
             setRenderingPage(false);
         }
-    }, [pdfDoc, userEmail]);
+    }, [pdfDoc, userEmail, zoomScale]);
 
     useEffect(() => {
         if (pdfDoc) {
@@ -248,8 +253,37 @@ function SecurePdfViewerModal({ book, user, onClose }) {
             setJumpPageInput(pageNumber.toString());
         }
     }, [pdfDoc, pageNumber, renderPage]);
+   
+    useEffect(() => {
+        if (!pdfDoc || !realId || numPages <= 0) return;
+
+        const saveTimer = setTimeout(() => {
+            fetch('/Reader/api/save-progress', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    bookId: realId,
+                    lastReadPage: pageNumber,
+                    totalPages: numPages
+                })
+            }).catch(err => console.warn("Live progress save warning:", err));
+        }, 300);
+
+        return () => clearTimeout(saveTimer);
+    }, [pdfDoc, realId, pageNumber, numPages]);
+
+    const handleZoomIn = () => setZoomScale(prev => Math.min(Number((prev + 0.25).toFixed(2)), 3.0));
+    const handleZoomOut = () => setZoomScale(prev => Math.max(Number((prev - 0.25).toFixed(2)), 0.6));
+    const handleZoomReset = () => setZoomScale(1.35);
 
     const handleWheelScroll = (e) => {
+        if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            if (e.deltaY < 0) handleZoomIn();
+            else if (e.deltaY > 0) handleZoomOut();
+            return;
+        }
+
         if (isScrollingRef.current || loading) return;
 
         if (e.deltaY > 25) {
@@ -320,6 +354,33 @@ function SecurePdfViewerModal({ book, user, onClose }) {
                         className="px-3 py-1 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-white font-bold rounded text-xs border border-slate-700 cursor-pointer">
                         Next ▶
                     </button>
+
+                    {/* PDF PAGE ZOOM CONTROLS */}
+                    <div className="flex items-center gap-1 bg-slate-950 px-2 py-1 rounded border border-slate-700 ms-2">
+                        <button
+                            type="button"
+                            onClick={handleZoomOut}
+                            disabled={zoomScale <= 0.6 || loading}
+                            title="Zoom Out Page"
+                            className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-white font-black rounded text-xs cursor-pointer">
+                            −
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleZoomReset}
+                            title="Reset Zoom (100%)"
+                            className="px-2 py-0.5 text-amber-400 font-bold text-[11px] min-w-[46px] text-center cursor-pointer">
+                            {Math.round((zoomScale / 1.35) * 100)}%
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleZoomIn}
+                            disabled={zoomScale >= 3.0 || loading}
+                            title="Zoom In Page"
+                            className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-white font-black rounded text-xs cursor-pointer">
+                            +
+                        </button>
+                    </div>
                 </div>
 
                 <div className="hidden sm:block text-right">
@@ -330,7 +391,7 @@ function SecurePdfViewerModal({ book, user, onClose }) {
             <div
                 ref={containerRef}
                 onWheel={handleWheelScroll}
-                className="flex-1 overflow-auto p-4 flex justify-center items-center bg-slate-950 relative cursor-grab">
+                className="flex-1 overflow-auto p-4 flex justify-center items-start bg-slate-950 relative cursor-grab">
                 {loading ? (
                     <div className="text-white text-xs font-bold flex flex-col items-center gap-2">
                         <i className="fa-solid fa-spinner fa-spin text-3xl text-amber-500"></i>
@@ -369,6 +430,20 @@ function App() {
 
     const [masterDropdownOpen, setMasterDropdownOpen] = useState(false);
     const [selectedMaster, setSelectedMaster] = useState('items');
+    useEffect(() => {
+        const handleOutsideClick = (e) => {
+            if (!e.target.closest('[data-dropdown-container]')) {
+                setProfileDropdown(false);
+                setMasterDropdownOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleOutsideClick);
+        document.addEventListener('touchstart', handleOutsideClick);
+        return () => {
+            document.removeEventListener('mousedown', handleOutsideClick);
+            document.removeEventListener('touchstart', handleOutsideClick);
+        };
+    }, []);
 
     const [bookPageMode, setBookPageMode] = useState('list');
     const [authorPageMode, setAuthorPageMode] = useState('list');
@@ -439,7 +514,7 @@ function App() {
     const [isLoadingBookPreview, setIsLoadingBookPreview] = useState(false);
     const [suggestedBundlesForBook, setSuggestedBundlesForBook] = useState([]);
     const [expandedBundleId, setExpandedBundleId] = useState(null);
-    const [selectedAccessDays, setSelectedAccessDays] = useState(365); // Default 1 Year (365 Days)
+    const [selectedAccessDays, setSelectedAccessDays] = useState(365); 
     const [isPurchasingSingleBook, setIsPurchasingSingleBook] = useState(false);
 
     const handleOpenSingleBookCheckoutWithSuggestion = async (bookObj) => {
@@ -788,7 +863,7 @@ function App() {
         user.email === 'admin@booksystem.com'
     );
     const isVendor = user.isLoggedIn && (
-        user.role && user.role.toString().toLowerCase() === 'vendor'
+        user.role && user.role.toString().toLowerCase().includes('vendor')
     );
 
     const openAuthModal = (mode = 'login') => {
@@ -1150,7 +1225,11 @@ function App() {
         else if (selectedMaster === 'categories') fetchCategories();
         else if (selectedMaster === 'languages') fetchLanguagesMaster();
         else if (selectedMaster === 'keywords') fetchKeywordsMaster();
-        else if (selectedMaster === 'items') fetchAuthorBooks();
+        else if (selectedMaster === 'vendors') fetchVendorsMaster();
+        else if (selectedMaster === 'items') {
+            fetchAuthorBooks();
+            fetchVendorsMaster();
+        }
     }, [selectedMaster]);
 
     useEffect(() => {
@@ -1565,9 +1644,12 @@ function App() {
                     setPasswordInput('');
                     changeNavState({ activeTab: 'store' });
                 } else {
-                    const assignedRole = data.roles && data.roles.includes('Vendor')
-                        ? 'Vendor'
-                        : (data.roles && data.roles.length > 0 ? data.roles[0] : 'Reader');
+                    const rolesLower = Array.isArray(data.roles) ? data.roles.map(r => r.toLowerCase()) : [];
+                    const assignedRole = rolesLower.includes('admin')
+                        ? 'Admin'
+                        : rolesLower.includes('vendor')
+                            ? 'Vendor'
+                            : (data.roles && data.roles.length > 0 ? data.roles[0] : 'Reader');
                     localStorage.setItem('isExplicitLogin', 'true');
                     if (data.sessionToken) {
                         localStorage.setItem('sessionToken', data.sessionToken);
@@ -1723,6 +1805,8 @@ function App() {
                 return { title: 'VENDOR MASTER DIRECTORY', buttonText: 'Add Vendor' };
             case 'plans':
                 return { title: 'SUBSCRIPTION PLAN LIST', buttonText: 'Add New Plan' };
+            case 'bundles':
+                return { title: 'BUNDLE LIST', buttonText: '' };
             case 'authors':
                 return { title: 'AUTHOR LIST', buttonText: 'Add Author' };
             case 'categories':
@@ -1813,8 +1897,8 @@ function App() {
                     {/* AUTH / USER PROFILE */}
                     <div className="flex items-center gap-4 text-xs shrink-0">
                         {user.isLoggedIn ? (
-                            <div className="relative">
-                                <button onClick={() => setProfileDropdown(!profileDropdown)} className="flex items-center gap-2 p-1.5 rounded-lg border border-gray-300 hover:border-red-500 transition text-left">
+                            <div className="relative" data-dropdown-container="profile">
+                                <button type="button" onClick={() => setProfileDropdown(!profileDropdown)} className="flex items-center gap-2 p-1.5 rounded-lg border border-gray-300 hover:border-red-500 transition text-left">
                                     <div className="w-8 h-8 rounded-full bg-[#e31b23] flex items-center justify-center text-white font-extrabold text-xs shadow">
                                         {user.fullName ? user.fullName[0].toUpperCase() : 'U'}
                                     </div>
@@ -1827,8 +1911,8 @@ function App() {
                                     <div className="absolute right-0 mt-2 w-56 bg-white border border-gray-200 text-slate-800 rounded-lg shadow-2xl py-2 z-50 text-xs">
                                         {!isAdmin && !isVendor && (
                                             <button
-                                                onClick={() => window.location.href = '/Reader/Profile'}
-                                                className="w-full text-left px-4 py-2 hover:bg-slate-100 text-slate-800 font-bold flex items-center gap-2 border-b border-slate-100">
+                                                onClick={() => { setProfileDropdown(false); changeNavState({ activeTab: 'reader-profile' }); }}
+                                                className="w-full text-left px-4 py-2 hover:bg-slate-100 text-slate-800 font-bold flex items-center gap-2 border-b border-slate-100 cursor-pointer">
                                                 <i className="fa-solid fa-user text-[#0d233a]"></i> My Profile
                                             </button>
                                         )}
@@ -1867,8 +1951,8 @@ function App() {
 
                     {user.isLoggedIn && !isAdmin && !isVendor && (
                         <button
-                            onClick={() => window.location.href = '/Reader/Profile'}
-                            className="font-bold flex items-center gap-1.5 text-gray-200 hover:text-amber-400 transition cursor-pointer">
+                            onClick={() => changeNavState({ activeTab: 'reader-profile' })}
+                            className={`font-bold flex items-center gap-1.5 cursor-pointer ${activeTab === 'reader-profile' ? 'text-amber-400 border-b-2 border-amber-400 pb-0.5' : 'text-gray-200 hover:text-amber-400 transition'}`}>
                             <i className="fa-solid fa-user"></i> My Profile
                         </button>
                     )}
@@ -1902,15 +1986,16 @@ function App() {
                                 <p className="text-xs text-gray-300 mt-1">Manage users, books, approvals and platform settings in one place.</p>
                             </div>
                             
-                            <div className="relative">
+                            <div className="relative" data-dropdown-container="actions">
                                 <button
+                                    type="button"
                                     onClick={() => setMasterDropdownOpen(!masterDropdownOpen)}
                                     className="bg-[#e31b23] hover:bg-red-700 text-white font-black px-5 py-2.5 rounded shadow text-xs flex items-center gap-2 transition cursor-pointer">
                                     <i className="fa-solid fa-sliders"></i> Actions List <i className="fa-solid fa-chevron-down text-[10px]"></i>
                                 </button>
                                 {masterDropdownOpen && (
-                                    <div className="absolute right-0 mt-2 w-64 bg-white border border-gray-200 text-slate-800 rounded-lg shadow-2xl py-2 z-50 text-xs divide-y">
-                                        <div className="px-3 py-1.5 font-black text-slate-500 uppercase text-[10px] bg-slate-50">Select System List</div>
+                                    <div className="absolute left-0 md:left-auto md:right-0 mt-2 w-72 max-w-[85vw] max-h-[65vh] overflow-y-auto bg-white border border-gray-200 text-slate-800 rounded-lg shadow-2xl py-2 z-50 text-xs divide-y">
+                                        <div className="px-3 py-1.5 font-black text-slate-500 uppercase text-[10px] bg-slate-50 sticky top-0 z-10">Select System List</div>
                                         {[
                                             { key: 'items', label: 'Items Master ', icon: 'fa-box' },
                                             { key: 'plans', label: 'Plans Master ', icon: 'fa-credit-card' },
@@ -1955,27 +2040,28 @@ function App() {
                                     <span className="text-xs font-black uppercase text-slate-500 flex items-center gap-1">
                                         <i className="fa-solid fa-list-check text-[#e31b23]"></i> {currentHeaderConfig.title}
                                     </span>
-
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            if (selectedMaster === 'items') {
-                                                changeNavState({ bookPageMode: 'add-book-page' });
-                                            } else if (selectedMaster === 'authors') {
-                                                changeNavState({ authorPageMode: 'add-author-page' });
-                                            } else if (selectedMaster === 'categories') {
-                                                changeNavState({ categoryPageMode: 'add-category-page' });
-                                            } else if (selectedMaster === 'languages') {
-                                                changeNavState({ languagePageMode: 'add-language-page' });
-                                            } else if (selectedMaster === 'plans') {
-                                                changeNavState({ planPageMode: 'add-plan-page' });
-                                            } else {
-                                                setShowAddModal(true);
-                                            }
-                                        }}
-                                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3.5 py-1.5 rounded shadow flex items-center gap-1.5 transition cursor-pointer">
-                                        <i className="fa-solid fa-plus"></i> {currentHeaderConfig.buttonText}
-                                    </button>
+                                    {selectedMaster !== 'bundles' && selectedMaster !== 'customers' && (
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                if (selectedMaster === 'items') {
+                                                    changeNavState({ bookPageMode: 'add-book-page' });
+                                                } else if (selectedMaster === 'authors') {
+                                                    changeNavState({ authorPageMode: 'add-author-page' });
+                                                } else if (selectedMaster === 'categories') {
+                                                    changeNavState({ categoryPageMode: 'add-category-page' });
+                                                } else if (selectedMaster === 'languages') {
+                                                    changeNavState({ languagePageMode: 'add-language-page' });
+                                                } else if (selectedMaster === 'plans') {
+                                                    changeNavState({ planPageMode: 'add-plan-page' });
+                                                } else {
+                                                    setShowAddModal(true);
+                                                }
+                                            }}
+                                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3.5 py-1.5 rounded shadow flex items-center gap-1.5 transition cursor-pointer">
+                                            <i className="fa-solid fa-plus"></i> {currentHeaderConfig.buttonText}
+                                        </button>
+                                    )}
                                     {/* BULK UPLOAD BUTTONS FOR ALL MASTERS */}
                                     {selectedMaster === 'items' && (
                                         <button
@@ -2058,6 +2144,7 @@ function App() {
                                 <VendorMasterComp
                                     booksList={myAuthorBooks}
                                     triggerToast={triggerToast}
+                                    isVendorSelfView={false}
                                 />
                             ) : <div>Vendor Master Component Not Loaded</div>
                         ) : (selectedMaster === 'journals') ? (
@@ -2524,6 +2611,19 @@ function App() {
                             isVendorSelfView={true}
                         />
                     ) : <div className="p-6 text-center font-bold">Loading Vendor Profile...</div>
+                )}
+                {activeTab === 'reader-profile' && user.isLoggedIn && (
+                    window.EmbeddedReaderProfile ? (
+                        <window.EmbeddedReaderProfile
+                            user={user}
+                            triggerToast={triggerToast}
+                            onOpenBook={(bookObj) => {
+                                saveReadingProgressToBackend(bookObj, bookObj.initialPage || 1);
+                                window.history.pushState({ modal: 'reader' }, '');
+                                setSelectedBookForDrm(bookObj);
+                            }}
+                        />
+                    ) : <div className="p-6 text-center font-bold">Loading Reader Profile...</div>
                 )}
 
                 {activeTab === 'user-plans' && (
@@ -3130,7 +3230,7 @@ function App() {
 
                     {/* FULL-SCREEN SCROLLABLE BODY */}
                     <div className="flex-1 overflow-y-auto p-4 md:p-8">
-                        <div className="max-w-5xl mx-auto space-y-6 pb-8">
+                        <div className="w-full space-y-6 pb-8">
                             {isLoadingBookPreview ? (
                                 <div className="py-20 text-center text-sm font-bold text-slate-600 flex flex-col items-center gap-3">
                                     <i className="fa-solid fa-spinner fa-spin text-3xl text-emerald-600"></i>

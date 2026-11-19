@@ -47,6 +47,7 @@ function VendorMaster({ booksList = [], triggerToast, isVendorSelfView = false }
                     const updated = data.find(v => (v.id || v.Id) === (selectedVendor.id || selectedVendor.Id));
                     if (updated) setSelectedVendor(updated);
                 }
+                return data;
             }
         } catch (e) {
             console.error("Fetch vendors error:", e);
@@ -256,16 +257,8 @@ function VendorMaster({ booksList = [], triggerToast, isVendorSelfView = false }
         const handleGlobalOpenVendor = () => openVendorFormPage(null);
         window.addEventListener('open-vendor-create-modal', handleGlobalOpenVendor);
 
-        const attachOuterBtnClick = () => {
-            const buttons = document.querySelectorAll('button');
-            buttons.forEach(btn => {
-                if (btn.innerText.includes('Add Vendor') || btn.innerText.includes('Create Vendor')) {
-                    btn.onclick = (e) => {
-                        e.preventDefault();
-                        openVendorFormPage(null);
-                    };
-                }
-            });
+        return () => {
+            window.removeEventListener('open-vendor-create-modal', handleGlobalOpenVendor);
         };
 
         const timer = setTimeout(attachOuterBtnClick, 300);
@@ -310,7 +303,11 @@ function VendorMaster({ booksList = [], triggerToast, isVendorSelfView = false }
 
             if (res.ok && data.success !== false) {
                 if (triggerToast) triggerToast(data.message || "Vendor Profile Saved Successfully!");
-                await fetchVendors();
+                const updatedList = await fetchVendors();
+                if (selectedVendor && Array.isArray(updatedList)) {
+                    const freshVendor = updatedList.find(v => (v.id || v.Id) === (selectedVendor.id || selectedVendor.Id));
+                    if (freshVendor) setSelectedVendor(freshVendor);
+                }
                 setViewMode(selectedVendor ? 'profile' : 'list');
             } else {
                 if (data.errors) {
@@ -358,7 +355,11 @@ function VendorMaster({ booksList = [], triggerToast, isVendorSelfView = false }
             const data = await res.json();
             if (res.ok && data.success !== false) {
                 if (triggerToast) triggerToast("Per-Book Royalty Rule Saved Successfully!");
-                await fetchVendors();
+                const updatedList = await fetchVendors();
+                if (selectedVendor && Array.isArray(updatedList)) {
+                    const freshVendor = updatedList.find(v => (v.id || v.Id) === (selectedVendor.id || selectedVendor.Id));
+                    if (freshVendor) setSelectedVendor(freshVendor);
+                }
                 setViewMode('profile');
             } else {
                 alert(data.message || "Failed to save royalty rule.");
@@ -374,7 +375,11 @@ function VendorMaster({ booksList = [], triggerToast, isVendorSelfView = false }
             const res = await fetch(`/api/vendor/delete-royalty-rule/${ruleId}`, { method: 'DELETE' });
             if (res.ok) {
                 if (triggerToast) triggerToast("Royalty Rule Removed!");
-                await fetchVendors();
+                const updatedList = await fetchVendors();
+                if (selectedVendor && Array.isArray(updatedList)) {
+                    const freshVendor = updatedList.find(v => (v.id || v.Id) === (selectedVendor.id || selectedVendor.Id));
+                    if (freshVendor) setSelectedVendor(freshVendor);
+                }
             }
         } catch (err) {
             alert("Error deleting rule: " + err.message);
@@ -971,7 +976,12 @@ function VendorMaster({ booksList = [], triggerToast, isVendorSelfView = false }
                     <p className="text-xs text-slate-500 mt-0.5">Click on any vendor row to open full profile, configure per-book royalty rules, and view 30% pool earnings.</p>
                 </div>
                 <button
-                    onClick={() => openVendorFormPage()}
+                    type="button"
+                    onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        openVendorFormPage(null);
+                    }}
                     className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2.5 rounded text-xs shadow flex items-center gap-2 cursor-pointer">
                     <i className="fa-solid fa-user-plus"></i> Create Vendor Profile Page
                 </button>
@@ -983,9 +993,9 @@ function VendorMaster({ booksList = [], triggerToast, isVendorSelfView = false }
                 <div className="text-center py-12 bg-white rounded-lg border border-dashed text-slate-500 space-y-3">
                     <i className="fa-solid fa-address-book text-3xl text-slate-300"></i>
                     <p className="font-semibold">No vendor profiles registered yet.</p>
-                    <button onClick={() => openVendorFormPage()} className="text-indigo-600 font-bold text-xs hover:underline">
-                        + Click here to add your first vendor profile page
-                    </button>
+                        <button type="button" onClick={() => openVendorFormPage(null)} className="text-indigo-600 font-bold text-xs hover:underline cursor-pointer">
+                            + Click here to add your first vendor profile page
+                        </button>
                 </div>
             ) : (
                 <div className="bg-white rounded-lg shadow border overflow-hidden text-xs">
