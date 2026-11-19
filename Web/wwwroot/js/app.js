@@ -695,16 +695,16 @@ function App() {
             console.warn("Single book access check warning:", e);
         }
 
-        // 2. Active Subscription Plans & Purchased Bundles ke andar check karein
+        
         try {
             const memberRes = await fetch('/api/plan/my-profile-membership');
             if (memberRes.ok) {
                 const memberData = await memberRes.json();
 
-                // Active Plans ke andar ki books check karein
+                
                 if (Array.isArray(memberData?.plans)) {
                     for (const plan of memberData.plans) {
-                        if (plan.isActive === false) continue; // Expired plan skip karein
+                        if (plan.isActive === false) continue;
                         const planBooks = Array.isArray(plan.books) ? plan.books : [];
                         const foundInPlan = planBooks.some(b =>
                             String(b.id || b.bookId || '').toLowerCase().trim() === cleanTarget
@@ -713,7 +713,7 @@ function App() {
                     }
                 }
 
-                // Purchased Bundles ke andar ki books check karein
+                
                 if (Array.isArray(memberData?.bundles)) {
                     for (const bundle of memberData.bundles) {
                         const bundleBooks = Array.isArray(bundle.books) ? bundle.books : [];
@@ -1193,7 +1193,7 @@ function App() {
             });
     }, []);
 
-    // URL se ?readBookId=...&page=... aane par seedha DRM Reader kholne ke liye
+    
     useEffect(() => {
         if (!user.isLoggedIn || storeBooks.length === 0) return;
 
@@ -1211,7 +1211,7 @@ function App() {
                 saveReadingProgressToBackend(matchedBook, targetPage);
                 setSelectedBookForDrm(bookWithStartPage);
 
-                // URL clean karein taaki refresh par baar-baar popup na khule
+                
                 window.history.replaceState({}, document.title, window.location.pathname);
             }
         }
@@ -1449,7 +1449,7 @@ function App() {
     };
 
     const confirmDeleteSelectedMaster = async () => {
-        // 1. Identify Target Identifiers
+        
         let targetItems = [];
         if (deleteConfirmModal.id) {
             targetItems = [deleteConfirmModal.id];
@@ -1514,7 +1514,7 @@ function App() {
             }
         }
 
-        // ALWAYS FORCE RESET ALL MODAL & SELECTION STATES
+        
         setDeleteConfirmModal({ show: false, id: null, ids: [], title: '', type: '' });
         setSelectedMasterIds([]);
 
@@ -1735,7 +1735,7 @@ function App() {
         switch (selectedMaster) {
             case 'items':
                 return myAuthorBooks.map(b => {
-                    // Strict GUID / ItemNo Mapping (Never pass Book Name as ID)
+                    
                     const recordId = b.id || b.Id || (b.raw ? (b.raw.id || b.raw.Id || b.raw.itemNo) : b.itemNo);
                     const recordName = b.itemName || (b.raw ? b.raw.itemName : 'Book');
 
@@ -3745,7 +3745,7 @@ function BulkGridFormContainer({ categoriesList, languagesList, authorsList, ven
         }
         setRows(rows.filter((_, i) => i !== index));
     };
-    // 1. SAMPLE EXCEL TEMPLATE DOWNLOAD
+    
     const handleDownloadExcelTemplate = () => {
         if (!window.XLSX) {
             alert("Excel library load ho rahi hai, 2 second baad dubara try karein.");
@@ -3781,7 +3781,7 @@ function BulkGridFormContainer({ categoriesList, languagesList, authorsList, ven
         window.XLSX.writeFile(wb, "BJain_Bulk_Books_Template.xlsx");
     };
 
-    // 2. DIRECT EXCEL FILE ATTACH (.xlsx / .xls / .csv) & AUTO-FILL TABLE
+    
     const handleExcelFileUpload = (e) => {
         const file = e.target.files && e.target.files[0];
         if (!file) return;
@@ -3804,7 +3804,7 @@ function BulkGridFormContainer({ categoriesList, languagesList, authorsList, ven
                     return;
                 }
 
-                // Helper: Column header ke spelling variations ko safely match karna
+                
                 const getCol = (row, possibleHeaders) => {
                     const keys = Object.keys(row);
                     for (const h of possibleHeaders) {
@@ -3835,7 +3835,7 @@ function BulkGridFormContainer({ categoriesList, languagesList, authorsList, ven
                     const vendorRaw = getCol(row, ["vendor name", "vendor", "publisher"]);
                     const priceRaw = getCol(row, ["price", "mrp", "amount", "price (₹)"]);
 
-                    // Category Code match karna
+                    
                     let matchedCatCode = defaultCatCode;
                     if (catRaw && categoriesList.length > 0) {
                         const foundCat = categoriesList.find(c =>
@@ -3847,7 +3847,7 @@ function BulkGridFormContainer({ categoriesList, languagesList, authorsList, ven
                         }
                     }
 
-                    // Author Name match karna
+                    
                     let matchedAuthor = defaultAuthorName;
                     if (authorRaw && authorsList.length > 0) {
                         const foundAuth = authorsList.find(a =>
@@ -3856,7 +3856,7 @@ function BulkGridFormContainer({ categoriesList, languagesList, authorsList, ven
                         matchedAuthor = foundAuth ? foundAuth.name : authorRaw;
                     }
 
-                    // Language Name match karna
+                    
                     let matchedLang = defaultLangName;
                     if (langRaw && languagesList.length > 0) {
                         const foundLang = languagesList.find(l =>
@@ -3896,7 +3896,7 @@ function BulkGridFormContainer({ categoriesList, languagesList, authorsList, ven
         e.target.value = "";
     };
 
-    // SMART EXCEL PASTE PARSER LOGIC
+   
     const handleParseExcelPaste = () => {
         if (!pasteText || !pasteText.trim()) {
             alert("Kripya Excel se copy kiya hua data text area me paste karein.");
@@ -3909,7 +3909,7 @@ function BulkGridFormContainer({ categoriesList, languagesList, authorsList, ven
         lines.forEach(line => {
             if (!line.trim()) return;
 
-            // Tab-separated string parsing (Excel default format)
+            
             const cols = line.split('\t');
 
             /* Excel Columns Sequence Expected:
