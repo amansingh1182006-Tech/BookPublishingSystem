@@ -1,30 +1,53 @@
 ﻿function AddAuthorForm({ onSuccess, onCancel }) {
     const [authorNameInput, setAuthorNameInput] = React.useState('');
     const [isSubmitting, setIsSubmitting] = React.useState(false);
+    const [errorMsg, setErrorMsg] = React.useState('');
+    const submitLockRef = React.useRef(false);
+
+    const safeParse = async (res) => {
+        if (typeof window.safeJsonParse === 'function') return await window.safeJsonParse(res);
+        try {
+            const txt = await res.text();
+            return txt && txt.trim() ? JSON.parse(txt) : {};
+        } catch {
+            return {};
+        }
+    };
 
     const handleAddAuthor = async (e) => {
         e.preventDefault();
-        if (!authorNameInput || !authorNameInput.trim()) return;
+        if (submitLockRef.current) return;
 
+        const trimmedName = authorNameInput.trim();
+        if (!trimmedName) {
+            setErrorMsg("Author Name zaroori hai!");
+            return;
+        }
+
+        submitLockRef.current = true;
         setIsSubmitting(true);
+        setErrorMsg('');
+
         try {
             const res = await fetch('/api/authors/create', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ authorName: authorNameInput.trim() })
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify({ authorName: trimmedName })
             });
 
-            const data = await res.json();
-            if (res.ok) {
-                onSuccess(`Author '${authorNameInput.trim()}' created successfully!`);
+            const data = await safeParse(res);
+            if (res.ok && data.success !== false) {
+                if (typeof window.invalidateApiCache === 'function') window.invalidateApiCache('/api/authors');
                 setAuthorNameInput('');
+                onSuccess(`Author '${trimmedName}' created successfully!`);
             } else {
-                alert(data.message || "Failed to add author.");
+                setErrorMsg(data.message || `Server Error (${res.status}): Author add nahi ho saka.`);
             }
         } catch (err) {
-            alert("Connection error: " + err.message);
+            setErrorMsg("Network error: " + err.message);
         } finally {
             setIsSubmitting(false);
+            submitLockRef.current = false;
         }
     };
 
@@ -43,12 +66,20 @@
                 </h3>
             </div>
 
+            {errorMsg && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2.5 rounded text-xs font-bold flex items-center gap-2">
+                    <i className="fa-solid fa-circle-exclamation"></i>
+                    <span>{errorMsg}</span>
+                </div>
+            )}
+
             <form onSubmit={handleAddAuthor} className="space-y-6 text-xs max-w-2xl">
                 <div>
                     <label className="font-bold block mb-1 text-slate-700">Author Full Name *</label>
                     <input
                         type="text"
                         required
+                        autoFocus
                         value={authorNameInput}
                         onChange={e => setAuthorNameInput(e.target.value)}
                         placeholder="e.g. Dr. William Boericke"
@@ -66,14 +97,13 @@
                     <button
                         type="submit"
                         disabled={isSubmitting}
-                        className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-6 py-2.5 rounded text-xs shadow cursor-pointer flex items-center gap-2">
-                        <i className="fa-solid fa-plus"></i>
-                        {isSubmitting ? 'Saving Author...' : '+ Save Author Master'}
+                        className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-bold px-6 py-2.5 rounded text-xs shadow cursor-pointer flex items-center gap-2">
+                        <i className={`fa-solid ${isSubmitting ? 'fa-spinner fa-spin' : 'fa-plus'}`}></i>
+                        {isSubmitting ? 'Saving Author...' : 'Save Author Master'}
                     </button>
                 </div>
             </form>
         </div>
     );
 }
-
 window.AddAuthorForm = AddAuthorForm;

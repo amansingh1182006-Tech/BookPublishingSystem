@@ -1,5 +1,4 @@
-﻿
-function AddBookForm({
+﻿function AddBookForm({
     categoriesList,
     languagesList,
     authorsList,
@@ -22,40 +21,54 @@ function AddBookForm({
     const [coverImageFile, setCoverImageFile] = React.useState(null);
     const [mainPdfFile, setMainPdfFile] = React.useState(null);
     const [isPublishingBook, setIsPublishingBook] = React.useState(false);
+    const [errorMsg, setErrorMsg] = React.useState('');
+    const submitLockRef = React.useRef(false);
 
-    
+    const safeParse = async (res) => {
+        if (typeof window.safeJsonParse === 'function') return await window.safeJsonParse(res);
+        try {
+            const txt = await res.text();
+            return txt && txt.trim() ? JSON.parse(txt) : {};
+        } catch {
+            return {};
+        }
+    };
+
     const handleIsbnChange = (e) => {
         const val = e.target.value;
         setIsbnInput(val);
 
         const cleanVal = val.replace(/[^a-zA-Z0-9]/g, '');
         if (cleanVal.length >= 5) {
-            const last5 = cleanVal.slice(-5).toUpperCase();
-            setBookCodeInput(`${last5}`);
+            setBookCodeInput(cleanVal.slice(-5).toUpperCase());
         } else if (cleanVal.length > 0) {
-            setBookCodeInput(`${cleanVal.toUpperCase()}`);
+            setBookCodeInput(cleanVal.toUpperCase());
         }
     };
 
     const handlePublishFullBook = async (e) => {
         e.preventDefault();
+        if (submitLockRef.current) return;
+
         if (!bookCodeInput || !categoryCodeInput || !itemNameInput || !bookPriceInput || !mainPdfFile) {
-            alert("Please select Category, fill Item Code, Item Name, Price and select Main PDF file.");
+            setErrorMsg("Please select Category, fill Item Code, Item Name, Price and select Main PDF file.");
             return;
         }
 
+        submitLockRef.current = true;
         setIsPublishingBook(true);
+        setErrorMsg('');
 
         const formData = new FormData();
         formData.append('itemNo', bookCodeInput.trim().toUpperCase());
-        formData.append('isbn', isbnInput || 'N/A');
+        formData.append('isbn', isbnInput.trim() || 'N/A');
         formData.append('itemName', itemNameInput.trim());
         formData.append('categoryCode', categoryCodeInput);
-        formData.append('noOfPages', parseInt(noOfPagesInput) || 1);
+        formData.append('noOfPages', parseInt(noOfPagesInput, 10) || 1);
         formData.append('language', languageInput || 'English');
         formData.append('authorName', authorInput || 'System Administrator');
-        formData.append('vendorName', vendorNameInput || '');
-        formData.append('price', parseFloat(bookPriceInput));
+        formData.append('vendorName', vendorNameInput.trim() || '');
+        formData.append('price', parseFloat(bookPriceInput) || 0);
         if (coverImageFile) formData.append('coverImage', coverImageFile);
         formData.append('mainPdf', mainPdfFile);
 
@@ -65,16 +78,21 @@ function AddBookForm({
                 body: formData
             });
 
-            const data = await res.json();
-            if (res.ok) {
+            const data = await safeParse(res);
+            if (res.ok && data.success !== false) {
+                if (typeof window.invalidateApiCache === 'function') {
+                    window.invalidateApiCache('/api/author/book');
+                    window.invalidateApiCache('/api/reader/catalog');
+                }
                 onSuccess(`Book '${itemNameInput.trim()}' uploaded and saved successfully!`);
             } else {
-                alert(data.message || "Failed to publish book.");
+                setErrorMsg(data.message || `Upload Failed (${res.status}): Server error.`);
             }
         } catch (err) {
-            alert("Connection error: " + err.message);
+            setErrorMsg("Network error: " + err.message);
         } finally {
             setIsPublishingBook(false);
+            submitLockRef.current = false;
         }
     };
 
@@ -89,13 +107,18 @@ function AddBookForm({
                     <i className="fa-solid fa-arrow-left"></i>
                 </button>
                 <h3 className="text-xl font-bold text-[#0d233a] flex items-center gap-2">
-                    <i className="fa-solid fa-user-pen text-blue-600"></i> Add New Item
+                    <i className="fa-solid fa-book-medical text-emerald-600"></i> Add New Item
                 </h3>
             </div>
 
-            <form onSubmit={handlePublishFullBook} className="space-y-4 text-xs">
+            {errorMsg && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2.5 rounded text-xs font-bold flex items-center gap-2">
+                    <i className="fa-solid fa-circle-exclamation"></i>
+                    <span>{errorMsg}</span>
+                </div>
+            )}
 
-                {/* 1. ISBN NUMBER (Pehle) & 2. ITEM CODE / BOOK CODE */}
+            <form onSubmit={handlePublishFullBook} className="space-y-4 text-xs">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                         <label className="font-bold block mb-1 text-slate-700">ISBN Number</label>
@@ -120,7 +143,6 @@ function AddBookForm({
                     </div>
                 </div>
 
-                {/* 3. CATEGORY MASTER (Clean Dropdown without Category Code), 4. LANGUAGE MASTER, 5. AUTHOR NAME */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
                         <div className="flex justify-between items-center mb-1">
@@ -131,7 +153,7 @@ function AddBookForm({
                         </div>
                         <select required value={categoryCodeInput} onChange={e => setCategoryCodeInput(e.target.value)} className="w-full border rounded px-3 py-2 font-bold bg-amber-50 outline-none">
                             <option value="">-- Select Category --</option>
-                            {categoriesList.map(cat => (
+                            {(categoriesList || []).map(cat => (
                                 <option key={cat.categoryCode || cat.CategoryCode} value={cat.categoryCode || cat.CategoryCode}>
                                     {cat.categoryName || cat.CategoryName}
                                 </option>
@@ -148,7 +170,7 @@ function AddBookForm({
                         </div>
                         <select required value={languageInput} onChange={e => setLanguageInput(e.target.value)} className="w-full border rounded px-3 py-2 font-bold bg-indigo-50 outline-none">
                             <option value="">-- Select Language --</option>
-                            {languagesList.map(lang => (
+                            {(languagesList || []).map(lang => (
                                 <option key={lang.id || lang.code || lang.name} value={lang.name || lang.languageName}>
                                     {lang.name || lang.languageName}
                                 </option>
@@ -165,7 +187,7 @@ function AddBookForm({
                         </div>
                         <select required value={authorInput} onChange={e => setAuthorInput(e.target.value)} className="w-full border rounded px-3 py-2 font-bold bg-blue-50 outline-none">
                             <option value="">-- Select Author --</option>
-                            {authorsList.map(ath => (
+                            {(authorsList || []).map(ath => (
                                 <option key={ath.id || ath.name} value={ath.name}>
                                     {ath.name}
                                 </option>
@@ -174,7 +196,6 @@ function AddBookForm({
                     </div>
                 </div>
 
-                {/* 6. TOTAL PAGE COUNT & VENDOR NAME (MANUAL + SUGGESTION) */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                         <label className="font-bold block mb-1 text-slate-700">Total Page Count *</label>
@@ -194,11 +215,11 @@ function AddBookForm({
                             list="vendors-datalist-add"
                             value={vendorNameInput}
                             onChange={e => setVendorNameInput(e.target.value)}
-                            placeholder="Type Vendor Name (e.g. Aman Singh) or leave blank for In-House"
+                            placeholder="Type Vendor Name or leave blank for In-House"
                             className="w-full border rounded px-3 py-2 font-bold bg-emerald-50 outline-none focus:border-emerald-600"
                         />
                         <datalist id="vendors-datalist-add">
-                            {vendorsList && vendorsList.map(v => {
+                            {(vendorsList || []).map(v => {
                                 const vName = v.name || v.Name || v.vendorName || v.VendorName;
                                 return <option key={v.id || v.Id} value={vName} />;
                             })}
@@ -206,7 +227,6 @@ function AddBookForm({
                     </div>
                 </div>
 
-                {/* 7. ITEM NAME & PRICE */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                         <label className="font-bold block mb-1 text-slate-700">Item Name / Book Name *</label>
@@ -218,7 +238,6 @@ function AddBookForm({
                     </div>
                 </div>
 
-                {/* 8. COVER IMAGE & MAIN PDF */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                         <label className="font-bold block mb-1 text-slate-700">Front Cover Image</label>
@@ -230,13 +249,12 @@ function AddBookForm({
                     </div>
                 </div>
 
-                {/* FORM ACTIONS */}
                 <div className="flex justify-end gap-3 pt-4 border-t">
                     <button type="button" onClick={onCancel} className="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold px-6 py-2 rounded text-xs cursor-pointer">
                         Cancel
                     </button>
-                    <button type="submit" disabled={isPublishingBook} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-6 py-2.5 rounded text-xs shadow cursor-pointer flex items-center gap-2">
-                        <i className="fa-solid fa-upload"></i>
+                    <button type="submit" disabled={isPublishingBook} className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-bold px-6 py-2.5 rounded text-xs shadow cursor-pointer flex items-center gap-2">
+                        <i className={`fa-solid ${isPublishingBook ? 'fa-spinner fa-spin' : 'fa-upload'}`}></i>
                         {isPublishingBook ? 'Uploading...' : 'Upload Book Master'}
                     </button>
                 </div>

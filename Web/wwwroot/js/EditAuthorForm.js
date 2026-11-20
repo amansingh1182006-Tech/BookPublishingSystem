@@ -3,6 +3,8 @@
         editingAuthor ? (editingAuthor.authorName || editingAuthor.AuthorName || editingAuthor.name || '') : ''
     );
     const [isUpdating, setIsUpdating] = React.useState(false);
+    const [errorMsg, setErrorMsg] = React.useState('');
+    const submitLockRef = React.useRef(false);
 
     React.useEffect(() => {
         if (editingAuthor) {
@@ -10,29 +12,50 @@
         }
     }, [editingAuthor]);
 
+    const safeParse = async (res) => {
+        if (typeof window.safeJsonParse === 'function') return await window.safeJsonParse(res);
+        try {
+            const txt = await res.text();
+            return txt && txt.trim() ? JSON.parse(txt) : {};
+        } catch {
+            return {};
+        }
+    };
+
     const handleSaveUpdateAuthor = async (e) => {
         e.preventDefault();
-        if (!editAuthorName || !editAuthorName.trim()) return;
+        if (submitLockRef.current) return;
+        if (!editAuthorName || !editAuthorName.trim()) {
+            setErrorMsg("Author Name zaroori hai!");
+            return;
+        }
 
+        submitLockRef.current = true;
         setIsUpdating(true);
-        try {
-            const authorId = editingAuthor.id || editingAuthor.Id;
-            const res = await fetch(`/api/authors/update/${authorId}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ authorName: editAuthorName.trim() })
-            });
+        setErrorMsg('');
 
-            const data = await res.json();
-            if (res.ok) {
+        try {
+            const authorId = encodeURIComponent(String(editingAuthor.id || editingAuthor.Id).trim());
+            const payload = JSON.stringify({ authorName: editAuthorName.trim() });
+            const headers = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
+
+            let res = await fetch(`/api/authors/update/${authorId}`, { method: 'PUT', headers, body: payload });
+            if (res.status === 405) {
+                res = await fetch(`/api/authors/update/${authorId}`, { method: 'POST', headers, body: payload });
+            }
+
+            const data = await safeParse(res);
+            if (res.ok && data.success !== false) {
+                if (typeof window.invalidateApiCache === 'function') window.invalidateApiCache('/api/authors');
                 onSuccess("Author details updated successfully!");
             } else {
-                alert(data.message || "Failed to update author.");
+                setErrorMsg(data.message || `Update Failed (${res.status}).`);
             }
         } catch (err) {
-            alert("Connection error: " + err.message);
+            setErrorMsg("Network error: " + err.message);
         } finally {
             setIsUpdating(false);
+            submitLockRef.current = false;
         }
     };
 
@@ -47,9 +70,16 @@
                     <i className="fa-solid fa-arrow-left"></i>
                 </button>
                 <h3 className="text-xl font-bold text-[#0d233a] flex items-center gap-2">
-                    <i className="fa-solid fa-pen-to-square text-blue-600"></i> Edit Author 
+                    <i className="fa-solid fa-pen-to-square text-blue-600"></i> Edit Author
                 </h3>
             </div>
+
+            {errorMsg && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2.5 rounded text-xs font-bold flex items-center gap-2">
+                    <i className="fa-solid fa-circle-exclamation"></i>
+                    <span>{errorMsg}</span>
+                </div>
+            )}
 
             <form onSubmit={handleSaveUpdateAuthor} className="space-y-6 text-xs max-w-2xl">
                 <div>
@@ -74,8 +104,8 @@
                     <button
                         type="submit"
                         disabled={isUpdating}
-                        className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-6 py-2.5 rounded text-xs shadow cursor-pointer flex items-center gap-2">
-                        <i className="fa-solid fa-check"></i>
+                        className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-bold px-6 py-2.5 rounded text-xs shadow cursor-pointer flex items-center gap-2">
+                        <i className={`fa-solid ${isUpdating ? 'fa-spinner fa-spin' : 'fa-check'}`}></i>
                         {isUpdating ? 'Updating Author...' : 'Update Author Master'}
                     </button>
                 </div>
@@ -83,5 +113,4 @@
         </div>
     );
 }
-
 window.EditAuthorForm = EditAuthorForm;

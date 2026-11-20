@@ -1,34 +1,52 @@
 ﻿function AddLanguageForm({ onSuccess, onCancel }) {
     const [languageNameInput, setLanguageNameInput] = React.useState('');
     const [isSaving, setIsSaving] = React.useState(false);
+    const [errorMsg, setErrorMsg] = React.useState('');
+    const submitLockRef = React.useRef(false);
+
+    const safeParse = async (res) => {
+        if (typeof window.safeJsonParse === 'function') return await window.safeJsonParse(res);
+        try {
+            const txt = await res.text();
+            return txt && txt.trim() ? JSON.parse(txt) : {};
+        } catch {
+            return {};
+        }
+    };
 
     const handleSaveLanguage = async (e) => {
         e.preventDefault();
-        if (!languageNameInput.trim()) {
-            alert("Language Name zaroori hai!");
+        if (submitLockRef.current) return;
+
+        const trimmedLang = languageNameInput.trim();
+        if (!trimmedLang) {
+            setErrorMsg("Language Name zaroori hai!");
             return;
         }
 
+        submitLockRef.current = true;
         setIsSaving(true);
+        setErrorMsg('');
+
         try {
             const res = await fetch('/api/language/create', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    languageName: languageNameInput.trim()
-                })
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify({ languageName: trimmedLang })
             });
 
-            const data = await res.json();
-            if (res.ok) {
-                onSuccess(`Language '${languageNameInput.trim()}' save ho gayi!`);
+            const data = await safeParse(res);
+            if (res.ok && data.success !== false) {
+                if (typeof window.invalidateApiCache === 'function') window.invalidateApiCache('/api/language');
+                onSuccess(`Language '${trimmedLang}' save ho gayi!`);
             } else {
-                alert(data.message || "Language add karne me error aaya.");
+                setErrorMsg(data.message || `Server Error (${res.status}): Language save nahi ho saki.`);
             }
         } catch (err) {
-            alert("Connection error: " + err.message);
+            setErrorMsg("Network error: " + err.message);
         } finally {
             setIsSaving(false);
+            submitLockRef.current = false;
         }
     };
 
@@ -43,9 +61,16 @@
                     <i className="fa-solid fa-arrow-left"></i>
                 </button>
                 <h3 className="text-xl font-bold text-[#0d233a] flex items-center gap-2">
-                    <i className="fa-solid fa-user-pen text-blue-600"></i> Add New Language
+                    <i className="fa-solid fa-language text-indigo-600"></i> Add New Language
                 </h3>
             </div>
+
+            {errorMsg && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2.5 rounded text-xs font-bold flex items-center gap-2">
+                    <i className="fa-solid fa-circle-exclamation"></i>
+                    <span>{errorMsg}</span>
+                </div>
+            )}
 
             <form onSubmit={handleSaveLanguage} className="space-y-4 text-xs max-w-2xl">
                 <div>
@@ -53,6 +78,7 @@
                     <input
                         type="text"
                         required
+                        autoFocus
                         value={languageNameInput}
                         onChange={e => setLanguageNameInput(e.target.value)}
                         placeholder="e.g. French"
@@ -70,8 +96,8 @@
                     <button
                         type="submit"
                         disabled={isSaving}
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-6 py-2 rounded text-xs shadow cursor-pointer flex items-center gap-2">
-                        <i className="fa-solid fa-plus"></i>
+                        className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-bold px-6 py-2 rounded text-xs shadow cursor-pointer flex items-center gap-2">
+                        <i className={`fa-solid ${isSaving ? 'fa-spinner fa-spin' : 'fa-plus'}`}></i>
                         {isSaving ? 'Saving Language...' : 'Save Language Master'}
                     </button>
                 </div>
@@ -79,5 +105,4 @@
         </div>
     );
 }
-
 window.AddLanguageForm = AddLanguageForm;

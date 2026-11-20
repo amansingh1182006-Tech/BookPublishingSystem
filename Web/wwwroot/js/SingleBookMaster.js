@@ -1,52 +1,83 @@
-﻿
-function SingleBookMaster({ triggerToast }) {
-    const [salesList, setSalesList] = useState([]);
-    const [usersList, setUsersList] = useState([]);
-    const [booksList, setBooksList] = useState([]);
-    const [loading, setLoading] = useState(true);
+﻿function SingleBookMaster({ triggerToast }) {
+    const [salesList, setSalesList] = React.useState([]);
+    const [usersList, setUsersList] = React.useState([]);
+    const [booksList, setBooksList] = React.useState([]);
+    const [loading, setLoading] = React.useState(true);
 
-    const [showAssignForm, setShowAssignForm] = useState(false);
-    const [selectedUserId, setSelectedUserId] = useState('');
-    const [selectedBookId, setSelectedBookId] = useState('');
-    const [customPrice, setCustomPrice] = useState('');
-    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [showAssignForm, setShowAssignForm] = React.useState(false);
+    const [selectedUserId, setSelectedUserId] = React.useState('');
+    const [selectedBookId, setSelectedBookId] = React.useState('');
+    const [customPrice, setCustomPrice] = React.useState('');
+    const [isSubmitting, setIsSubmitting] = React.useState(false);
+    const submitLockRef = React.useRef(false);
+
+    const safeParse = async (res) => {
+        if (!res) return null;
+        if (typeof window.safeJsonParse === 'function') return await window.safeJsonParse(res);
+        try {
+            const txt = await res.text();
+            return txt && txt.trim() ? JSON.parse(txt) : null;
+        } catch {
+            return null;
+        }
+    };
 
     const fetchAllData = async () => {
         setLoading(true);
         try {
-            const [salesRes, usersRes, booksRes] = await Promise.all([
-                fetch('/api/single-book/admin/all-sales'),
-                fetch('/api/admin/admin/all-users'),
-                fetch('/api/author/book/my-books')
+            const [salesRes, usersRes, booksRes, journalsRes] = await Promise.all([
+                fetch('/api/single-book/admin/all-sales').catch(() => null),
+                fetch('/api/admin/admin/all-users').catch(() => null),
+                fetch('/api/author/book/my-books').catch(() => null),
+                fetch('/api/journal/all').catch(() => null)
             ]);
 
-            if (salesRes.ok) setSalesList(await salesRes.json());
-            if (usersRes.ok) setUsersList(await usersRes.json());
-            if (booksRes.ok) {
-                const bks = await booksRes.json();
-                setBooksList(Array.isArray(bks) ? bks : []);
+            if (salesRes && salesRes.ok) {
+                const salesData = await safeParse(salesRes);
+                setSalesList(Array.isArray(salesData) ? salesData : []);
             }
+
+            if (usersRes && usersRes.ok) {
+                const usersData = await safeParse(usersRes);
+                setUsersList(Array.isArray(usersData) ? usersData : []);
+            }
+
+            let combinedBooks = [];
+            if (booksRes && booksRes.ok) {
+                const bks = await safeParse(booksRes);
+                if (Array.isArray(bks)) {
+                    combinedBooks = bks.map(b => ({
+                        ...b,
+                        id: b.id || b.Id,
+                        itemName: b.itemName || b.ItemName || 'Untitled Book',
+                        price: b.price !== undefined ? b.price : (b.Price ?? 0),
+                        itemType: b.itemType || 'Book'
+                    }));
+                }
+            }
+
+            if (journalsRes && journalsRes.ok) {
+                const jrns = await safeParse(journalsRes);
+                const mappedJournals = (Array.isArray(jrns) ? jrns : [])
+                    .filter(j => (j.isActive ?? j.IsActive) !== false)
+                    .map(j => ({
+                        id: j.id || j.Id,
+                        itemName: `[Journal] ${j.name || j.Name}`,
+                        price: j.price ?? j.Price ?? 0,
+                        itemType: 'Journal'
+                    }));
+                combinedBooks = [...combinedBooks, ...mappedJournals];
+            }
+
+            setBooksList(combinedBooks);
         } catch (err) {
             console.error("SingleBookMaster fetch error:", err);
         } finally {
             setLoading(false);
         }
     };
-    const journalsRes = await fetch('/api/journal/all');
-    if (journalsRes.ok) {
-        const jrns = await journalsRes.json();
-        const mappedJournals = (Array.isArray(jrns) ? jrns : [])
-            .filter(j => j.isActive !== false)
-            .map(j => ({
-                id: j.id,
-                itemName: `[Journal] ${j.name}`,
-                price: j.price ?? 0,
-                itemType: 'Journal'
-            }));
-        setBooksList(prev => [...prev, ...mappedJournals]);
-    }
 
-    useEffect(() => {
+    React.useEffect(() => {
         fetchAllData();
     }, []);
 
@@ -62,39 +93,44 @@ function SingleBookMaster({ triggerToast }) {
 
     const handleManualAssignSubmit = async (e) => {
         e.preventDefault();
+        if (submitLockRef.current) return;
+
         if (!selectedUserId || !selectedBookId) {
-            triggerToast("Kripya User aur Book dono select karein.", "error");
+            if (triggerToast) triggerToast("Kripya User aur Book dono select karein.", "error");
             return;
         }
 
+        submitLockRef.current = true;
         setIsSubmitting(true);
         try {
+            const matchedItem = booksList.find(b => String(b.id) === String(selectedBookId));
             const res = await fetch('/api/single-book/admin/manual-assign', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
                 body: JSON.stringify({
                     userId: selectedUserId,
                     bookId: selectedBookId,
-                    itemType: (booksList.find(b => String(b.id) === String(selectedBookId))?.itemType) || 'Book',
+                    itemType: matchedItem?.itemType || 'Book',
                     customPrice: customPrice !== '' ? parseFloat(customPrice) : null
                 })
             });
 
-            const data = await res.json();
-            if (res.ok && data.success) {
-                triggerToast(data.message);
+            const data = (await safeParse(res)) || {};
+            if (res.ok && data.success !== false) {
+                if (triggerToast) triggerToast(data.message || "Book assigned successfully!");
                 setShowAssignForm(false);
                 setSelectedUserId('');
                 setSelectedBookId('');
                 setCustomPrice('');
                 await fetchAllData();
             } else {
-                triggerToast(data.message || "Assignment failed.", "error");
+                if (triggerToast) triggerToast(data.message || `Assignment failed (${res.status}).`, "error");
             }
         } catch (err) {
-            triggerToast("Error: " + err.message, "error");
+            if (triggerToast) triggerToast("Error: " + err.message, "error");
         } finally {
             setIsSubmitting(false);
+            submitLockRef.current = false;
         }
     };
 
@@ -102,16 +138,21 @@ function SingleBookMaster({ triggerToast }) {
         if (!confirm(`Kya aap '${bookName}' ka yeh purchase record delete karna chahte hain?`)) return;
 
         try {
-            const res = await fetch(`/api/single-book/admin/delete-sale/${id}`, { method: 'DELETE' });
-            const data = await res.json();
-            if (res.ok && data.success) {
-                triggerToast("Purchase record deleted!");
+            const encodedId = encodeURIComponent(String(id).trim());
+            let res = await fetch(`/api/single-book/admin/delete-sale/${encodedId}`, { method: 'DELETE' });
+            if (res.status === 405) {
+                res = await fetch(`/api/single-book/admin/delete-sale/${encodedId}`, { method: 'POST' });
+            }
+
+            const data = (await safeParse(res)) || {};
+            if (res.ok && data.success !== false) {
+                if (triggerToast) triggerToast("Purchase record deleted!");
                 await fetchAllData();
             } else {
-                triggerToast(data.message || "Delete failed.", "error");
+                if (triggerToast) triggerToast(data.message || `Delete failed (${res.status}).`, "error");
             }
         } catch (err) {
-            triggerToast("Error: " + err.message, "error");
+            if (triggerToast) triggerToast("Error: " + err.message, "error");
         }
     };
 
@@ -171,15 +212,15 @@ function SingleBookMaster({ triggerToast }) {
                         </div>
 
                         <div>
-                            <label className="font-bold text-slate-700 block mb-1">Select Book (Exact Price Auto-Loads) *</label>
+                            <label className="font-bold text-slate-700 block mb-1">Select Book / Journal (Exact Price Auto-Loads) *</label>
                             <select
                                 required
                                 value={selectedBookId}
                                 onChange={e => handleBookSelect(e.target.value)}
                                 className="w-full border border-slate-300 rounded-lg px-3 py-2.5 font-bold outline-none focus:border-emerald-600 bg-slate-50">
-                                <option value="">-- Choose Book --</option>
+                                <option value="">-- Choose Book / Journal --</option>
                                 {booksList.map(b => (
-                                    <option key={b.id} value={b.id}>
+                                    <option key={`${b.itemType || 'Book'}_${b.id}`} value={b.id}>
                                         {b.itemName} (₹{b.price})
                                     </option>
                                 ))}
@@ -210,8 +251,8 @@ function SingleBookMaster({ triggerToast }) {
                         <button
                             type="submit"
                             disabled={isSubmitting}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-6 py-2 rounded-lg shadow cursor-pointer flex items-center gap-2">
-                            <i className="fa-solid fa-check"></i>
+                            className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-bold px-6 py-2 rounded-lg shadow cursor-pointer flex items-center gap-2">
+                            <i className={`fa-solid ${isSubmitting ? 'fa-spinner fa-spin' : 'fa-check'}`}></i>
                             {isSubmitting ? 'Processing...' : 'Confirm Single Book Sale'}
                         </button>
                     </div>
@@ -224,7 +265,9 @@ function SingleBookMaster({ triggerToast }) {
                 </h4>
 
                 {loading ? (
-                    <div className="text-center py-8 text-xs font-bold text-slate-500">Loading single book sales...</div>
+                    <div className="text-center py-8 text-xs font-bold text-slate-500">
+                        <i className="fa-solid fa-spinner fa-spin text-emerald-600 me-2"></i>Loading single book sales...
+                    </div>
                 ) : salesList.length === 0 ? (
                     <div className="text-center py-8 text-xs text-slate-500 bg-slate-50 rounded-lg border border-dashed">
                         Abhi tak koi single book purchase record nahi hai.
@@ -256,6 +299,7 @@ function SingleBookMaster({ triggerToast }) {
                                         <td className="p-3 text-slate-500">{new Date(sale.purchasedAt).toLocaleDateString('en-IN')}</td>
                                         <td className="p-3 text-right">
                                             <button
+                                                type="button"
                                                 onClick={() => handleDeleteSale(sale.id, sale.bookName)}
                                                 className="text-red-600 hover:underline font-bold cursor-pointer">
                                                 <i className="fa-solid fa-trash me-1"></i>Delete

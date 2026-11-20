@@ -1,6 +1,4 @@
-﻿
-
-function EditBookForm({ editingBook, languagesList, vendorsList, onSuccess, onCancel }) {
+﻿function EditBookForm({ editingBook, languagesList, vendorsList, onSuccess, onCancel }) {
     const [editBookItemName, setEditBookItemName] = React.useState(
         editingBook ? (editingBook.itemName || editingBook.ItemName || '') : ''
     );
@@ -19,6 +17,18 @@ function EditBookForm({ editingBook, languagesList, vendorsList, onSuccess, onCa
     const [editCoverImageFile, setEditCoverImageFile] = React.useState(null);
     const [editMainPdfFile, setEditMainPdfFile] = React.useState(null);
     const [isSavingBookEdit, setIsSavingBookEdit] = React.useState(false);
+    const [errorMsg, setErrorMsg] = React.useState('');
+    const submitLockRef = React.useRef(false);
+
+    const safeParse = async (res) => {
+        if (typeof window.safeJsonParse === 'function') return await window.safeJsonParse(res);
+        try {
+            const txt = await res.text();
+            return txt && txt.trim() ? JSON.parse(txt) : {};
+        } catch {
+            return {};
+        }
+    };
 
     const getTargetBookId = () => {
         if (!editingBook) return '';
@@ -30,19 +40,23 @@ function EditBookForm({ editingBook, languagesList, vendorsList, onSuccess, onCa
 
     const handleSaveBookUpdate = async (e) => {
         e.preventDefault();
+        if (submitLockRef.current) return;
+
         const rawBookId = getTargetBookId();
         if (!rawBookId) {
-            alert("Book ID missing! Update failed.");
+            setErrorMsg("Book ID missing! Update failed.");
             return;
         }
 
+        submitLockRef.current = true;
         setIsSavingBookEdit(true);
-        const encodedId = encodeURIComponent(String(rawBookId).trim());
+        setErrorMsg('');
 
+        const encodedId = encodeURIComponent(String(rawBookId).trim());
         const formData = new FormData();
         formData.append('itemName', editBookItemName.trim());
         formData.append('price', parseFloat(editBookPrice) || 0);
-        formData.append('noOfPages', parseInt(editBookPages) || 1);
+        formData.append('noOfPages', parseInt(editBookPages, 10) || 1);
         formData.append('language', editBookLanguage);
         formData.append('vendorName', editVendorName.trim());
 
@@ -55,34 +69,30 @@ function EditBookForm({ editingBook, languagesList, vendorsList, onSuccess, onCa
                 body: formData
             });
 
-            if (!res.ok) {
+            if (res.status === 405) {
                 res = await fetch(`/api/author/book/update-book/${encodedId}`, {
                     method: 'PUT',
                     body: formData
                 });
             }
 
-            let data = {};
-            const textResponse = await res.text();
-            if (textResponse && textResponse.trim().length > 0) {
-                try {
-                    data = JSON.parse(textResponse);
-                } catch (err) {
-                    console.warn("Non-JSON response:", textResponse);
-                }
-            }
-
+            const data = await safeParse(res);
             if (res.ok && data.success !== false) {
+                if (typeof window.invalidateApiCache === 'function') {
+                    window.invalidateApiCache('/api/author/book');
+                    window.invalidateApiCache('/api/reader/catalog');
+                }
                 if (onSuccess) {
                     onSuccess(data.message || `Book '${editBookItemName}' updated successfully!`);
                 }
             } else {
-                alert(data.message || `Failed to update book (Status: ${res.status}).`);
+                setErrorMsg(data.message || `Failed to update book (Status: ${res.status}).`);
             }
         } catch (err) {
-            alert("Connection error: " + err.message);
+            setErrorMsg("Network error: " + err.message);
         } finally {
             setIsSavingBookEdit(false);
+            submitLockRef.current = false;
         }
     };
 
@@ -100,6 +110,13 @@ function EditBookForm({ editingBook, languagesList, vendorsList, onSuccess, onCa
                     <i className="fa-solid fa-pen-to-square text-blue-600"></i> Edit Book
                 </h3>
             </div>
+
+            {errorMsg && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2.5 rounded text-xs font-bold flex items-center gap-2">
+                    <i className="fa-solid fa-circle-exclamation"></i>
+                    <span>{errorMsg}</span>
+                </div>
+            )}
 
             <form onSubmit={handleSaveBookUpdate} className="space-y-4 text-xs">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -133,7 +150,7 @@ function EditBookForm({ editingBook, languagesList, vendorsList, onSuccess, onCa
                             value={editBookLanguage}
                             onChange={e => setEditBookLanguage(e.target.value)}
                             className="w-full border rounded px-3 py-2 font-bold bg-indigo-50">
-                            {languagesList && languagesList.map(lang => (
+                            {(languagesList || []).map(lang => (
                                 <option key={lang.id || lang.code || lang.name} value={lang.name || lang.languageName}>
                                     {lang.name || lang.languageName}
                                 </option>
@@ -160,7 +177,7 @@ function EditBookForm({ editingBook, languagesList, vendorsList, onSuccess, onCa
                             className="w-full border rounded px-3 py-2 font-bold bg-emerald-50 outline-none focus:border-emerald-600"
                         />
                         <datalist id="vendors-datalist-edit">
-                            {vendorsList && vendorsList.map(v => {
+                            {(vendorsList || []).map(v => {
                                 const vName = v.name || v.Name || v.vendorName || v.VendorName;
                                 return <option key={v.id || v.Id} value={vName} />;
                             })}
@@ -193,7 +210,8 @@ function EditBookForm({ editingBook, languagesList, vendorsList, onSuccess, onCa
                     <button type="button" onClick={onCancel} className="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold px-6 py-2 rounded text-xs cursor-pointer">
                         Cancel
                     </button>
-                    <button type="submit" disabled={isSavingBookEdit} className="bg-red-600 hover:bg-red-700 text-white font-bold px-6 py-2.5 rounded text-xs shadow cursor-pointer">
+                    <button type="submit" disabled={isSavingBookEdit} className="bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white font-bold px-6 py-2.5 rounded text-xs shadow cursor-pointer flex items-center gap-2">
+                        <i className={`fa-solid ${isSavingBookEdit ? 'fa-spinner fa-spin' : 'fa-check'}`}></i>
                         {isSavingBookEdit ? 'Saving Details...' : 'Update Book Details'}
                     </button>
                 </div>

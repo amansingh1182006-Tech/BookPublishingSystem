@@ -1,21 +1,154 @@
 ﻿const { useState, useEffect, useCallback, useRef } = React;
 
+// ============================================================================
+// 1. INDUSTRY-STANDARD API CLIENT & GLOBAL FETCH INTERCEPTOR (LOCAL + SERVER)
+// ============================================================================
 (function () {
     const originalFetch = window.fetch;
-    window.fetch = async function () {
-        const response = await originalFetch.apply(this, arguments);
-        if (response.status === 401) {
-            const clone = response.clone();
-            try {
-                const data = await clone.json();
-                if (data.error === "SessionExpired") {
-                    alert(data.message || "Your Account is Login in Another Device.");
-                    localStorage.removeItem('isExplicitLogin');
-                    window.location.reload();
-                }
-            } catch (e) { }
+    const apiCache = new Map();
+    const inFlightRequests = new Map();
+    const CACHE_TTL_MS = 60 * 1000; // 1 minute smart cache for GET master APIs
+
+    // Auto-detect base URL (works on localhost, IP:Port, or IIS virtual directory)
+    const getBaseUrl = () => {
+        if (window.__APP_BASE_URL__) return window.__APP_BASE_URL__.replace(/\/$/, '');
+        return window.location.origin;
+    };
+
+    const resolveApiUrl = (inputUrl) => {
+        if (typeof inputUrl !== 'string') return inputUrl;
+        if (/^https?:\/\//i.test(inputUrl)) return inputUrl;
+        const cleanPath = inputUrl.startsWith('/') ? inputUrl : `/${inputUrl}`;
+        return `${getBaseUrl()}${cleanPath}`;
+    };
+
+    // Safe JSON parser to prevent "Unexpected end of JSON input" on 400/405/500
+    window.safeJsonParse = async function (response) {
+        if (!response) return {};
+        const text = await response.text();
+        if (!text || !text.trim()) return {};
+        try {
+            return JSON.parse(text);
+        } catch (e) {
+            return { message: `Server Error (${response.status}): ${response.statusText || 'Invalid Response'}` };
         }
-        return response;
+    };
+
+    // Clear cache on data mutations (POST/PUT/DELETE)
+    window.clearApiCache = function (prefix = '') {
+        if (!prefix) {
+            apiCache.clear();
+            return;
+        }
+        for (const key of apiCache.keys()) {
+            if (key.includes(prefix)) apiCache.delete(key);
+        }
+    };
+
+    window.fetch = async function (resource, init = {}) {
+        const url = typeof resource === 'string' ? resolveApiUrl(resource) : resource;
+        const method = (init.method || 'GET').toUpperCase();
+        const isApiCall = typeof url === 'string' && (url.includes('/api/') || url.includes('/Reader/api/'));
+
+        const headers = new Headers(init.headers || {});
+        if (!headers.has('Accept')) {
+            headers.set('Accept', 'application/json, text/plain, */*');
+        }
+        headers.set('X-Requested-With', 'XMLHttpRequest');
+
+        const token = localStorage.getItem('sessionToken');
+        if (token && !headers.has('Authorization')) {
+            headers.set('Authorization', `Bearer ${token}`);
+        }
+
+        const finalInit = {
+            ...init,
+            method,
+            headers,
+            credentials: init.credentials || 'include'
+        };
+
+        // Fast Cache & Deduplication for GET API requests (excluding binary PDF streams)
+        const isBinary = headers.get('Accept')?.includes('application/pdf');
+        const cacheKey = `${method}:${url}`;
+
+        if (isApiCall && method === 'GET' && !isBinary && !init.noCache) {
+            const cached = apiCache.get(cacheKey);
+            if (cached && (Date.now() - cached.timestamp < CACHE_TTL_MS)) {
+                return new Response(cached.body, {
+                    status: cached.status,
+                    statusText: cached.statusText,
+                    headers: cached.headers
+                });
+            }
+
+            if (inFlightRequests.has(cacheKey)) {
+                const sharedRes = await inFlightRequests.get(cacheKey);
+                return sharedRes.clone();
+            }
+        }
+
+        // Invalidate cache automatically on write operations
+        if (isApiCall && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
+            window.clearApiCache();
+        }
+
+        // Timeout controller (25 seconds max so server doesn't hang UI)
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 25000);
+        if (!finalInit.signal) {
+            finalInit.signal = controller.signal;
+        }
+
+        const fetchPromise = (async () => {
+            try {
+                const response = await originalFetch(url, finalInit);
+                clearTimeout(timeoutId);
+
+                if (response.status === 401 && isApiCall) {
+                    const clone = response.clone();
+                    try {
+                        const data = await window.safeJsonParse(clone);
+                        if (data && data.error === "SessionExpired") {
+                            alert(data.message || "Your Account is Logged in on Another Device.");
+                            localStorage.removeItem('isExplicitLogin');
+                            localStorage.removeItem('sessionToken');
+                            window.location.reload();
+                        }
+                    } catch (e) { }
+                }
+
+                // Store successful GET JSON responses in fast memory cache
+                if (isApiCall && method === 'GET' && response.ok && !isBinary) {
+                    const cloneForCache = response.clone();
+                    const textBody = await cloneForCache.text();
+                    apiCache.set(cacheKey, {
+                        body: textBody,
+                        status: response.status,
+                        statusText: response.statusText,
+                        headers: response.headers,
+                        timestamp: Date.now()
+                    });
+                }
+
+                return response;
+            } catch (error) {
+                clearTimeout(timeoutId);
+                if (error.name === 'AbortError') {
+                    throw new Error('Server request timed out. Please check network/server load.');
+                }
+                throw error;
+            } finally {
+                inFlightRequests.delete(cacheKey);
+            }
+        })();
+
+        if (isApiCall && method === 'GET' && !isBinary && !init.noCache) {
+            inFlightRequests.set(cacheKey, fetchPromise);
+        }
+
+        const res = await fetchPromise;
+        return isApiCall && method === 'GET' && !isBinary ? res.clone() : res;
     };
 })();
 
@@ -45,7 +178,7 @@ function InternalEditAuthorForm({ editingAuthor, onSuccess, onCancel }) {
                 body: JSON.stringify({ authorName: editAuthorName.trim() })
             });
 
-            const data = await res.json();
+            const data = await window.safeJsonParse(res);
             if (res.ok) {
                 onSuccess("Author details updated successfully!");
             } else {
@@ -126,7 +259,6 @@ function SecurePdfViewerModal({ book, user, onClose }) {
     const [pdfDoc, setPdfDoc] = useState(null);
     const [zoomScale, setZoomScale] = useState(1.35);
 
-   
     const realId = typeof book === 'object' && book !== null
         ? (book.id || book.Id || book.itemNo || book.ItemNo || book.bookId)
         : book;
@@ -138,6 +270,7 @@ function SecurePdfViewerModal({ book, user, onClose }) {
             window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
         }
     }, []);
+
     useEffect(() => {
         const blockShortcuts = (e) => {
             if ((e.ctrlKey || e.metaKey) && ['p', 's', 'u'].includes(e.key.toLowerCase())) {
@@ -156,7 +289,6 @@ function SecurePdfViewerModal({ book, user, onClose }) {
             return false;
         };
 
-        // Browser menu se bhi Print dabane par page blank dikhane ke liye CSS protection
         const printStyle = document.createElement('style');
         printStyle.id = 'drm-print-blocker';
         printStyle.innerHTML = `@media print { body * { display: none !important; visibility: hidden !important; } }`;
@@ -186,13 +318,15 @@ function SecurePdfViewerModal({ book, user, onClose }) {
 
                 const encodedVal = encodeURIComponent(realId);
 
-               
-                const endpoints = [
-                    `/api/author/book/view-pdf/${encodedVal}`,
-                    `/api/journal/view-pdf/${encodedVal}`,
-                    `/api/reader/reader/stream-book/${encodedVal}`,
-                    `/api/reader/stream-book/${encodedVal}`
-                ];
+                // Prioritize specific streamUrl if available to avoid 404 waterfall
+                const endpoints = book?.streamUrl
+                    ? [book.streamUrl]
+                    : [
+                        `/api/author/book/view-pdf/${encodedVal}`,
+                        `/api/journal/view-pdf/${encodedVal}`,
+                        `/api/reader/stream-book/${encodedVal}`,
+                        `/api/reader/reader/stream-book/${encodedVal}`
+                    ];
 
                 let arrayBuffer = null;
                 let lastStatus = 404;
@@ -301,7 +435,6 @@ function SecurePdfViewerModal({ book, user, onClose }) {
 
     useEffect(() => {
         if (!pdfDoc || !realId || numPages <= 0) return;
-        // Agar Journal hai toh Books wali UserReadingProgress table mein save na karein (FK error rokne ke liye)
         if (book?.itemType === 'Journal' || (book?.streamUrl && book.streamUrl.includes('/journal/'))) return;
 
         const saveTimer = setTimeout(() => {
@@ -314,7 +447,7 @@ function SecurePdfViewerModal({ book, user, onClose }) {
                     totalPages: numPages
                 })
             }).catch(err => console.warn("Live progress save warning:", err));
-        }, 300);
+        }, 500);
 
         return () => clearTimeout(saveTimer);
     }, [pdfDoc, realId, pageNumber, numPages, book]);
@@ -404,7 +537,6 @@ function SecurePdfViewerModal({ book, user, onClose }) {
                         Next ▶
                     </button>
 
-                    {/* PDF PAGE ZOOM CONTROLS */}
                     <div className="flex items-center gap-1 bg-slate-950 px-2 py-1 rounded border border-slate-700 ms-2">
                         <button
                             type="button"
@@ -564,7 +696,7 @@ function App() {
     const [isLoadingBookPreview, setIsLoadingBookPreview] = useState(false);
     const [suggestedBundlesForBook, setSuggestedBundlesForBook] = useState([]);
     const [expandedBundleId, setExpandedBundleId] = useState(null);
-    const [selectedAccessDays, setSelectedAccessDays] = useState(365); 
+    const [selectedAccessDays, setSelectedAccessDays] = useState(365);
     const [isPurchasingSingleBook, setIsPurchasingSingleBook] = useState(false);
 
     const handleOpenSingleBookCheckoutWithSuggestion = async (bookObj) => {
@@ -580,7 +712,7 @@ function App() {
         try {
             const res = await fetch(`/api/single-book/book-preview/${targetId}`);
             if (res.ok) {
-                const details = await res.json();
+                const details = await window.safeJsonParse(res);
                 setSingleBookPreviewData(details);
                 setSuggestedBundlesForBook(Array.isArray(details.matchingBundles) ? details.matchingBundles : []);
             }
@@ -606,7 +738,7 @@ function App() {
                     validityDays: selectedAccessDays
                 })
             });
-            const data = await res.json();
+            const data = await window.safeJsonParse(res);
             if (res.ok && data.success) {
                 triggerToast(data.message);
                 const bookToOpen = singleBookCheckoutModal;
@@ -625,6 +757,7 @@ function App() {
             setIsPurchasingSingleBook(false);
         }
     };
+
     const [purchasingBundleId, setPurchasingBundleId] = useState(null);
 
     const handleConfirmBundlePurchaseFromBook = async (bundleObj) => {
@@ -643,7 +776,7 @@ function App() {
                 })
             });
 
-            const data = await res.json();
+            const data = await window.safeJsonParse(res);
             if (res.ok && data.success) {
                 triggerToast(data.message);
                 const bookToOpen = singleBookCheckoutModal;
@@ -666,6 +799,7 @@ function App() {
             setPurchasingBundleId(null);
         }
     };
+
     const [viewingCustomerFullProfile, setViewingCustomerFullProfile] = useState(null);
     const [isLoadingCustomerFullProfile, setIsLoadingCustomerFullProfile] = useState(false);
 
@@ -677,7 +811,7 @@ function App() {
         try {
             const res = await fetch(`/api/admin/admin/customer-full-profile/${targetId}`);
             if (res.ok) {
-                const data = await res.json();
+                const data = await window.safeJsonParse(res);
                 setViewingCustomerFullProfile(data);
             } else {
                 triggerToast("Customer ki full profile load nahi ho payi.", "error");
@@ -688,6 +822,7 @@ function App() {
             setIsLoadingCustomerFullProfile(false);
         }
     };
+
     const [editingBook, setEditingBook] = useState(null);
 
     const [kwNameInput, setKwNameInput] = useState('');
@@ -704,20 +839,21 @@ function App() {
 
     const checkUserPlanHistory = async () => {
         try {
-            
-            const statusRes = await fetch('/api/plan/my-subscription-status');
-            if (statusRes.ok) {
-                const statusData = await statusRes.json();
+            const [statusRes, memberRes] = await Promise.allSettled([
+                fetch('/api/plan/my-subscription-status'),
+                fetch('/api/plan/my-profile-membership')
+            ]);
+
+            if (statusRes.status === 'fulfilled' && statusRes.value.ok) {
+                const statusData = await window.safeJsonParse(statusRes.value);
                 if (statusData?.hasActivePlan) {
                     setHasEverPurchasedPlan(true);
                     return true;
                 }
             }
 
-            
-            const memberRes = await fetch('/api/plan/my-profile-membership');
-            if (memberRes.ok) {
-                const memberData = await memberRes.json();
+            if (memberRes.status === 'fulfilled' && memberRes.value.ok) {
+                const memberData = await window.safeJsonParse(memberRes.value);
                 if (Array.isArray(memberData?.plans) && memberData.plans.length > 0) {
                     setHasEverPurchasedPlan(true);
                     return true;
@@ -728,54 +864,46 @@ function App() {
         }
         return false;
     };
+
     const checkBookOwnership = async (targetBookId) => {
         if (!targetBookId) return false;
         const cleanTarget = String(targetBookId).toLowerCase().trim();
 
-        // 1. Direct Single Book / Access API check
         try {
-            const accessRes = await fetch(`/api/single-book/check-access/${encodeURIComponent(targetBookId)}`);
-            if (accessRes.ok) {
-                const accessData = await accessRes.json();
-                if (accessData?.hasAccess === true) {
-                    return true;
-                }
+            const [accessRes, memberRes] = await Promise.allSettled([
+                fetch(`/api/single-book/check-access/${encodeURIComponent(targetBookId)}`),
+                fetch('/api/plan/my-profile-membership')
+            ]);
+
+            if (accessRes.status === 'fulfilled' && accessRes.value.ok) {
+                const accessData = await window.safeJsonParse(accessRes.value);
+                if (accessData?.hasAccess === true) return true;
             }
-        } catch (e) {
-            console.warn("Single book access check warning:", e);
-        }
 
-        
-        try {
-            const memberRes = await fetch('/api/plan/my-profile-membership');
-            if (memberRes.ok) {
-                const memberData = await memberRes.json();
+            if (memberRes.status === 'fulfilled' && memberRes.value.ok) {
+                const memberData = await window.safeJsonParse(memberRes.value);
 
-                
                 if (Array.isArray(memberData?.plans)) {
                     for (const plan of memberData.plans) {
                         if (plan.isActive === false) continue;
                         const planBooks = Array.isArray(plan.books) ? plan.books : [];
-                        const foundInPlan = planBooks.some(b =>
-                            String(b.id || b.bookId || '').toLowerCase().trim() === cleanTarget
-                        );
-                        if (foundInPlan) return true;
+                        if (planBooks.some(b => String(b.id || b.bookId || '').toLowerCase().trim() === cleanTarget)) {
+                            return true;
+                        }
                     }
                 }
 
-                
                 if (Array.isArray(memberData?.bundles)) {
                     for (const bundle of memberData.bundles) {
                         const bundleBooks = Array.isArray(bundle.books) ? bundle.books : [];
-                        const foundInBundle = bundleBooks.some(b =>
-                            String(b.id || b.bookId || '').toLowerCase().trim() === cleanTarget
-                        );
-                        if (foundInBundle) return true;
+                        if (bundleBooks.some(b => String(b.id || b.bookId || '').toLowerCase().trim() === cleanTarget)) {
+                            return true;
+                        }
                     }
                 }
             }
         } catch (e) {
-            console.warn("Plan/Bundle ownership check warning:", e);
+            console.warn("Ownership check warning:", e);
         }
 
         return false;
@@ -801,10 +929,8 @@ function App() {
     const [authSuccessMsg, setAuthSuccessMsg] = useState('');
     const [authLoading, setAuthLoading] = useState(false);
 
-    
     const saveReadingProgressToBackend = (bookObj, pageNum = 1) => {
         if (!bookObj) return;
-        // Agar Journal hai toh Books wali UserReadingProgress table mein save na karein (FK error rokne ke liye)
         if (bookObj.itemType === 'Journal' || (bookObj.streamUrl && bookObj.streamUrl.includes('/journal/'))) return;
 
         const targetBookId = bookObj.id || bookObj.Id || bookObj.bookId || bookObj.itemNo;
@@ -821,7 +947,7 @@ function App() {
                 totalPages: totalPg
             })
         })
-            .then(res => res.ok ? res.json() : fetch('/api/reader/save-progress', {
+            .then(res => res.ok ? window.safeJsonParse(res) : fetch('/api/reader/save-progress', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -833,7 +959,6 @@ function App() {
             .catch(err => console.warn("Auto save progress skipped:", err));
     };
 
-    
     useEffect(() => {
         window.history.replaceState({ page: 'home', activeTab: 'store' }, '');
 
@@ -959,8 +1084,8 @@ function App() {
         try {
             const res = await fetch('/api/plan/get-all');
             if (res.ok) {
-                const data = await res.json();
-                setPlansList(data);
+                const data = await window.safeJsonParse(res);
+                setPlansList(Array.isArray(data) ? data : []);
             }
         } catch (e) { console.error("Fetch plans error:", e); }
     };
@@ -969,18 +1094,20 @@ function App() {
         try {
             const res = await fetch('/api/category/all');
             if (res.ok) {
-                const data = await res.json();
-                setCategoriesList(data.map(c => {
-                    const rawCode = c.categoryCode || c.CategoryCode || c.id || c.Id || c.code;
-                    const rawName = c.categoryName || c.CategoryName || c.name || rawCode;
-                    return {
-                        id: rawCode,
-                        categoryCode: rawCode,
-                        categoryName: rawName,
-                        description: c.description || c.Description || 'System Category',
-                        raw: c
-                    };
-                }));
+                const data = await window.safeJsonParse(res);
+                if (Array.isArray(data)) {
+                    setCategoriesList(data.map(c => {
+                        const rawCode = c.categoryCode || c.CategoryCode || c.id || c.Id || c.code;
+                        const rawName = c.categoryName || c.CategoryName || c.name || rawCode;
+                        return {
+                            id: rawCode,
+                            categoryCode: rawCode,
+                            categoryName: rawName,
+                            description: c.description || c.Description || 'System Category',
+                            raw: c
+                        };
+                    }));
+                }
             }
         } catch (e) { console.error("Fetch categories error:", e); }
     };
@@ -989,17 +1116,19 @@ function App() {
         try {
             const res = await fetch('/api/language/all');
             if (res.ok) {
-                const data = await res.json();
-                setLanguagesList(data.map(l => {
-                    const rawId = l.id || l.Id || l.languageCode || l.LanguageCode || l.code;
-                    return {
-                        id: rawId,
-                        code: rawId,
-                        name: l.languageName || l.LanguageName || l.name || rawId,
-                        desc: 'System Language',
-                        raw: l
-                    };
-                }));
+                const data = await window.safeJsonParse(res);
+                if (Array.isArray(data)) {
+                    setLanguagesList(data.map(l => {
+                        const rawId = l.id || l.Id || l.languageCode || l.LanguageCode || l.code;
+                        return {
+                            id: rawId,
+                            code: rawId,
+                            name: l.languageName || l.LanguageName || l.name || rawId,
+                            desc: 'System Language',
+                            raw: l
+                        };
+                    }));
+                }
             }
         } catch (e) { console.error("Fetch languages error:", e); }
     };
@@ -1008,14 +1137,16 @@ function App() {
         try {
             const res = await fetch('/api/keyword/all');
             if (res.ok) {
-                const data = await res.json();
-                setKeywordsList(data.map(k => ({
-                    id: k.id || k.Id || k.keywordCode || k.KeywordCode,
-                    code: k.keywordCode || k.KeywordCode,
-                    name: k.keywordName || k.KeywordName,
-                    desc: k.description || k.Description || 'Core Search Term',
-                    raw: k
-                })));
+                const data = await window.safeJsonParse(res);
+                if (Array.isArray(data)) {
+                    setKeywordsList(data.map(k => ({
+                        id: k.id || k.Id || k.keywordCode || k.KeywordCode,
+                        code: k.keywordCode || k.KeywordCode,
+                        name: k.keywordName || k.KeywordName,
+                        desc: k.description || k.Description || 'Core Search Term',
+                        raw: k
+                    })));
+                }
             }
         } catch (e) { console.error("Fetch keywords error:", e); }
     };
@@ -1024,11 +1155,13 @@ function App() {
         try {
             const res = await fetch('/api/admin/admin/customers-list');
             if (res.ok) {
-                const data = await res.json();
-                setCustomersList(data.map(c => ({
-                    ...c,
-                    id: c.id || c.Id || c.custId || c.CustId
-                })));
+                const data = await window.safeJsonParse(res);
+                if (Array.isArray(data)) {
+                    setCustomersList(data.map(c => ({
+                        ...c,
+                        id: c.id || c.Id || c.custId || c.CustId
+                    })));
+                }
             }
         } catch (e) { console.error("Fetch customers error:", e); }
     };
@@ -1037,21 +1170,24 @@ function App() {
         try {
             const res = await fetch('/api/authors/all');
             if (res.ok) {
-                const data = await res.json();
-                setAuthorsList(data.map(a => ({
-                    id: a.id || a.Id,
-                    name: a.authorName || a.AuthorName || a.name || a.Name,
-                    desc: `Created: ${new Date(a.createdAt || a.CreatedAt || Date.now()).toLocaleDateString()}`,
-                    raw: a
-                })));
+                const data = await window.safeJsonParse(res);
+                if (Array.isArray(data)) {
+                    setAuthorsList(data.map(a => ({
+                        id: a.id || a.Id,
+                        name: a.authorName || a.AuthorName || a.name || a.Name,
+                        desc: `Created: ${new Date(a.createdAt || a.CreatedAt || Date.now()).toLocaleDateString()}`,
+                        raw: a
+                    })));
+                }
             }
         } catch (e) { console.error("Fetch authors error:", e); }
     };
+
     const fetchVendorsMaster = async () => {
         try {
             const res = await fetch('/api/vendor/get-all');
             if (res.ok) {
-                const data = await res.json();
+                const data = await window.safeJsonParse(res);
                 setVendorsList(Array.isArray(data) ? data : []);
             }
         } catch (e) { console.error("Fetch vendors error:", e); }
@@ -1061,18 +1197,22 @@ function App() {
         setLoadingBooks(true);
         try {
             const res = await fetch('/api/reader/catalog/all-books');
-            if (res.ok) setStoreBooks(await res.json());
+            if (res.ok) {
+                const data = await window.safeJsonParse(res);
+                setStoreBooks(Array.isArray(data) ? data : []);
+            }
         } catch (e) {
             console.error("Fetch store books error:", e);
         } finally {
             setLoadingBooks(false);
         }
     };
+
     const fetchStoreJournals = async () => {
         try {
             const res = await fetch('/api/journal/all');
             if (res.ok) {
-                const data = await res.json();
+                const data = await window.safeJsonParse(res);
                 const activeOnly = Array.isArray(data) ? data.filter(j => j.isActive !== false) : [];
                 setStoreJournals(activeOnly);
             }
@@ -1097,16 +1237,15 @@ function App() {
 
         return possibleAuthor || 'Dr. Samuel Hahnemann';
     };
+
     const getBookCategoryName = (b) => {
         if (!b) return 'General';
 
-        
         const directName = b.categoryName || b.CategoryName || b.category_name || b.Category_Name;
         if (directName && directName.trim() !== '') {
             return directName;
         }
 
-        
         const catCode = b.categoryCode || b.CategoryCode || b.category || b.Category;
         if (catCode && categoriesList.length > 0) {
             const foundCategory = categoriesList.find(c =>
@@ -1130,24 +1269,24 @@ function App() {
         try {
             let res = await fetch('/api/author/book/my-books');
             let data = [];
-            if (res.ok) data = await res.json();
+            if (res.ok) data = await window.safeJsonParse(res);
 
             if (!Array.isArray(data) || data.length === 0) {
                 const fallbackRes = await fetch('/api/reader/catalog/all-books');
-                if (fallbackRes.ok) data = await fallbackRes.json();
+                if (fallbackRes.ok) data = await window.safeJsonParse(fallbackRes);
             }
 
             if (Array.isArray(data)) {
                 setMyAuthorBooks(data.map(b => {
                     const actualAuthor = getBookAuthorName(b);
                     const publisher = getBookPublisherName(b);
-                    const actualCategory = getBookCategoryName(b); 
+                    const actualCategory = getBookCategoryName(b);
 
                     return {
                         id: b.id || b.Id || b.itemNo || b.ItemNo || 'N/A',
                         itemNo: b.itemNo || b.ItemNo || b.id || 'N/A',
                         itemName: b.itemName || b.ItemName || b.title || 'Untitled Book',
-                        categoryCode: actualCategory, 
+                        categoryCode: actualCategory,
                         isbn: b.isbn || b.ISBN || b.Isbn || 'N/A',
                         authorName: actualAuthor,
                         publishedBy: publisher,
@@ -1155,7 +1294,6 @@ function App() {
                         language: b.language || b.Language || 'English',
                         price: b.price !== undefined ? b.price : (b.Price !== undefined ? b.Price : 0),
                         noOfPages: b.noOfPages || b.NoOfPages || 1,
-                        isPublished: b.isPublished !== undefined ?b.isPublished : (b.IsPublished !== undefined ? b.IsPublished : false),
                         isPublished: b.isPublished !== undefined ? b.isPublished : (b.IsPublished !== undefined ? b.IsPublished : false),
                         raw: {
                             ...b,
@@ -1186,8 +1324,6 @@ function App() {
         }
 
         const targetId = bookObj.id || bookObj.Id || bookObj.bookId;
-
-        
         const isOwned = await checkBookOwnership(targetId);
 
         if (isOwned) {
@@ -1197,7 +1333,6 @@ function App() {
             return;
         }
 
-        
         const hasPlanHistory = hasEverPurchasedPlan || await checkUserPlanHistory();
         if (!hasPlanHistory) {
             setPendingBookForPlan(bookObj);
@@ -1210,42 +1345,45 @@ function App() {
         handleOpenSingleBookCheckoutWithSuggestion(bookObj);
     };
 
+    // FAST PARALLEL INITIAL BOOT (Loads Store + Session concurrently without heavy admin calls)
     useEffect(() => {
-        fetchStoreBooks();
-        fetchStoreJournals();
-        fetchCategories();
-        fetchLanguagesMaster();
-        fetchKeywordsMaster();
-        fetchPlansMaster();
-        fetchAuthorsMaster();
-        fetchVendorsMaster();
+        let isMounted = true;
 
-       
+        const initAppFast = async () => {
+            await Promise.allSettled([
+                fetchStoreBooks(),
+                fetchStoreJournals(),
+                fetchCategories(),
+                fetchLanguagesMaster(),
+                fetch('/api/account/me')
+                    .then(res => res.ok ? window.safeJsonParse(res) : null)
+                    .then(data => {
+                        if (!isMounted) return;
+                        if (data && data.email && localStorage.getItem('isExplicitLogin') === 'true') {
+                            const primaryRole = data.roles && data.roles.includes('Vendor')
+                                ? 'Vendor'
+                                : (data.roles && data.roles.length > 0 ? data.roles[0] : 'Reader');
+                            setUser({
+                                isLoggedIn: true,
+                                fullName: data.fullName || data.email.split('@')[0],
+                                email: data.email,
+                                role: primaryRole
+                            });
+                            checkUserPlanHistory();
+                        } else {
+                            setUser({ isLoggedIn: false, fullName: '', email: '', role: '' });
+                        }
+                    })
+                    .catch(() => {
+                        if (isMounted) setUser({ isLoggedIn: false, fullName: '', email: '', role: '' });
+                    })
+            ]);
+        };
 
-        fetch('/api/account/me')
-            .then(res => res.ok ? res.json() : null)
-            .then(data => {
-                if (data && data.email && localStorage.getItem('isExplicitLogin') === 'true') {
-                    const primaryRole = data.roles && data.roles.includes('Vendor')
-                        ? 'Vendor'
-                        : (data.roles && data.roles.length > 0 ? data.roles[0] : 'Reader');
-                    setUser({
-                        isLoggedIn: true,
-                        fullName: data.fullName || data.email.split('@')[0],
-                        email: data.email,
-                        role: primaryRole
-                    });
-                    checkUserPlanHistory();
-                } else {
-                    setUser({ isLoggedIn: false, fullName: '', email: '', role: '' });
-                }
-            })
-            .catch(() => {
-                setUser({ isLoggedIn: false, fullName: '', email: '', role: '' });
-            });
+        initAppFast();
+        return () => { isMounted = false; };
     }, []);
 
-    
     useEffect(() => {
         if (!user.isLoggedIn || storeBooks.length === 0) return;
 
@@ -1262,8 +1400,6 @@ function App() {
                 const bookWithStartPage = { ...matchedBook, initialPage: targetPage };
                 saveReadingProgressToBackend(matchedBook, targetPage);
                 setSelectedBookForDrm(bookWithStartPage);
-
-                
                 window.history.replaceState({}, document.title, window.location.pathname);
             }
         }
@@ -1271,6 +1407,8 @@ function App() {
 
     useEffect(() => {
         setSelectedMasterIds([]);
+        if (!isAdmin) return;
+
         if (selectedMaster === 'customers') fetchCustomersMaster();
         else if (selectedMaster === 'plans') fetchPlansMaster();
         else if (selectedMaster === 'authors') fetchAuthorsMaster();
@@ -1279,20 +1417,18 @@ function App() {
         else if (selectedMaster === 'keywords') fetchKeywordsMaster();
         else if (selectedMaster === 'vendors') fetchVendorsMaster();
         else if (selectedMaster === 'items') {
-            fetchAuthorBooks();
-            fetchVendorsMaster();
+            Promise.allSettled([fetchAuthorBooks(), fetchVendorsMaster(), fetchAuthorsMaster()]);
         }
-    }, [selectedMaster]);
+    }, [selectedMaster, isAdmin]);
 
     useEffect(() => {
-        if (user.isLoggedIn && isAdmin) {
-            fetchAuthorBooks();
-            fetchCustomersMaster();
-            fetchPlansMaster();
-            fetchAuthorsMaster();
-            fetchCategories();
-            fetchLanguagesMaster();
-            fetchKeywordsMaster();
+        if (user.isLoggedIn && isAdmin && activeTab === 'admin') {
+            Promise.allSettled([
+                fetchAuthorBooks(),
+                fetchAuthorsMaster(),
+                fetchCategories(),
+                fetchLanguagesMaster()
+            ]);
         }
     }, [user.isLoggedIn, user.role, activeTab]);
 
@@ -1311,20 +1447,11 @@ function App() {
                 headers: { 'Content-Type': 'application/json' }
             });
 
-            let data = {};
-            const textResponse = await res.text();
-            if (textResponse && textResponse.trim().length > 0) {
-                try {
-                    data = JSON.parse(textResponse);
-                } catch (e) {
-                    console.warn("Non-JSON response:", textResponse);
-                }
-            }
+            const data = await window.safeJsonParse(res);
 
             if (res.ok && (data.success !== false)) {
                 triggerToast(data.message || `Book '${itemName}' approved & live on Store Catalogue!`);
-                await fetchAuthorBooks();
-                await fetchStoreBooks();
+                await Promise.allSettled([fetchAuthorBooks(), fetchStoreBooks()]);
             } else {
                 triggerToast(data.message || "Approval failed. Check server logs.", 'error');
             }
@@ -1351,7 +1478,7 @@ function App() {
                 })
             });
 
-            const data = await res.json();
+            const data = await window.safeJsonParse(res);
             if (res.ok) {
                 triggerToast(`Keyword '${kwNameInput.trim()}' saved to Database!`);
                 setKwNameInput('');
@@ -1389,7 +1516,7 @@ function App() {
                 })
             });
 
-            const data = await res.json();
+            const data = await window.safeJsonParse(res);
             if (res.ok) {
                 triggerToast("Keyword details updated successfully!");
                 setEditingKeyword(null);
@@ -1428,7 +1555,7 @@ function App() {
                 })
             });
 
-            const data = await res.json();
+            const data = await window.safeJsonParse(res);
             if (res.ok) {
                 await fetchCategories();
                 setQuickCategoryName('');
@@ -1456,7 +1583,7 @@ function App() {
                 })
             });
 
-            const data = await res.json();
+            const data = await window.safeJsonParse(res);
             if (res.ok) {
                 await fetchLanguagesMaster();
                 setQuickLanguageName('');
@@ -1481,7 +1608,7 @@ function App() {
                 body: JSON.stringify({ authorName: quickAuthorName.trim() })
             });
 
-            const data = await res.json();
+            const data = await window.safeJsonParse(res);
             if (res.ok) {
                 await fetchAuthorsMaster();
                 setQuickAuthorName('');
@@ -1501,7 +1628,6 @@ function App() {
     };
 
     const confirmDeleteSelectedMaster = async () => {
-        
         let targetItems = [];
         if (deleteConfirmModal.id) {
             targetItems = [deleteConfirmModal.id];
@@ -1527,8 +1653,7 @@ function App() {
             if (selectedMaster === 'items') {
                 endpoints = [
                     `/api/author/book/delete-book/${encodedVal}`,
-                    `/api/author/book/delete/${encodedVal}`,
-                    `/api/author/Book/delete-book/${encodedVal}`
+                    `/api/author/book/delete/${encodedVal}`
                 ];
             } else if (selectedMaster === 'plans') {
                 endpoints = [`/api/plan/delete/${encodedVal}`];
@@ -1566,7 +1691,6 @@ function App() {
             }
         }
 
-        
         setDeleteConfirmModal({ show: false, id: null, ids: [], title: '', type: '' });
         setSelectedMasterIds([]);
 
@@ -1574,8 +1698,7 @@ function App() {
             triggerToast(`${successCount} record(s) deleted successfully!`);
 
             if (selectedMaster === 'items') {
-                await fetchAuthorBooks();
-                await fetchStoreBooks();
+                await Promise.allSettled([fetchAuthorBooks(), fetchStoreBooks()]);
             } else if (selectedMaster === 'plans') await fetchPlansMaster();
             else if (selectedMaster === 'authors') await fetchAuthorsMaster();
             else if (selectedMaster === 'categories') await fetchCategories();
@@ -1586,6 +1709,7 @@ function App() {
             triggerToast("Failed to delete selected record(s). Check API route constraints.", 'error');
         }
     };
+
     const handleAddCustomer = async (e) => {
         e.preventDefault();
         if (!custNameInput || !custEmailInput) return triggerToast("Customer Name & Email are required.", 'error');
@@ -1602,7 +1726,7 @@ function App() {
                 })
             });
 
-            const data = await res.json();
+            const data = await window.safeJsonParse(res);
             if (res.ok) {
                 triggerToast("Customer Master added successfully!");
                 setCustNameInput('');
@@ -1644,7 +1768,7 @@ function App() {
                 })
             });
 
-            const data = await res.json();
+            const data = await window.safeJsonParse(res);
             if (res.ok) {
                 triggerToast("Customer Record updated successfully!");
                 setEditingCustomer(null);
@@ -1672,10 +1796,10 @@ function App() {
 
         const endpoint = authMode === 'login' ? '/api/account/login' : '/api/account/register';
         const payload = authMode === 'login'
-            ? { email: emailInput, password: passwordInput }
+            ? { email: emailInput.trim(), password: passwordInput }
             : {
-                fullName: fullNameInput,
-                email: emailInput,
+                fullName: fullNameInput.trim(),
+                email: emailInput.trim(),
                 password: passwordInput,
                 confirmPassword: passwordInput,
                 selectedRole: selectedRoleInput === 'Author' ? 1 : selectedRoleInput === 'Publisher' ? 2 : 3
@@ -1688,7 +1812,7 @@ function App() {
                 body: JSON.stringify(payload)
             });
 
-            const data = await response.json();
+            const data = await window.safeJsonParse(response);
             if (response.ok) {
                 if (authMode === 'register') {
                     setAuthSuccessMsg('Registration successful! Please sign in now.');
@@ -1724,10 +1848,10 @@ function App() {
                     triggerToast(`Welcome back, ${data.fullName || 'User'}!`);
                 }
             } else {
-                setAuthError(Array.isArray(data) ? data.map(err => err.description || err).join(', ') : (data.message || 'Authentication failed.'));
+                setAuthError(Array.isArray(data) ? data.map(err => err.description || err).join(', ') : (data.message || `Authentication failed (${response.status}).`));
             }
         } catch (err) {
-            setAuthError('Connection error.');
+            setAuthError('Connection error: ' + err.message);
         } finally {
             setAuthLoading(false);
         }
@@ -1750,13 +1874,13 @@ function App() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    email: forgotEmailInput,
+                    email: forgotEmailInput.trim(),
                     newPassword: newPasswordInput,
                     confirmPassword: confirmPasswordInput
                 })
             });
 
-            const data = await response.json();
+            const data = await window.safeJsonParse(response);
             if (response.ok) {
                 triggerToast(data.message || "Password successfully reset ho gaya hai!");
                 setAuthMode('login');
@@ -1765,7 +1889,7 @@ function App() {
                 setNewPasswordInput('');
                 setConfirmPasswordInput('');
             } else {
-                setAuthError(data.message || "Failed to reset password.");
+                setAuthError(data.message || `Failed to reset password (${response.status}).`);
             }
         } catch (err) {
             setAuthError("Connection error: " + err.message);
@@ -1777,6 +1901,8 @@ function App() {
     const handleLogout = async () => {
         try { await fetch('/api/account/logout', { method: 'POST' }); } catch (e) { }
         localStorage.removeItem('isExplicitLogin');
+        localStorage.removeItem('sessionToken');
+        window.clearApiCache();
         setUser({ isLoggedIn: false, fullName: '', email: '', role: '' });
         changeNavState({ activeTab: 'store' });
         setProfileDropdown(false);
@@ -1787,7 +1913,6 @@ function App() {
         switch (selectedMaster) {
             case 'items':
                 return myAuthorBooks.map(b => {
-                    
                     const recordId = b.id || b.Id || (b.raw ? (b.raw.id || b.raw.Id || b.raw.itemNo) : b.itemNo);
                     const recordName = b.itemName || (b.raw ? b.raw.itemName : 'Book');
 
@@ -1911,6 +2036,8 @@ function App() {
     const PlatformRevenueMasterComp = typeof window.PlatformRevenueMaster !== 'undefined' ? window.PlatformRevenueMaster : (typeof PlatformRevenueMaster !== 'undefined' ? PlatformRevenueMaster : null);
     const JournalMasterComp = typeof window.JournalMaster !== 'undefined' ? window.JournalMaster : (typeof JournalMaster !== 'undefined' ? JournalMaster : null);
 
+
+
     return (
         <div className="min-h-screen flex flex-col bg-gray-100 text-slate-800 w-full overflow-x-hidden relative">
 
@@ -1922,7 +2049,6 @@ function App() {
                 </div>
             )}
 
-            
             <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm w-full">
                 <div className="w-full px-4 md:px-8 py-3 flex items-center justify-between gap-4">
 
@@ -2037,7 +2163,7 @@ function App() {
                                 </h1>
                                 <p className="text-xs text-gray-300 mt-1">Manage users, books, approvals and platform settings in one place.</p>
                             </div>
-                            
+
                             <div className="relative" data-dropdown-container="actions">
                                 <button
                                     type="button"
@@ -2061,7 +2187,6 @@ function App() {
                                             { key: 'vendors', label: 'Vendor Master ', icon: 'fa-user-gear' },
                                             { key: 'platform-revenue', label: 'Platform Revenue (70%) ', icon: 'fa-vault' },
                                             { key: 'journals', label: 'Journal Master ', icon: 'fa-newspaper' }
-
                                         ].map(m => (
                                             <button
                                                 key={m.key}
@@ -2092,7 +2217,7 @@ function App() {
                                     <span className="text-xs font-black uppercase text-slate-500 flex items-center gap-1">
                                         <i className="fa-solid fa-list-check text-[#e31b23]"></i> {currentHeaderConfig.title}
                                     </span>
-                                    {selectedMaster !== 'bundles' && selectedMaster !== 'customers' && (
+                                    {selectedMaster !== 'bundles' && selectedMaster !== 'customers' && selectedMaster !== 'single-books' && (
                                         <button
                                             type="button"
                                             onClick={() => {
@@ -2114,6 +2239,7 @@ function App() {
                                             <i className="fa-solid fa-plus"></i> {currentHeaderConfig.buttonText}
                                         </button>
                                     )}
+
                                     {/* BULK UPLOAD BUTTONS FOR ALL MASTERS */}
                                     {selectedMaster === 'items' && (
                                         <button
@@ -2191,6 +2317,7 @@ function App() {
                                 </div>
                             </div>
                         )}
+
                         {(selectedMaster === 'vendors') ? (
                             VendorMasterComp ? (
                                 <VendorMasterComp
@@ -2208,18 +2335,18 @@ function App() {
                                     vendorsList={vendorsList}
                                     triggerToast={triggerToast}
                                 />
-                                ) : <div className="p-6 text-center font-bold">Journal Master Component Not Loaded</div>
-                            ) : (selectedMaster === 'platform-revenue') ? (
-                                PlatformRevenueMasterComp ? (
-                                    <PlatformRevenueMasterComp triggerToast={triggerToast} />
-                                ) : <div className="p-6 text-center font-bold">Platform Revenue Component Not Loaded</div>
-                            ) : (selectedMaster === 'items' && bookPageMode === 'add-book-page') ? (
+                            ) : <div className="p-6 text-center font-bold">Journal Master Component Not Loaded</div>
+                        ) : (selectedMaster === 'platform-revenue') ? (
+                            PlatformRevenueMasterComp ? (
+                                <PlatformRevenueMasterComp triggerToast={triggerToast} />
+                            ) : <div className="p-6 text-center font-bold">Platform Revenue Component Not Loaded</div>
+                        ) : (selectedMaster === 'items' && bookPageMode === 'add-book-page') ? (
                             AddBookFormComp ? (
                                 <AddBookFormComp
                                     categoriesList={categoriesList}
                                     languagesList={languagesList}
-                                        authorsList={authorsList}
-                                        vendorsList={vendorsList}
+                                    authorsList={authorsList}
+                                    vendorsList={vendorsList}
                                     onOpenAddCategoryModal={() => setShowAddCategoryModal(true)}
                                     onOpenAddLanguageModal={() => setShowAddLanguageModal(true)}
                                     onOpenAddAuthorModal={() => setShowAddAuthorModal(true)}
@@ -2265,51 +2392,53 @@ function App() {
                                     onCancel={() => changeNavState({ bookPageMode: 'list' })}
                                 />
                             </div>
-                                ) : selectedMaster === 'items' && bookPageMode === 'edit-book-page' ? (
-                                    EditBookFormComp ? (
-                                        <EditBookFormComp
-                                            editingBook={editingBook}
-                                            languagesList={languagesList}
-                                            onSuccess={(msg) => {
-                                                triggerToast(msg);
-                                                setEditingBook(null);
-                                                fetchAuthorBooks();
-                                                fetchStoreBooks();
-                                                window.history.back();
-                                            }}
-                                            onCancel={() => {
-                                                setEditingBook(null);
-                                                window.history.back();
-                                            }}
-                                        />
-                                    ) : null
-                                    ) : selectedMaster === 'plans' ? (
-                                        <PlanMaster booksList={myAuthorBooks} triggerToast={triggerToast} />
-                                    ) : selectedMaster === 'bundles' ? (
-                                        typeof window.BundleMaster !== 'undefined' ? (
-                                            <window.BundleMaster triggerToast={triggerToast} />
-                                        ) : (
-                                            <BundleMaster triggerToast={triggerToast} />
-                                        )
-                                    ) : selectedMaster === 'single-books' ? (
-                                        typeof window.SingleBookMaster !== 'undefined' ? (
-                                            <window.SingleBookMaster triggerToast={triggerToast} />
-                                        ) : (
-                                            <div>Single Book Master Loading...</div>
-                                        )
-                                    ) : selectedMaster === 'categories' && categoryPageMode === 'add-category-page' ? (
-                                        AddCategoryFormComp ? (
-                                            <AddCategoryFormComp
-                                                onSuccess={(msg) => {
-                                                    triggerToast(msg);
-                                                    fetchCategories();
-                                                    window.history.back();
-                                                }}
-                                                onCancel={() => window.history.back()}
-                                            />
-                                        ) : null
-                                    ) : selectedMaster === 'categories' && categoryPageMode === 'edit-category-page' ? (
-                                    EditCategoryFormComp ? (
+                        ) : selectedMaster === 'items' && bookPageMode === 'edit-book-page' ? (
+                            EditBookFormComp ? (
+                                <EditBookFormComp
+                                    editingBook={editingBook}
+                                    languagesList={languagesList}
+                                    onSuccess={(msg) => {
+                                        triggerToast(msg);
+                                        setEditingBook(null);
+                                        fetchAuthorBooks();
+                                        fetchStoreBooks();
+                                        window.history.back();
+                                    }}
+                                    onCancel={() => {
+                                        setEditingBook(null);
+                                        window.history.back();
+                                    }}
+                                />
+                            ) : null
+                        ) : selectedMaster === 'plans' ? (
+                            <PlanMaster booksList={myAuthorBooks} triggerToast={triggerToast} />
+                        ) : selectedMaster === 'bundles' ? (
+                            typeof window.BundleMaster !== 'undefined' ? (
+                                <window.BundleMaster triggerToast={triggerToast} />
+                            ) : (
+                                <BundleMaster triggerToast={triggerToast} />
+                            )
+                        ) : selectedMaster === 'single-books' ? (
+                            typeof window.SingleBookMaster !== 'undefined' ? (
+                                <window.SingleBookMaster triggerToast={triggerToast} />
+                            ) : (
+                                <div className="p-6 bg-amber-50 border border-amber-300 rounded text-amber-900 font-bold text-xs">
+                                    Single Book Master load nahi hua hai. SingleBookMaster.js ko server par update karein.
+                                </div>
+                            )
+                        ) : selectedMaster === 'categories' && categoryPageMode === 'add-category-page' ? (
+                            AddCategoryFormComp ? (
+                                <AddCategoryFormComp
+                                    onSuccess={(msg) => {
+                                        triggerToast(msg);
+                                        fetchCategories();
+                                        window.history.back();
+                                    }}
+                                    onCancel={() => window.history.back()}
+                                />
+                            ) : null
+                        ) : selectedMaster === 'categories' && categoryPageMode === 'edit-category-page' ? (
+                            EditCategoryFormComp ? (
                                 <EditCategoryFormComp
                                     editingCategory={editingCategory}
                                     onSuccess={(msg) => {
@@ -2328,25 +2457,25 @@ function App() {
                             <div className="w-full bg-white p-6 rounded-lg shadow-md border border-slate-200 space-y-4">
                                 <div className="flex items-center justify-between border-b pb-3">
                                     <div className="flex items-center gap-3">
-                                       <button
-                                          type="button"
-                                          onClick={() => changeNavState({ categoryPageMode: 'list' })}
-                                          className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold p-2.5 rounded-full text-sm cursor-pointer transition shadow-sm">
-                                          <i className="fa-solid fa-arrow-left"></i>
-                                       </button>
-                                       <h3 className="text-xl font-bold text-[#0d233a] flex items-center gap-2">
-                                           <i className="fa-solid fa-layer-group text-amber-600"></i> Bulk Upload Categories
-                                       </h3>
+                                        <button
+                                            type="button"
+                                            onClick={() => changeNavState({ categoryPageMode: 'list' })}
+                                            className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold p-2.5 rounded-full text-sm cursor-pointer transition shadow-sm">
+                                            <i className="fa-solid fa-arrow-left"></i>
+                                        </button>
+                                        <h3 className="text-xl font-bold text-[#0d233a] flex items-center gap-2">
+                                            <i className="fa-solid fa-layer-group text-amber-600"></i> Bulk Upload Categories
+                                        </h3>
                                     </div>
                                 </div>
                                 <BulkCategoryGridContainer
                                     onSuccess={async (msg) => {
                                         triggerToast(msg);
-                                         await fetchCategories();
-                                          changeNavState({ categoryPageMode: 'list' });
+                                        await fetchCategories();
+                                        changeNavState({ categoryPageMode: 'list' });
                                     }}
-                                     onCancel={() => changeNavState({ categoryPageMode: 'list' })}
-                                  />
+                                    onCancel={() => changeNavState({ categoryPageMode: 'list' })}
+                                />
                             </div>
                         ) : selectedMaster === 'languages' && languagePageMode === 'add-language-page' ? (
                             AddLanguageFormComp ? (
@@ -2378,17 +2507,17 @@ function App() {
                         ) : selectedMaster === 'languages' && languagePageMode === 'bulk-language-grid-page' ? (
                             <div className="w-full bg-white p-6 rounded-lg shadow-md border border-slate-200 space-y-4">
                                 <div className="flex items-center justify-between border-b pb-3">
-                                      <div className="flex items-center gap-3">
-                                          <button
-                                              type="button"
-                                              onClick={() => changeNavState({ languagePageMode: 'list' })}
-                                              className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold p-2.5 rounded-full text-sm cursor-pointer transition shadow-sm">
-                                              <i className="fa-solid fa-arrow-left"></i>
-                                          </button>
-                                          <h3 className="text-xl font-bold text-[#0d233a] flex items-center gap-2">
-                                             <i className="fa-solid fa-language text-indigo-600"></i> Bulk Upload Languages
-                                          </h3>
-                                      </div>
+                                    <div className="flex items-center gap-3">
+                                        <button
+                                            type="button"
+                                            onClick={() => changeNavState({ languagePageMode: 'list' })}
+                                            className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold p-2.5 rounded-full text-sm cursor-pointer transition shadow-sm">
+                                            <i className="fa-solid fa-arrow-left"></i>
+                                        </button>
+                                        <h3 className="text-xl font-bold text-[#0d233a] flex items-center gap-2">
+                                            <i className="fa-solid fa-language text-indigo-600"></i> Bulk Upload Languages
+                                        </h3>
+                                    </div>
                                 </div>
                                 <BulkLanguageGridContainer
                                     onSuccess={async (msg) => {
@@ -2428,27 +2557,27 @@ function App() {
                             ) : null
                         ) : selectedMaster === 'authors' && authorPageMode === 'bulk-author-grid-page' ? (
                             <div className="w-full bg-white p-6 rounded-lg shadow-md border border-slate-200 space-y-4">
-                               <div className="flex items-center justify-between border-b pb-3">
-                                   <div className="flex items-center gap-3">
-                                       <button
-                                           type="button"
-                                           onClick={() => changeNavState({ authorPageMode: 'list' })}
-                                           className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold p-2.5 rounded-full text-sm cursor-pointer transition shadow-sm">
-                                           <i className="fa-solid fa-arrow-left"></i>
-                                       </button>
-                                       <h3 className="text-xl font-bold text-[#0d233a] flex items-center gap-2">
-                                          <i className="fa-solid fa-user-pen text-blue-600"></i> Bulk Upload Authors
-                                       </h3>
-                                   </div>
-                               </div>
-                               <BulkAuthorGridContainer
-                                  onSuccess={async (msg) => {
-                                     triggerToast(msg);
-                                     await fetchAuthorsMaster();
-                                     changeNavState({ authorPageMode: 'list' });
-                                  }}
-                                  onCancel={() => changeNavState({ authorPageMode: 'list' })}
-                               />
+                                <div className="flex items-center justify-between border-b pb-3">
+                                    <div className="flex items-center gap-3">
+                                        <button
+                                            type="button"
+                                            onClick={() => changeNavState({ authorPageMode: 'list' })}
+                                            className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold p-2.5 rounded-full text-sm cursor-pointer transition shadow-sm">
+                                            <i className="fa-solid fa-arrow-left"></i>
+                                        </button>
+                                        <h3 className="text-xl font-bold text-[#0d233a] flex items-center gap-2">
+                                            <i className="fa-solid fa-user-pen text-blue-600"></i> Bulk Upload Authors
+                                        </h3>
+                                    </div>
+                                </div>
+                                <BulkAuthorGridContainer
+                                    onSuccess={async (msg) => {
+                                        triggerToast(msg);
+                                        await fetchAuthorsMaster();
+                                        changeNavState({ authorPageMode: 'list' });
+                                    }}
+                                    onCancel={() => changeNavState({ authorPageMode: 'list' })}
+                                />
                             </div>
                         ) : (
                             <div className="w-full bg-white p-6 rounded-lg border border-gray-200 shadow-sm space-y-4">
@@ -2457,7 +2586,6 @@ function App() {
                                     <span className="text-xs text-slate-500">Showing Top {rowsPerPage} Rows</span>
                                 </h3>
 
-                                                                    
                                 <div className="overflow-x-auto overflow-y-auto w-full max-h-[500px] border border-gray-200 rounded-lg shadow-inner">
                                     <table className="w-full text-left text-slate-800 text-xs relative border-collapse">
                                         <thead className="bg-slate-100 text-slate-600 uppercase border-b font-bold sticky top-0 z-20 shadow-sm">
@@ -2527,7 +2655,7 @@ function App() {
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y">
-                                               {currentMasterData.map((item, index) => {
+                                            {currentMasterData.slice(0, rowsPerPage).map((item, index) => {
                                                 const isChecked = selectedMasterIds.includes(item.id);
 
                                                 return (
@@ -2545,7 +2673,7 @@ function App() {
                                                                 if (targetUserId) {
                                                                     window.location.href = `/Reader/Profile?userId=${encodeURIComponent(targetUserId)}`;
                                                                 } else {
-                                                                    triggerToast("Is customer ka user account linked nahi hai.", "error");
+                                                                    handleOpenCustomerFullProfile(item.raw);
                                                                 }
                                                             }
                                                         }}
@@ -2578,9 +2706,9 @@ function App() {
                                                             </>
                                                         ) : selectedMaster === 'items' && item.raw ? (
                                                             <>
-                                                                    <td className="p-3 font-bold text-amber-700">
-                                                                        {getBookCategoryName(item.raw)}
-                                                                    </td>
+                                                                <td className="p-3 font-bold text-amber-700">
+                                                                    {getBookCategoryName(item.raw)}
+                                                                </td>
                                                                 <td className="p-3 font-mono text-slate-600">
                                                                     {item.raw.isbn || item.raw.ISBN || item.raw.Isbn || 'N/A'}
                                                                 </td>
@@ -2589,10 +2717,10 @@ function App() {
                                                                 </td>
                                                                 <td className="p-3 font-bold text-slate-700">
                                                                     {item.raw.extractedPublisherName || item.raw.createdBy || item.raw.CreatedBy || item.raw.publisherName || item.raw.PublisherName || 'System Administrator'}
-                                                                    </td>
-                                                                    <td className="p-3 font-bold text-indigo-700">
-                                                                        {item.raw.vendorName || item.raw.VendorName || 'In-House (B. Jain)'}
-                                                                    </td>
+                                                                </td>
+                                                                <td className="p-3 font-bold text-indigo-700">
+                                                                    {item.raw.vendorName || item.raw.VendorName || 'In-House (B. Jain)'}
+                                                                </td>
                                                                 <td className="p-3 font-medium text-slate-700">
                                                                     {item.raw.language || item.raw.Language || 'English'}
                                                                 </td>
@@ -2626,13 +2754,8 @@ function App() {
                                                                 type="button"
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
-
-                                                                    
                                                                     const targetId = item.id || (item.raw ? (item.raw.id || item.raw.Id || item.raw.itemNo) : item.name);
-
-                                                                   
                                                                     setSelectedMasterIds([]);
-
                                                                     setDeleteConfirmModal({
                                                                         show: true,
                                                                         id: targetId,
@@ -2655,6 +2778,7 @@ function App() {
                         )}
                     </div>
                 )}
+
                 {activeTab === 'vendor-profile' && isVendor && (
                     VendorMasterComp ? (
                         <VendorMasterComp
@@ -2664,6 +2788,7 @@ function App() {
                         />
                     ) : <div className="p-6 text-center font-bold">Loading Vendor Profile...</div>
                 )}
+
                 {activeTab === 'reader-profile' && user.isLoggedIn && (
                     window.EmbeddedReaderProfile ? (
                         <window.EmbeddedReaderProfile
@@ -2696,15 +2821,11 @@ function App() {
                         />
                     ) : <div className="p-6 text-center font-bold">Loading Plans Component...</div>
                 )}
+
                 {activeTab === 'store' && (
                     <main className="w-full space-y-8">
-
-                        
                         <div className="w-full bg-[#e31b23] text-white rounded-2xl shadow-xl overflow-hidden flex flex-col lg:flex-row items-center justify-between p-6 md:p-10 gap-8">
-
-                            
                             <div className="flex items-end justify-center gap-1.5 md:gap-2.5 shrink-0 bg-white/5 p-4 rounded-xl border border-white/10 backdrop-blur-sm">
-
                                 <div className="w-9 md:w-11 h-44 md:h-56 bg-slate-900 border-l-4 border-slate-700 rounded-sm shadow-2xl flex flex-col justify-between p-1 text-[8px] text-amber-200 font-serif font-bold text-center">
                                     <span className="rotate-90 origin-left translate-x-3 translate-y-12 truncate w-28 uppercase tracking-tighter">Boger Repertory</span>
                                 </div>
@@ -2734,9 +2855,7 @@ function App() {
                                 </div>
                             </div>
 
-                            
                             <div className="flex-1 flex flex-col items-center justify-center text-center space-y-3">
-
                                 <div className="inline-flex items-center gap-1.5 bg-amber-400 text-slate-900 font-extrabold text-[10px] md:text-xs px-4 py-1.5 rounded-full uppercase tracking-wider shadow-md">
                                     <i className="fa-solid fa-award"></i> More than 50 Years Of Serving Homoeopathy...
                                 </div>
@@ -2824,6 +2943,7 @@ function App() {
                                 </div>
                             </div>
                         )}
+
                         {/* ACADEMIC & CLINICAL JOURNALS SECTION FOR USERS */}
                         {filteredStoreJournals.length > 0 && (
                             <div className="space-y-4 pt-6 border-t border-gray-200">
@@ -2931,11 +3051,6 @@ function App() {
                                 </div>
                             </div>
                         )}
-
-
-
-
-
                     </main>
                 )}
             </div>
@@ -3046,8 +3161,6 @@ function App() {
             {showBulkUploadModal && (
                 <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[95] flex items-center justify-center p-2 md:p-6 select-none">
                     <div className="bg-white rounded-xl w-full max-w-7xl max-h-[92vh] flex flex-col shadow-2xl relative border-t-8 border-emerald-600 overflow-hidden">
-
-                        {/* MODAL HEADER */}
                         <div className="flex items-center justify-between px-6 py-4 bg-slate-900 text-white border-b border-slate-800">
                             <div className="flex items-center gap-3">
                                 <i className="fa-solid fa-table-cells text-emerald-400 text-2xl"></i>
@@ -3061,12 +3174,12 @@ function App() {
                             </button>
                         </div>
 
-                        {/* GRID TABLE BODY CONTAINER */}
                         <div className="flex-1 overflow-auto p-4 bg-slate-50">
                             <BulkGridFormContainer
                                 categoriesList={categoriesList}
                                 languagesList={languagesList}
                                 authorsList={authorsList}
+                                vendorsList={vendorsList}
                                 onSuccess={async (msg) => {
                                     triggerToast(msg);
                                     setShowBulkUploadModal(false);
@@ -3080,7 +3193,7 @@ function App() {
                 </div>
             )}
 
-            {/* AUTHENTICATION MODAL (SIGN IN / REGISTER) */}
+            {/* AUTHENTICATION MODAL (SIGN IN / REGISTER / FORGOT) */}
             {isAuthOpen && (
                 <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
                     <div className="bg-white rounded-lg w-full max-w-md p-6 shadow-2xl relative space-y-4 border-t-4 border-[#e31b23]">
@@ -3273,11 +3386,10 @@ function App() {
                     </div>
                 </div>
             )}
+
             {/* FULL-SCREEN BOOK DETAILS, ACCESS TIMING & BUNDLE PREVIEW PAGE */}
             {singleBookCheckoutModal && (
                 <div className="fixed inset-0 w-screen h-screen bg-slate-100 z-[90] flex flex-col overflow-hidden">
-
-                    {/* TOP FULL-WIDTH HEADER BAR */}
                     <div className="bg-[#0d233a] text-white px-6 md:px-10 py-4 flex items-center justify-between shrink-0 border-b border-slate-700 shadow-md">
                         <div className="flex items-center gap-3">
                             <div className="w-9 h-9 rounded-lg bg-amber-400/20 border border-amber-400/40 flex items-center justify-center text-amber-400">
@@ -3306,7 +3418,6 @@ function App() {
                         </button>
                     </div>
 
-                    {/* FULL-SCREEN SCROLLABLE BODY */}
                     <div className="flex-1 overflow-y-auto p-4 md:p-8">
                         <div className="w-full space-y-6 pb-8">
                             {isLoadingBookPreview ? (
@@ -3316,7 +3427,6 @@ function App() {
                                 </div>
                             ) : (
                                 <>
-                                    {/* 1. REAL BOOK DETAILS CARD */}
                                     <div className="bg-white rounded-2xl border border-slate-200 p-6 md:p-7 shadow-sm flex flex-col md:flex-row gap-6 items-start">
                                         <img
                                             src={singleBookPreviewData?.coverImage || singleBookCheckoutModal.image || singleBookCheckoutModal.Image || '/images/default-cover.png'}
@@ -3370,13 +3480,12 @@ function App() {
                                         </div>
                                     </div>
 
-                                    {/* 2. ACCESS TIMING (KAB SE KAB TAK AVAILABLE RAHEGA) */}
                                     <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
                                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-3.5">
                                             <div>
                                                 <h4 className="text-sm font-black uppercase text-[#0d233a] flex items-center gap-2">
                                                     <i className="fa-solid fa-calendar-check text-emerald-600"></i>
-                                                    Book Access Timing (Time Dciding to Start to End Date)
+                                                    Book Access Timing (Start to End Date)
                                                 </h4>
                                                 <p className="text-xs text-slate-500 mt-0.5">
                                                     Select the Time Period:
@@ -3424,13 +3533,12 @@ function App() {
                                         })()}
                                     </div>
 
-                                    {/* 3. BUNDLES CONTAINING THIS BOOK (VIEW BUNDLE -> SHOWS ALL BOOKS IN THAT BUNDLE) */}
                                     {suggestedBundlesForBook.length > 0 && (
                                         <div className="bg-indigo-50/80 border border-indigo-200 rounded-2xl p-5 md:p-6 space-y-3.5 shadow-sm">
                                             <div className="flex items-center justify-between">
                                                 <span className="text-sm font-black text-indigo-950 flex items-center gap-2">
                                                     <i className="fa-solid fa-layer-group text-indigo-600"></i>
-                                                    This Book Avalable In Bundle ({suggestedBundlesForBook.length} Bundle):
+                                                    This Book Available In Bundle ({suggestedBundlesForBook.length} Bundle):
                                                 </span>
                                             </div>
 
@@ -3439,7 +3547,6 @@ function App() {
                                                     const isExpanded = expandedBundleId === bnd.bundleId;
                                                     return (
                                                         <div key={bnd.bundleId} className="bg-white border border-indigo-200 rounded-xl overflow-hidden shadow-sm">
-                                                            {/* BUNDLE SUMMARY ROW */}
                                                             <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                                                                 <div>
                                                                     <div className="font-black text-sm text-slate-900 flex items-center gap-2">
@@ -3459,7 +3566,6 @@ function App() {
                                                                     </div>
                                                                 </div>
 
-                                                                
                                                                 <div className="flex flex-wrap items-center gap-2 shrink-0">
                                                                     <button
                                                                         type="button"
@@ -3482,7 +3588,6 @@ function App() {
                                                                 </div>
                                                             </div>
 
-                                                            {/* EXPANDED LIST OF ALL BOOKS INSIDE THIS BUNDLE */}
                                                             {isExpanded && (
                                                                 <div className="bg-slate-50 border-t border-indigo-100 p-4 space-y-2.5">
                                                                     <div className="text-[11px] font-black uppercase text-indigo-900 tracking-wider">
@@ -3526,7 +3631,6 @@ function App() {
                                         </div>
                                     )}
 
-                                    {/* 4. FINAL CONFIRMATION FOOTER BAR (NO VIEW PLANS BUTTON) */}
                                     <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
                                         <div className="text-sm text-slate-600">
                                             Single Book Payable Amount:{' '}
@@ -3552,6 +3656,7 @@ function App() {
                     </div>
                 </div>
             )}
+
             {/* CUSTOMER FULL PROFILE MODAL */}
             {isLoadingCustomerFullProfile && (
                 <div className="fixed inset-0 bg-slate-950/60 z-[95] flex items-center justify-center text-white font-bold text-xs gap-2">
@@ -3563,8 +3668,6 @@ function App() {
             {viewingCustomerFullProfile && (
                 <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-sm z-[95] flex items-center justify-center p-2 md:p-6 overflow-y-auto">
                     <div className="bg-slate-100 w-full max-w-6xl rounded-2xl shadow-2xl border border-slate-300 overflow-hidden my-auto max-h-[94vh] flex flex-col">
-
-                        {/* MODAL TOP BAR */}
                         <div className="bg-[#0d233a] text-white px-6 py-4 flex items-center justify-between shrink-0 border-b border-slate-700">
                             <div className="flex items-center gap-2.5">
                                 <i className="fa-solid fa-id-card text-amber-400 text-lg"></i>
@@ -3579,10 +3682,7 @@ function App() {
                             </button>
                         </div>
 
-                        {/* SCROLLABLE FULL PROFILE BODY */}
                         <div className="p-4 md:p-8 overflow-y-auto space-y-6">
-
-                            {/* 1. USER BANNER CARD */}
                             <div className="w-full bg-gradient-to-r from-[#0d233a] via-[#133150] to-[#163554] px-6 md:px-8 py-6 text-white rounded-2xl shadow flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                                 <div className="flex items-center gap-5">
                                     <div className="w-16 h-16 md:w-20 md:h-20 rounded-full bg-[#be1e2d] border-4 border-white/25 flex items-center justify-center font-black text-3xl text-white shadow-xl shrink-0">
@@ -3603,7 +3703,6 @@ function App() {
                                 </div>
                             </div>
 
-                            {/* 2. PERSONAL & ADDRESS DETAILS */}
                             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 space-y-6">
                                 <div>
                                     <h3 className="text-xs font-black uppercase text-slate-500 tracking-wider mb-3 flex items-center gap-2 border-b pb-2">
@@ -3650,7 +3749,6 @@ function App() {
                                 </div>
                             </div>
 
-                            {/* 3. ACTIVE SUBSCRIPTION PLANS & INCLUDED BOOKS */}
                             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 space-y-4">
                                 <h3 className="text-base font-black text-[#0d233a] flex items-center gap-2 border-b pb-3">
                                     <i className="fa-solid fa-crown text-amber-500"></i>
@@ -3712,7 +3810,6 @@ function App() {
                                 )}
                             </div>
 
-                            {/* 4. PURCHASED BUNDLES */}
                             {viewingCustomerFullProfile.bundles && viewingCustomerFullProfile.bundles.length > 0 && (
                                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 space-y-4">
                                     <h3 className="text-base font-black text-[#0d233a] flex items-center gap-2 border-b pb-3">
@@ -3739,7 +3836,6 @@ function App() {
                                 </div>
                             )}
 
-                            {/* 5. MY LIBRARY & CONTINUE READING */}
                             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 space-y-4">
                                 <div className="flex items-center justify-between border-b pb-3">
                                     <h3 className="text-base font-black text-[#0d233a] flex items-center gap-2">
@@ -3777,7 +3873,6 @@ function App() {
                                     </div>
                                 )}
                             </div>
-
                         </div>
                     </div>
                 </div>
@@ -3823,7 +3918,7 @@ function BulkGridFormContainer({ categoriesList, languagesList, authorsList, ven
         }
         setRows(rows.filter((_, i) => i !== index));
     };
-    
+
     const handleDownloadExcelTemplate = () => {
         if (!window.XLSX) {
             alert("Excel library load ho rahi hai, 2 second baad dubara try karein.");
@@ -3859,7 +3954,6 @@ function BulkGridFormContainer({ categoriesList, languagesList, authorsList, ven
         window.XLSX.writeFile(wb, "BJain_Bulk_Books_Template.xlsx");
     };
 
-    
     const handleExcelFileUpload = (e) => {
         const file = e.target.files && e.target.files[0];
         if (!file) return;
@@ -3882,7 +3976,6 @@ function BulkGridFormContainer({ categoriesList, languagesList, authorsList, ven
                     return;
                 }
 
-                
                 const getCol = (row, possibleHeaders) => {
                     const keys = Object.keys(row);
                     for (const h of possibleHeaders) {
@@ -3913,7 +4006,6 @@ function BulkGridFormContainer({ categoriesList, languagesList, authorsList, ven
                     const vendorRaw = getCol(row, ["vendor name", "vendor", "publisher"]);
                     const priceRaw = getCol(row, ["price", "mrp", "amount", "price (₹)"]);
 
-                    
                     let matchedCatCode = defaultCatCode;
                     if (catRaw && categoriesList.length > 0) {
                         const foundCat = categoriesList.find(c =>
@@ -3925,7 +4017,6 @@ function BulkGridFormContainer({ categoriesList, languagesList, authorsList, ven
                         }
                     }
 
-                    
                     let matchedAuthor = defaultAuthorName;
                     if (authorRaw && authorsList.length > 0) {
                         const foundAuth = authorsList.find(a =>
@@ -3934,7 +4025,6 @@ function BulkGridFormContainer({ categoriesList, languagesList, authorsList, ven
                         matchedAuthor = foundAuth ? foundAuth.name : authorRaw;
                     }
 
-                    
                     let matchedLang = defaultLangName;
                     if (langRaw && languagesList.length > 0) {
                         const foundLang = languagesList.find(l =>
@@ -3974,7 +4064,6 @@ function BulkGridFormContainer({ categoriesList, languagesList, authorsList, ven
         e.target.value = "";
     };
 
-   
     const handleParseExcelPaste = () => {
         if (!pasteText || !pasteText.trim()) {
             alert("Kripya Excel se copy kiya hua data text area me paste karein.");
@@ -3986,17 +4075,8 @@ function BulkGridFormContainer({ categoriesList, languagesList, authorsList, ven
 
         lines.forEach(line => {
             if (!line.trim()) return;
-
-            
             const cols = line.split('\t');
 
-            /* Excel Columns Sequence Expected:
-               Col 0: Item Code (Optional)
-               Col 1: ISBN
-               Col 2: Book Name
-               Col 3: Price
-               Col 4: Pages
-            */
             const itemNo = cols[0] ? cols[0].trim() : '';
             const isbn = cols[1] ? cols[1].trim() : '';
             const itemName = cols[2] ? cols[2].trim() : (cols[0] ? cols[0].trim() : '');
@@ -4009,6 +4089,7 @@ function BulkGridFormContainer({ categoriesList, languagesList, authorsList, ven
                 itemName: itemName,
                 categoryCode: categoriesList.length > 0 ? (categoriesList[0].categoryCode || categoriesList[0].CategoryCode) : '',
                 authorName: authorsList.length > 0 ? authorsList[0].name : '',
+                vendorName: '',
                 language: languagesList.length > 0 ? (languagesList[0].name || languagesList[0].languageName) : 'English',
                 price: price,
                 noOfPages: noOfPages,
@@ -4056,11 +4137,11 @@ function BulkGridFormContainer({ categoriesList, languagesList, authorsList, ven
                 method: 'POST',
                 body: formData
             });
-            const data = await res.json();
+            const data = await window.safeJsonParse(res);
             if (res.ok && data.success) {
                 onSuccess(data.message);
             } else {
-                alert(data.message || "Bulk Grid Upload Failed.");
+                alert(data.message || `Bulk Grid Upload Failed (${res.status}).`);
             }
         } catch (err) {
             alert("Error: " + err.message);
@@ -4071,7 +4152,6 @@ function BulkGridFormContainer({ categoriesList, languagesList, authorsList, ven
 
     return (
         <form onSubmit={handleSubmitGrid} className="space-y-4 text-xs">
-            {/* DIRECT EXCEL FILE ATTACH (.xlsx / .xls / .csv) BAR */}
             <div className="bg-blue-50 p-4 rounded-lg border border-blue-200 flex flex-wrap items-center justify-between gap-4">
                 <div>
                     <div className="flex items-center gap-2 font-bold text-blue-950 text-xs">
@@ -4102,7 +4182,7 @@ function BulkGridFormContainer({ categoriesList, languagesList, authorsList, ven
                     </label>
                 </div>
             </div>
-            {/* EXCEL PASTE QUICK BAR */}
+
             <div className="bg-emerald-50 p-4 rounded-lg border border-emerald-300 space-y-3">
                 <div className="flex justify-between items-center">
                     <div className="flex items-center gap-2">
@@ -4115,7 +4195,7 @@ function BulkGridFormContainer({ categoriesList, languagesList, authorsList, ven
                         type="button"
                         onClick={() => setShowPasteBox(!showPasteBox)}
                         className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-3 py-1.5 rounded text-xs transition cursor-pointer flex items-center gap-1.5">
-                        <i className="fa-solid fa-[#e31b23] fa-paste"></i>
+                        <i className="fa-solid fa-paste"></i>
                         {showPasteBox ? 'Hide Paste Box' : 'Paste Excel Data Here'}
                     </button>
                 </div>
@@ -4144,7 +4224,6 @@ function BulkGridFormContainer({ categoriesList, languagesList, authorsList, ven
                 )}
             </div>
 
-            {/* TABLE GRID */}
             <div className="overflow-x-auto border border-slate-300 rounded-lg shadow-sm bg-white">
                 <table className="w-full text-left text-xs border-collapse">
                     <thead className="bg-slate-100 text-slate-700 font-bold uppercase border-b border-slate-300 sticky top-0 z-10">
@@ -4347,15 +4426,16 @@ function BulkAuthorGridContainer({ onSuccess, onCancel }) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(valid)
             });
-            const data = await res.json();
+            const data = await window.safeJsonParse(res);
             if (res.ok && data.success) onSuccess(data.message);
-            else alert(data.message || "Bulk Upload Failed.");
+            else alert(data.message || `Bulk Upload Failed (${res.status}).`);
         } catch (err) {
             alert("Error: " + err.message);
         } finally {
             setIsUploading(false);
         }
     };
+
     const handleDownloadAuthorTemplate = () => {
         if (!window.XLSX) return alert("Excel library load ho rahi hai, 2 second baad try karein.");
         const ws = window.XLSX.utils.json_to_sheet([
@@ -4393,6 +4473,7 @@ function BulkAuthorGridContainer({ onSuccess, onCancel }) {
         reader.readAsArrayBuffer(file);
         e.target.value = "";
     };
+
     return (
         <form onSubmit={handleSubmit} className="space-y-4 text-xs">
             <div className="bg-blue-50 p-4 rounded-lg border border-blue-200 flex flex-wrap items-center justify-between gap-4">
@@ -4490,15 +4571,16 @@ function BulkCategoryGridContainer({ onSuccess, onCancel }) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(valid)
             });
-            const data = await res.json();
+            const data = await window.safeJsonParse(res);
             if (res.ok && data.success) onSuccess(data.message);
-            else alert(data.message || "Bulk Upload Failed.");
+            else alert(data.message || `Bulk Upload Failed (${res.status}).`);
         } catch (err) {
             alert("Error: " + err.message);
         } finally {
             setIsUploading(false);
         }
     };
+
     const handleDownloadCategoryTemplate = () => {
         if (!window.XLSX) return alert("Excel library load ho rahi hai, 2 second baad try karein.");
         const ws = window.XLSX.utils.json_to_sheet([
@@ -4652,15 +4734,16 @@ function BulkLanguageGridContainer({ onSuccess, onCancel }) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(valid)
             });
-            const data = await res.json();
+            const data = await window.safeJsonParse(res);
             if (res.ok && data.success) onSuccess(data.message);
-            else alert(data.message || "Bulk Upload Failed.");
+            else alert(data.message || `Bulk Upload Failed (${res.status}).`);
         } catch (err) {
             alert("Error: " + err.message);
         } finally {
             setIsUploading(false);
         }
     };
+
     const handleDownloadLanguageTemplate = () => {
         if (!window.XLSX) return alert("Excel library load ho rahi hai, 2 second baad try karein.");
         const ws = window.XLSX.utils.json_to_sheet([
@@ -4777,7 +4860,6 @@ function BulkLanguageGridContainer({ onSuccess, onCancel }) {
         </form>
     );
 }
-
 
 const containerElement = document.getElementById('root') || document.getElementById('main-app-container');
 if (containerElement) {

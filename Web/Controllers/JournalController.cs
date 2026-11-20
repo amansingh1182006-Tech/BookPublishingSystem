@@ -398,7 +398,7 @@ namespace BookPublishingSystem.Web.Controllers
             }
 
             if (journal == null)
-                return NotFound($"Journal '{cleanId}' database mein nahi mila.");
+                return NotFound($"Journal '{cleanId}' Not in Database.");
 
             string jCode = journal.JournalCode.Trim().ToUpper();
             string journalFolder = Path.Combine(GetDriveBooksBasePath(), jCode);
@@ -456,7 +456,7 @@ namespace BookPublishingSystem.Web.Controllers
                             }
 
                             if (!extractedPages.Any())
-                                return NotFound("Journal PDF chunks physical disk location par nahi mile.");
+                                return NotFound("Journal PDF chunk is noi on physicl Disk Location.");
 
                            
                             int pagesPerChunk = 4;
