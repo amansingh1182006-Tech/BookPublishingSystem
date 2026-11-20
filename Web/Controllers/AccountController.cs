@@ -151,7 +151,7 @@ namespace Web.Controllers
 
                 string newSessionToken = Guid.NewGuid().ToString();
 
-                // Safe UserSession tracking: agar server DB mein UserSessions table missing ho to login crash na ho
+                
                 try
                 {
                     var activeSessions = await _dbContext.Set<UserSession>()
