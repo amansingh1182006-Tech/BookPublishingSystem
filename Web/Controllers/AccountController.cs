@@ -149,32 +149,42 @@ namespace Web.Controllers
                 if (!result.Succeeded)
                     return Unauthorized(new { success = false, message = "Invalid email or password." });
 
-                var activeSessions = await _dbContext.Set<UserSession>()
-                    .Where(s => s.UserId == user.Id && s.IsActive)
-                    .ToListAsync();
+                string newSessionToken = Guid.NewGuid().ToString();
 
-                foreach (var session in activeSessions)
+                // Safe UserSession tracking: agar server DB mein UserSessions table missing ho to login crash na ho
+                try
                 {
-                    session.IsActive = false;
+                    var activeSessions = await _dbContext.Set<UserSession>()
+                        .Where(s => s.UserId == user.Id && s.IsActive)
+                        .ToListAsync();
+
+                    foreach (var session in activeSessions)
+                    {
+                        session.IsActive = false;
+                    }
+
+                    var newSession = new UserSession
+                    {
+                        UserId = user.Id,
+                        SessionToken = newSessionToken,
+                        IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
+                        LoginTime = DateTime.UtcNow,
+                        LastActiveTime = DateTime.UtcNow,
+                        IsActive = true
+                    };
+
+                    _dbContext.Set<UserSession>().Add(newSession);
+                    await _dbContext.SaveChangesAsync();
+                }
+                catch
+                {
+                    _dbContext.ChangeTracker.Clear();
                 }
 
-                string newSessionToken = Guid.NewGuid().ToString();
-                string? ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
-
-                var newSession = new UserSession
+                if (string.IsNullOrEmpty(user.SecurityStamp))
                 {
-                    UserId = user.Id,
-                    SessionToken = newSessionToken,
-                    IpAddress = ipAddress,
-                    LoginTime = DateTime.UtcNow,
-                    LastActiveTime = DateTime.UtcNow,
-                    IsActive = true
-                };
-
-                _dbContext.Set<UserSession>().Add(newSession);
-                await _dbContext.SaveChangesAsync();
-
-                await _userManager.UpdateSecurityStampAsync(user);
+                    await _userManager.UpdateSecurityStampAsync(user);
+                }
 
                 var claims = new List<Claim>
                 {
@@ -396,7 +406,7 @@ namespace Web.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { success = false, message = "Error loading profile.", detail = ex.InnerException?.Message ?? ex.Message });
+                return StatusCode(500, new { success = false, message = "Error loading profile.", detail = ex.Message });
             }
         }
 
@@ -404,22 +414,29 @@ namespace Web.Controllers
         [HttpPost("logout")]
         public async Task<IActionResult> Logout()
         {
-            if (User.Identity?.IsAuthenticated == true)
+            try
             {
-                var userId = _userManager.GetUserId(User);
-                var tokenClaim = User.FindFirstValue("SessionToken");
-
-                if (!string.IsNullOrEmpty(userId) && !string.IsNullOrEmpty(tokenClaim))
+                if (User.Identity?.IsAuthenticated == true)
                 {
-                    var currentSession = await _dbContext.Set<UserSession>()
-                        .FirstOrDefaultAsync(s => s.UserId == userId && s.SessionToken == tokenClaim);
+                    var userId = _userManager.GetUserId(User);
+                    var tokenClaim = User.FindFirstValue("SessionToken");
 
-                    if (currentSession != null)
+                    if (!string.IsNullOrEmpty(userId) && !string.IsNullOrEmpty(tokenClaim))
                     {
-                        currentSession.IsActive = false;
-                        await _dbContext.SaveChangesAsync();
+                        var currentSession = await _dbContext.Set<UserSession>()
+                            .FirstOrDefaultAsync(s => s.UserId == userId && s.SessionToken == tokenClaim);
+
+                        if (currentSession != null)
+                        {
+                            currentSession.IsActive = false;
+                            await _dbContext.SaveChangesAsync();
+                        }
                     }
                 }
+            }
+            catch
+            {
+                _dbContext.ChangeTracker.Clear();
             }
 
             await _signInManager.SignOutAsync();
