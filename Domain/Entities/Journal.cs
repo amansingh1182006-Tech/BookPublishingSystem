@@ -44,6 +44,12 @@ namespace BookPublishingSystem.Domain.Entities
         public string CoverImagePath { get; set; } = "/images/default-cover.png";
         [MaxLength(500)]
         public string? PdfFilePath { get; set; }
+        public decimal Price { get; set; } = 0m;
+
+        public Guid? VendorId { get; set; }
+
+        [MaxLength(200)]
+        public string VendorName { get; set; } = "In-House (B. Jain)";
 
         public bool IsActive { get; set; } = true;
 

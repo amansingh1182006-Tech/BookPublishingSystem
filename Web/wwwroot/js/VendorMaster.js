@@ -67,6 +67,25 @@ function VendorMaster({ booksList = [], triggerToast, isVendorSelfView = false }
             if (res.ok) {
                 const data = await res.json();
                 if (data.success && Array.isArray(data.books)) {
+                    let combinedList = [...data.books];
+                    try {
+                        const resJrn = await fetch('/api/journal/all');
+                        if (resJrn.ok) {
+                            const jrnList = await resJrn.json();
+                            const matchedJrns = (Array.isArray(jrnList) ? jrnList : [])
+                                .filter(j => (j.vendorName || '').trim().toLowerCase() === vName)
+                                .map(j => ({
+                                    id: j.id,
+                                    itemNo: j.journalCode,
+                                    itemName: `[Journal] ${j.name}`,
+                                    noOfPages: j.noOfPages || 50,
+                                    price: j.price || 0
+                                }));
+                            combinedList = [...combinedList, ...matchedJrns];
+                        }
+                    } catch (e) { }
+                    setVendorBooks(combinedList);
+                    return combinedList;
                     setVendorBooks(data.books);
                     return data.books;
                 }

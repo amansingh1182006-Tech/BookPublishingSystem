@@ -476,6 +476,34 @@ namespace Web.Controllers
             await _dbContext.SaveChangesAsync();
 
             await EnsureSnapshotTableAsync();
+            try
+            {
+                await _dbContext.Database.ExecuteSqlRawAsync(@"
+                    IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'PurchasedJournalSnapshots')
+                    BEGIN
+                        CREATE TABLE PurchasedJournalSnapshots (
+                            Id UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
+                            TransactionId NVARCHAR(150) NOT NULL,
+                            UserId NVARCHAR(450) NOT NULL,
+                            JournalId UNIQUEIDENTIFIER NOT NULL,
+                            AccessSource NVARCHAR(100) NOT NULL,
+                            ValidTill DATETIME2 NULL,
+                            LockedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE()
+                        );
+                    END");
+
+                var bundleJournalIds = await _dbContext.Database
+                    .SqlQueryRaw<Guid>("SELECT JournalId AS Value FROM BundleJournalItems WHERE BundleId = {0}", bundle.Id)
+                    .ToListAsync();
+
+                foreach (var jId in bundleJournalIds.Distinct())
+                {
+                    await _dbContext.Database.ExecuteSqlRawAsync(
+                        "INSERT INTO PurchasedJournalSnapshots (Id, TransactionId, UserId, JournalId, AccessSource, ValidTill, LockedAt) VALUES ({0}, {1}, {2}, {3}, {4}, {5}, {6})",
+                        Guid.NewGuid(), txnId, user.Id, jId, $"Bundle:{bundle.BundleName}", validTillUtc, nowUtc);
+                }
+            }
+            catch { }
             foreach (var bId in bundleBookIds)
             {
                 await _dbContext.Database.ExecuteSqlRawAsync(

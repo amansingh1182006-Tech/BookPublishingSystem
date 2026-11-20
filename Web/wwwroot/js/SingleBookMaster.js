@@ -32,6 +32,19 @@ function SingleBookMaster({ triggerToast }) {
             setLoading(false);
         }
     };
+    const journalsRes = await fetch('/api/journal/all');
+    if (journalsRes.ok) {
+        const jrns = await journalsRes.json();
+        const mappedJournals = (Array.isArray(jrns) ? jrns : [])
+            .filter(j => j.isActive !== false)
+            .map(j => ({
+                id: j.id,
+                itemName: `[Journal] ${j.name}`,
+                price: j.price ?? 0,
+                itemType: 'Journal'
+            }));
+        setBooksList(prev => [...prev, ...mappedJournals]);
+    }
 
     useEffect(() => {
         fetchAllData();
@@ -62,6 +75,7 @@ function SingleBookMaster({ triggerToast }) {
                 body: JSON.stringify({
                     userId: selectedUserId,
                     bookId: selectedBookId,
+                    itemType: (booksList.find(b => String(b.id) === String(selectedBookId))?.itemType) || 'Book',
                     customPrice: customPrice !== '' ? parseFloat(customPrice) : null
                 })
             });

@@ -24,7 +24,6 @@ namespace Web.Areas.Reader.Controllers
             _userManager = userManager;
         }
 
-        // GET ALL PUBLISHED BOOKS FOR CATALOG
         [HttpGet("all-books")]
         public async Task<IActionResult> GetAllBooks()
         {
@@ -65,14 +64,14 @@ namespace Web.Areas.Reader.Controllers
                 b.image,
                 b.author,
                 b.chunkCount,
-                isRoyaltyApplicable = royaltySet.Contains(b.id), // Home Page ke liye sirf Yes/No flag
+                isRoyaltyApplicable = royaltySet.Contains(b.id), 
                 b.createdAt
             }).ToList();
 
             return Ok(books);
         }
 
-        //  GET ONLY LOGGED-IN READER'S PURCHASED BOOKS
+        
         [HttpGet("my-library")]
         [Authorize]
         public async Task<IActionResult> GetMyLibrary()

@@ -74,8 +74,6 @@ namespace Web.Areas.Author.Controllers
                         matchedAuthorMasterId = existingAuthor.Id;
                     }
                 }
-
-                // Vendor Name ya Vendor Code ke basis par Vendor link karein
                 Guid? matchedVendorId = null;
                 string finalVendorName = "In-House (B. Jain)";
                 if (!string.IsNullOrWhiteSpace(dto.VendorName))
@@ -175,11 +173,11 @@ namespace Web.Areas.Author.Controllers
         public async Task<IActionResult> BulkUploadGrid([FromForm] BulkGridUploadRequest request)
         {
             if (request == null || request.Books == null || !request.Books.Any())
-                return BadRequest(new { success = false, message = "Koi book data provide nahi kiya gaya." });
+                return BadRequest(new { success = false, message = "This is not Provide any book of data." });
 
             var currentUser = await _userManager.GetUserAsync(User);
             if (currentUser == null)
-                return Unauthorized(new { success = false, message = "Session expire ho gaya hai." });
+                return Unauthorized(new { success = false, message = "Session is expire." });
 
             int successCount = 0;
             var errorLogs = new List<string>();
@@ -304,7 +302,7 @@ namespace Web.Areas.Author.Controllers
             return Ok(new
             {
                 success = true,
-                message = $"{successCount} Books pending approval list me save ho gayi hain!",
+                message = $"{successCount} Books Save in list!",
                 errors = errorLogs
             });
         }
@@ -403,7 +401,7 @@ namespace Web.Areas.Author.Controllers
 
                 if (book == null)
                 {
-                    return NotFound(new { success = false, message = $"Book '{id}' database mein nahi mila." });
+                    return NotFound(new { success = false, message = $"Book '{id}' Not in Database." });
                 }
 
                 book.IsPublished = true;
@@ -442,7 +440,7 @@ namespace Web.Areas.Author.Controllers
                 }
 
                 if (book == null)
-                    return NotFound(new { success = false, message = $"Book '{id}' database mein nahi mila." });
+                    return NotFound(new { success = false, message = $"Book '{id}' Not in Database." });
 
                 
                 if (!string.IsNullOrWhiteSpace(dto.ItemName)) book.ItemName = dto.ItemName.Trim();
@@ -562,7 +560,7 @@ namespace Web.Areas.Author.Controllers
 
                 if (book == null)
                 {
-                    return NotFound(new { success = false, message = $"Book '{cleanId}' database me nahi mila." });
+                    return NotFound(new { success = false, message = $"Book '{cleanId}' Not in Database." });
                 }
 
                 Guid targetBookId = book.Id;
@@ -658,7 +656,7 @@ namespace Web.Areas.Author.Controllers
                 book = await _dbContext.Books.FirstOrDefaultAsync(b => b.ItemNo.ToLower() == cleanId.ToLower());
             }
 
-            if (book == null) return NotFound($"Book '{cleanId}' database mein nahi mila.");
+            if (book == null) return NotFound($"Book '{cleanId}' Not in Database.");
 
             Guid bookId = book.Id;
 
@@ -739,7 +737,7 @@ namespace Web.Areas.Author.Controllers
                         }
                     }
 
-                    if (!extractedPages.Any()) return NotFound("PDF Chunks physical disk location par nahi mile.");
+                    if (!extractedPages.Any()) return NotFound("PDF Chunks is not Available on Physical Disk.");
 
                     int pagesPerChunk = 4;
                     int totalExtracted = extractedPages.Count;

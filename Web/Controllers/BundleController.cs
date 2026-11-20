@@ -27,6 +27,16 @@ namespace Web.Controllers
         {
             try
             {
+                await _dbContext.Database.ExecuteSqlRawAsync(@"
+                    IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'BundleJournalItems')
+                    BEGIN
+                        CREATE TABLE BundleJournalItems (
+                            Id UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
+                            BundleId UNIQUEIDENTIFIER NOT NULL,
+                            JournalId UNIQUEIDENTIFIER NOT NULL
+                        );
+                    END");
+
                 var royaltyBookIds = await _dbContext.VendorRoyaltyRules
                     .Where(r => r.IsRoyaltyApplicable && (r.LiveStatus == null || r.LiveStatus == "" || r.LiveStatus == "Live" || r.LiveStatus == "Active"))
                     .Select(r => r.BookId)
@@ -42,27 +52,59 @@ namespace Web.Controllers
                     .OrderByDescending(b => b.CreatedAt)
                     .ToListAsync();
 
-                var bundles = rawBundles.Select(b => new
+                var allJournalsMap = await _dbContext.Journals
+                    .ToDictionaryAsync(j => j.Id, j => j);
+
+                var bundles = new List<object>();
+
+                foreach (var b in rawBundles)
                 {
-                    b.Id,
-                    b.BundleName,
-                    b.Description,
-                    b.NumberOfTitles,
-                    b.TotalPrice,
-                    b.DiscountPercentage,
-                    b.FinalPrice,
-                    b.IsActive,
-                    b.CreatedAt,
-                    BookTitles = b.BundleItems.Select(bi => new
+                    var jrnIds = await _dbContext.Database
+                        .SqlQueryRaw<Guid>("SELECT JournalId AS Value FROM BundleJournalItems WHERE BundleId = {0}", b.Id)
+                        .ToListAsync();
+
+                    var bookTitlesList = b.BundleItems.Select(bi => new
                     {
                         bi.BookId,
                         BookName = bi.Book != null ? bi.Book.ItemName : "N/A",
                         AuthorName = bi.Book != null && bi.Book.AuthorMaster != null ? bi.Book.AuthorMaster.AuthorName : "B. Jain Author",
                         CoverImage = bi.Book != null ? (bi.Book.CoverImagePath ?? "/images/default-cover.png") : "/images/default-cover.png",
                         Price = bi.Book != null ? bi.Book.Price : 0m,
-                        IsRoyalty = royaltySet.Contains(bi.BookId)
-                    }).ToList()
-                }).ToList();
+                        IsRoyalty = royaltySet.Contains(bi.BookId),
+                        ItemType = "Book"
+                    }).ToList();
+
+                    foreach (var jId in jrnIds)
+                    {
+                        if (allJournalsMap.TryGetValue(jId, out var jrn))
+                        {
+                            bookTitlesList.Add(new
+                            {
+                                BookId = jrn.Id,
+                                BookName = $"[Journal] {jrn.Name}",
+                                AuthorName = jrn.PublisherName ?? "B. Jain Publishers",
+                                CoverImage = string.IsNullOrWhiteSpace(jrn.CoverImagePath) ? "/images/default-cover.png" : jrn.CoverImagePath,
+                                Price = jrn.Price,
+                                IsRoyalty = royaltySet.Contains(jrn.Id),
+                                ItemType = "Journal"
+                            });
+                        }
+                    }
+
+                    bundles.Add(new
+                    {
+                        b.Id,
+                        b.BundleName,
+                        b.Description,
+                        b.NumberOfTitles,
+                        b.TotalPrice,
+                        b.DiscountPercentage,
+                        b.FinalPrice,
+                        b.IsActive,
+                        b.CreatedAt,
+                        BookTitles = bookTitlesList
+                    });
+                }
 
                 return Ok(bundles);
             }
@@ -83,6 +125,16 @@ namespace Web.Controllers
             if (bundle == null)
                 return NotFound(new { message = "Bundle not found." });
 
+            var jrnIds = await _dbContext.Database
+                .SqlQueryRaw<Guid>("SELECT JournalId AS Value FROM BundleJournalItems WHERE BundleId = {0}", bundle.Id)
+                .ToListAsync();
+
+            var combinedSelectedIds = bundle.BundleItems
+                .Select(bi => bi.BookId)
+                .Concat(jrnIds)
+                .Distinct()
+                .ToList();
+
             return Ok(new
             {
                 bundle.Id,
@@ -93,7 +145,7 @@ namespace Web.Controllers
                 bundle.DiscountPercentage,
                 bundle.FinalPrice,
                 bundle.IsActive,
-                SelectedBookIds = bundle.BundleItems.Select(bi => bi.BookId).ToList()
+                SelectedBookIds = combinedSelectedIds
             });
         }
 
@@ -103,22 +155,49 @@ namespace Web.Controllers
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
 
-            if (dto.SelectedBookIds == null || dto.SelectedBookIds.Count == 0)
-                return BadRequest(new { message = "Please select at least 1 book title for the bundle." });
+            var journalIdsFromHeader = new List<Guid>();
+            if (Request.Headers.TryGetValue("X-Selected-Journals", out var jHeader) && !string.IsNullOrWhiteSpace(jHeader))
+            {
+                foreach (var part in jHeader.ToString().Split(',', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    if (Guid.TryParse(part.Trim(), out var jGuid) && jGuid != Guid.Empty)
+                        journalIdsFromHeader.Add(jGuid);
+                }
+            }
+
+            if ((dto.SelectedBookIds == null || dto.SelectedBookIds.Count == 0) && journalIdsFromHeader.Count == 0)
+                return BadRequest(new { message = "Please select at least 1 book or journal title for the bundle." });
+            
 
             try
             {
-                var distinctBookIds = dto.SelectedBookIds
-                    .Where(id => id != Guid.Empty)
+                var incomingIds = (dto.SelectedBookIds ?? new List<Guid>())
+                     .Where(id => id != Guid.Empty)
+                     .Distinct()
+                     .ToList();
+
+                
+                var selectedBooks = await _dbContext.Books
+                    .Where(b => incomingIds.Contains(b.Id))
+                    .ToListAsync();
+
+                var actualBookIds = selectedBooks.Select(b => b.Id).ToList();
+
+                
+                var allCandidateJournalIds = incomingIds
+                    .Except(actualBookIds)
+                    .Concat(journalIdsFromHeader)
                     .Distinct()
                     .ToList();
 
-                var selectedBooks = await _dbContext.Books
-                    .Where(b => distinctBookIds.Contains(b.Id))
-                    .ToListAsync();
+                var selectedJournals = allCandidateJournalIds.Any()
+                    ? await _dbContext.Journals.Where(j => allCandidateJournalIds.Contains(j.Id)).ToListAsync()
+                    : new List<Journal>();
 
-                decimal calculatedMRP = selectedBooks.Sum(b => b.Price);
-                int titlesCount = selectedBooks.Count;
+                var actualJournalIds = selectedJournals.Select(j => j.Id).ToList();
+
+                decimal calculatedMRP = selectedBooks.Sum(b => b.Price) + selectedJournals.Sum(j => j.Price);
+                int titlesCount = selectedBooks.Count + selectedJournals.Count;
 
                 Bundle bundle;
 
@@ -162,7 +241,7 @@ namespace Web.Controllers
                     };
                     _dbContext.Bundles.Add(bundle);
                 }
-                foreach (var bookId in distinctBookIds)
+                foreach (var bookId in actualBookIds)
                 {
                     _dbContext.BundleItems.Add(new BundleItem
                     {
@@ -173,6 +252,24 @@ namespace Web.Controllers
                 }
 
                 await _dbContext.SaveChangesAsync();
+
+                await _dbContext.Database.ExecuteSqlRawAsync(@"
+                    IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'BundleJournalItems')
+                    BEGIN
+                        CREATE TABLE BundleJournalItems (
+                            Id UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
+                            BundleId UNIQUEIDENTIFIER NOT NULL,
+                            JournalId UNIQUEIDENTIFIER NOT NULL
+                        );
+                    END");
+
+                await _dbContext.Database.ExecuteSqlRawAsync("DELETE FROM BundleJournalItems WHERE BundleId = {0}", bundle.Id);
+                foreach (var jId in actualJournalIds)
+                {
+                    await _dbContext.Database.ExecuteSqlRawAsync(
+                        "INSERT INTO BundleJournalItems (Id, BundleId, JournalId) VALUES ({0}, {1}, {2})",
+                        Guid.NewGuid(), bundle.Id, jId);
+                }
 
                 return Ok(new
                 {
@@ -206,7 +303,7 @@ namespace Web.Controllers
                 {
                     _dbContext.BundleItems.RemoveRange(existingItems);
                 }
-
+                await _dbContext.Database.ExecuteSqlRawAsync("DELETE FROM BundleJournalItems WHERE BundleId = {0}", id);
                 _dbContext.Bundles.Remove(bundle);
 
                 await _dbContext.SaveChangesAsync();

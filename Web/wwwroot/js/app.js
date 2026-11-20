@@ -138,6 +138,42 @@ function SecurePdfViewerModal({ book, user, onClose }) {
             window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
         }
     }, []);
+    useEffect(() => {
+        const blockShortcuts = (e) => {
+            if ((e.ctrlKey || e.metaKey) && ['p', 's', 'u'].includes(e.key.toLowerCase())) {
+                e.preventDefault();
+                e.stopPropagation();
+                return false;
+            }
+            if (e.key === 'PrintScreen') {
+                e.preventDefault();
+                return false;
+            }
+        };
+
+        const blockContextMenu = (e) => {
+            e.preventDefault();
+            return false;
+        };
+
+        // Browser menu se bhi Print dabane par page blank dikhane ke liye CSS protection
+        const printStyle = document.createElement('style');
+        printStyle.id = 'drm-print-blocker';
+        printStyle.innerHTML = `@media print { body * { display: none !important; visibility: hidden !important; } }`;
+        document.head.appendChild(printStyle);
+
+        window.addEventListener('keydown', blockShortcuts, true);
+        document.addEventListener('keydown', blockShortcuts, true);
+        document.addEventListener('contextmenu', blockContextMenu, true);
+
+        return () => {
+            window.removeEventListener('keydown', blockShortcuts, true);
+            document.removeEventListener('keydown', blockShortcuts, true);
+            document.removeEventListener('contextmenu', blockContextMenu, true);
+            const existingStyle = document.getElementById('drm-print-blocker');
+            if (existingStyle) existingStyle.remove();
+        };
+    }, []);
 
     useEffect(() => {
         let isMounted = true;
@@ -153,6 +189,7 @@ function SecurePdfViewerModal({ book, user, onClose }) {
                
                 const endpoints = [
                     `/api/author/book/view-pdf/${encodedVal}`,
+                    `/api/journal/view-pdf/${encodedVal}`,
                     `/api/reader/reader/stream-book/${encodedVal}`,
                     `/api/reader/stream-book/${encodedVal}`
                 ];
@@ -227,14 +264,22 @@ function SecurePdfViewerModal({ book, user, onClose }) {
             await renderTaskRef.current.promise;
 
             context.save();
-            context.font = "bold 15px Arial";
-            context.fillStyle = "rgba(190, 30, 45, 0.18)";
-            context.rotate((-25 * Math.PI) / 180);
+            const fontSize = Math.max(18, Math.round(16 * (zoomScale || 1.35)));
+            context.font = `900 ${fontSize}px 'Segoe UI', Arial, sans-serif`;
+            context.fillStyle = "rgba(190, 30, 45, 0.34)";
+            context.textAlign = "center";
+            context.textBaseline = "middle";
+            context.rotate((-28 * Math.PI) / 180);
 
-            const watermarkText = `${userEmail} | ${new Date().toLocaleDateString()} | B. JAIN DRM PROTECTED`;
-            for (let i = -canvas.height; i < canvas.height * 2; i += 140) {
-                for (let j = -canvas.width; j < canvas.width * 2; j += 260) {
-                    context.fillText(watermarkText, j, i);
+            const watermarkText = `USER ID: ${userEmail}  |  ${new Date().toLocaleDateString('en-IN')}  |  B. JAIN DRM`;
+            const textMetrics = context.measureText(watermarkText);
+            const stepX = Math.max(textMetrics.width + 110, 440);
+            const stepY = 210;
+
+            for (let y = -canvas.height; y < canvas.height * 2; y += stepY) {
+                const rowOffset = (Math.abs(Math.round(y / stepY)) % 2) * (stepX / 2);
+                for (let x = -canvas.width; x < canvas.width * 2; x += stepX) {
+                    context.fillText(watermarkText, x + rowOffset, y);
                 }
             }
             context.restore();
@@ -253,9 +298,11 @@ function SecurePdfViewerModal({ book, user, onClose }) {
             setJumpPageInput(pageNumber.toString());
         }
     }, [pdfDoc, pageNumber, renderPage]);
-   
+
     useEffect(() => {
         if (!pdfDoc || !realId || numPages <= 0) return;
+        // Agar Journal hai toh Books wali UserReadingProgress table mein save na karein (FK error rokne ke liye)
+        if (book?.itemType === 'Journal' || (book?.streamUrl && book.streamUrl.includes('/journal/'))) return;
 
         const saveTimer = setTimeout(() => {
             fetch('/Reader/api/save-progress', {
@@ -270,7 +317,7 @@ function SecurePdfViewerModal({ book, user, onClose }) {
         }, 300);
 
         return () => clearTimeout(saveTimer);
-    }, [pdfDoc, realId, pageNumber, numPages]);
+    }, [pdfDoc, realId, pageNumber, numPages, book]);
 
     const handleZoomIn = () => setZoomScale(prev => Math.min(Number((prev + 0.25).toFixed(2)), 3.0));
     const handleZoomOut = () => setZoomScale(prev => Math.max(Number((prev - 0.25).toFixed(2)), 0.6));
@@ -312,7 +359,9 @@ function SecurePdfViewerModal({ book, user, onClose }) {
     };
 
     return (
-        <div className="fixed inset-0 bg-slate-950/95 z-[100] flex flex-col select-none overflow-hidden">
+        <div
+            onContextMenu={(e) => e.preventDefault()}
+            className="fixed inset-0 bg-slate-950/95 z-[100] flex flex-col select-none overflow-hidden">
             <div className="flex flex-wrap items-center justify-between bg-[#0d233a] px-6 py-3 border-b border-slate-800 shadow-lg text-white gap-3">
                 <div className="flex items-center gap-4">
                     <button onClick={onClose} className="bg-[#be1e2d] hover:bg-red-700 text-white font-bold px-3 py-1.5 rounded text-xs transition cursor-pointer">
@@ -416,6 +465,7 @@ function SecurePdfViewerModal({ book, user, onClose }) {
         </div>
     );
 }
+window.SecurePdfViewerModal = SecurePdfViewerModal;
 
 // ----------------------------------------------------------------------
 // MAIN APPLICATION COMPONENT WITH INTERNAL BROWSER HISTORY ROUTER
@@ -754,6 +804,8 @@ function App() {
     
     const saveReadingProgressToBackend = (bookObj, pageNum = 1) => {
         if (!bookObj) return;
+        // Agar Journal hai toh Books wali UserReadingProgress table mein save na karein (FK error rokne ke liye)
+        if (bookObj.itemType === 'Journal' || (bookObj.streamUrl && bookObj.streamUrl.includes('/journal/'))) return;
 
         const targetBookId = bookObj.id || bookObj.Id || bookObj.bookId || bookObj.itemNo;
         const totalPg = bookObj.noOfPages || bookObj.NoOfPages || 100;
@@ -2827,25 +2879,51 @@ function App() {
                                                     </p>
                                                 </div>
 
-                                                <div className="pt-2 border-t mt-2">
-                                                    {j.pdfFilePath ? (
+                                                <div className="space-y-1.5 pt-2 border-t mt-2">
+                                                    <div className="font-black text-slate-900 text-base">₹{j.price ?? 0}</div>
+                                                    <div className="flex gap-1.5">
                                                         <button
                                                             type="button"
-                                                            onClick={() => {
+                                                            onClick={async () => {
+                                                                const journalAsItem = {
+                                                                    ...j,
+                                                                    itemName: j.name,
+                                                                    authorName: j.publisherName,
+                                                                    image: j.coverImagePath,
+                                                                    itemType: 'Journal',
+                                                                    streamUrl: `/api/journal/view-pdf/${j.id}`
+                                                                };
                                                                 if (!user.isLoggedIn) {
+                                                                    setPendingBookForPlan(journalAsItem);
                                                                     openAuthModal('login');
                                                                     return;
                                                                 }
-                                                                window.open(j.pdfFilePath, '_blank', 'noopener,noreferrer');
+                                                                const hasPlanHistory = hasEverPurchasedPlan || await checkUserPlanHistory();
+                                                                if (!hasPlanHistory) {
+                                                                    setPendingBookForPlan(journalAsItem);
+                                                                    changeNavState({ activeTab: 'user-plans' });
+                                                                    triggerToast("Please choose a Subscription Plan first!");
+                                                                    return;
+                                                                }
+                                                                handleOpenSingleBookCheckoutWithSuggestion(journalAsItem);
                                                             }}
-                                                            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-1.5 rounded text-[11px] shadow flex items-center justify-center gap-1.5 cursor-pointer">
-                                                            <i className="fa-solid fa-file-pdf"></i> Read Journal PDF
+                                                            className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-1.5 rounded text-[11px] shadow flex items-center justify-center gap-1 cursor-pointer">
+                                                            <i className="fa-solid fa-cart-shopping"></i> Buy ₹{j.price ?? 0}
                                                         </button>
-                                                    ) : (
-                                                        <span className="block text-center text-[10px] font-bold text-slate-400 bg-slate-100 py-1.5 rounded">
-                                                            Print / Issue Preview Only
-                                                        </span>
-                                                    )}
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleReadAccess({
+                                                                ...j,
+                                                                itemName: j.name,
+                                                                authorName: j.publisherName,
+                                                                image: j.coverImagePath,
+                                                                itemType: 'Journal',
+                                                                streamUrl: `/api/journal/view-pdf/${j.id}`
+                                                            })}
+                                                            className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-1.5 rounded text-[11px] shadow flex items-center justify-center gap-1 cursor-pointer">
+                                                            <i className="fa-solid fa-shield-halved"></i> Read
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>

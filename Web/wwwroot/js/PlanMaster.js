@@ -68,6 +68,24 @@ function PlanMaster({ booksList = [], triggerToast }) {
                     setAvailableBooks(Array.isArray(bData) ? bData : []);
                 }
             }
+            // Active Journals ko bhi Subscription Plan ke Select Books list mein merge karein
+            const resJournals = await fetch('/api/journal/all');
+            if (resJournals.ok) {
+                const jData = await resJournals.json();
+                const mappedJournals = (Array.isArray(jData) ? jData : [])
+                    .filter(j => j.isActive !== false)
+                    .map(j => ({
+                        id: j.id,
+                        itemName: `[Journal] ${j.name}`,
+                        authorName: j.publisherName || 'Publisher',
+                        vendorName: j.vendorName || 'In-House (B. Jain)',
+                        noOfPages: j.noOfPages || 50,
+                        price: j.price || 0,
+                        image: j.coverImagePath || '/images/default-cover.png',
+                        itemType: 'Journal'
+                    }));
+                setAvailableBooks(prev => [...prev, ...mappedJournals]);
+            }
 
             const resVendors = await fetch('/api/vendor/get-all');
             if (resVendors.ok) {

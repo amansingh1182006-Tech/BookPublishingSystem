@@ -26,7 +26,10 @@ function JournalMaster({ categoriesList = [], languagesList = [], triggerToast }
     const [pdfFile, setPdfFile] = React.useState(null);
     const [existingPdfPath, setExistingPdfPath] = React.useState('');
     const [saving, setSaving] = React.useState(false);
-
+    const [price, setPrice] = React.useState(0);
+    const [vendorName, setVendorName] = React.useState('In-House (B. Jain)');
+    const [noOfPages, setNoOfPages] = React.useState(50);
+    const [previewJournalPdf, setPreviewJournalPdf] = React.useState(null);
     
     const [bulkRows, setBulkRows] = React.useState([
         { name: '', publisherName: '', publishDate: new Date().toISOString().split('T')[0], issn: '', volumeIssue: '', frequency: 'Quarterly', language: 'English' },
@@ -69,6 +72,9 @@ function JournalMaster({ categoriesList = [], languagesList = [], triggerToast }
         setCoverPreview('/images/default-cover.png');
         setPdfFile(null);
         setExistingPdfPath('');
+        setPrice(0);
+        setVendorName('In-House (B. Jain)');
+        setNoOfPages(50);
         setViewMode('form');
     };
 
@@ -90,6 +96,9 @@ function JournalMaster({ categoriesList = [], languagesList = [], triggerToast }
         setCoverPreview(j.coverImagePath || '/images/default-cover.png');
         setPdfFile(null);
         setExistingPdfPath(j.pdfFilePath || '');
+        setPrice(j.price !== undefined ? j.price : 0);
+        setVendorName(j.vendorName || 'In-House (B. Jain)');
+        setNoOfPages(j.noOfPages || 50);
         setViewMode('form');
     };
 
@@ -136,6 +145,9 @@ function JournalMaster({ categoriesList = [], languagesList = [], triggerToast }
             formData.append('Language', language);
             formData.append('Description', description.trim());
             formData.append('IsActive', isActive);
+            formData.append('Price', price || 0);
+            formData.append('VendorName', vendorName.trim() || 'In-House (B. Jain)');
+            formData.append('NoOfPages', noOfPages || 50);
 
             if (coverFile) {
                 formData.append('CoverImage', coverFile);
@@ -340,6 +352,38 @@ function JournalMaster({ categoriesList = [], languagesList = [], triggerToast }
                                     onChange={e => setVolumeIssue(e.target.value)}
                                     placeholder="e.g. Vol. 51, Issue 4"
                                     className="w-full border border-slate-300 rounded px-3 py-2.5 font-bold text-slate-800 bg-white"
+                                />
+                            </div>
+                            <div>
+                                <label className="font-bold block mb-1.5 text-slate-700">Price (₹) *</label>
+                                <input
+                                    type="number"
+                                    step="0.01"
+                                    required
+                                    value={price}
+                                    onChange={e => setPrice(e.target.value)}
+                                    placeholder="e.g. 299"
+                                    className="w-full border border-slate-300 rounded px-3 py-2.5 font-extrabold text-emerald-700 bg-white outline-none focus:border-indigo-600"
+                                />
+                            </div>
+                            <div className="md:col-span-2">
+                                <label className="font-bold block mb-1.5 text-slate-700">Vendor Name (Royalty Mapping) *</label>
+                                <input
+                                    type="text"
+                                    value={vendorName}
+                                    onChange={e => setVendorName(e.target.value)}
+                                    placeholder="e.g. In-House (B. Jain) or Vendor Name"
+                                    className="w-full border border-slate-300 rounded px-3 py-2.5 font-bold text-indigo-900 bg-white outline-none focus:border-indigo-600"
+                                />
+                            </div>
+                            <div>
+                                <label className="font-bold block mb-1.5 text-slate-700">Total Pages *</label>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    value={noOfPages}
+                                    onChange={e => setNoOfPages(e.target.value)}
+                                    className="w-full border border-slate-300 rounded px-3 py-2.5 font-bold text-slate-800 bg-white outline-none focus:border-indigo-600"
                                 />
                             </div>
                         </div>
@@ -642,7 +686,9 @@ function JournalMaster({ categoriesList = [], languagesList = [], triggerToast }
                                 <th className="p-3">Cover</th>
                                 <th className="p-3">Code / ISSN</th>
                                 <th className="p-3">Journal Name</th>
-                                <th className="p-3">Publisher Name</th>
+                                        <th className="p-3">Publisher Name</th>
+                                        <th className="p-3">Vendor Name</th>
+                                        <th className="p-3">Price (₹)</th>
                                 <th className="p-3">Publish Date</th>
                                 <th className="p-3">Vol / Frequency</th>
                                 <th className="p-3">Status</th>
@@ -664,6 +710,8 @@ function JournalMaster({ categoriesList = [], languagesList = [], triggerToast }
                                         <span className="text-[10px] text-slate-500">{j.categoryName} • {j.language}</span>
                                     </td>
                                     <td className="p-3 font-bold text-slate-700">{j.publisherName}</td>
+                                    <td className="p-3 font-bold text-indigo-700">{j.vendorName || 'In-House (B. Jain)'}</td>
+                                    <td className="p-3 font-black text-emerald-700">₹{j.price ?? 0}</td>
                                     <td className="p-3 font-semibold text-slate-700">
                                         <span className="bg-amber-50 text-amber-900 border border-amber-200 px-2.5 py-1 rounded font-bold">
                                             {new Date(j.publishDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
@@ -681,14 +729,13 @@ function JournalMaster({ categoriesList = [], languagesList = [], triggerToast }
                                         )}
                                     </td>
                                     <td className="p-3 text-right space-x-3">
-                                        {j.pdfFilePath && (
-                                            <a
-                                                href={j.pdfFilePath}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="text-red-600 font-bold hover:underline cursor-pointer">
-                                                <i className="fa-solid fa-file-pdf"></i> View PDF
-                                            </a>
+                                        {(j.pdfFilePath || j.hasPdf) && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setPreviewJournalPdf(j)}
+                                                className="text-purple-600 font-bold hover:underline cursor-pointer">
+                                                <i className="fa-solid fa-shield-halved text-red-600"></i> Secure PDF
+                                            </button>
                                         )}
                                         <button onClick={() => openEditForm(j)} className="text-indigo-600 font-bold hover:underline cursor-pointer">
                                             <i className="fa-solid fa-pen-to-square"></i> Edit
@@ -702,6 +749,17 @@ function JournalMaster({ categoriesList = [], languagesList = [], triggerToast }
                         </tbody>
                     </table>
                 </div>
+            )}
+            {previewJournalPdf && window.SecurePdfViewerModal && (
+                <window.SecurePdfViewerModal
+                    book={{
+                        id: previewJournalPdf.id,
+                        itemName: previewJournalPdf.name,
+                        streamUrl: `/api/journal/view-pdf/${previewJournalPdf.id}`
+                    }}
+                    user={{ email: 'admin@bjain.com' }}
+                    onClose={() => setPreviewJournalPdf(null)}
+                />
             )}
         </div>
     );

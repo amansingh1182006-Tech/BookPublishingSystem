@@ -210,18 +210,18 @@ namespace Web.Controllers
                 string.IsNullOrWhiteSpace(model.NewPassword) ||
                 string.IsNullOrWhiteSpace(model.ConfirmPassword))
             {
-                return BadRequest(new { message = "Email, New Password aur Confirm Password sabhi required hain." });
+                return BadRequest(new { message = "Email, New Password aur Confirm Password is required ." });
             }
 
             if (model.NewPassword.Trim() != model.ConfirmPassword.Trim())
             {
-                return BadRequest(new { message = "New Password aur Confirm Password match nahi ho rahe hain." });
+                return BadRequest(new { message = "Not Match New Password and Confirm Password." });
             }
 
             var user = await _userManager.FindByEmailAsync(model.Email.Trim());
             if (user == null)
             {
-                return NotFound(new { message = "Is Email ID ke sath koi account registered nahi hai." });
+                return NotFound(new { message = "Not Account Register from This Email." });
             }
 
             var resetToken = await _userManager.GeneratePasswordResetTokenAsync(user);
@@ -230,7 +230,7 @@ namespace Web.Controllers
             if (result.Succeeded)
             {
                 await _userManager.UpdateSecurityStampAsync(user);
-                return Ok(new { message = "Password successfully reset ho gaya hai! Ab aap naye password se login kar sakte hain." });
+                return Ok(new { message = "Password successfully reset ! Please Login From using New Password." });
             }
 
             var errorMessages = string.Join(", ", result.Errors.Select(e => e.Description));

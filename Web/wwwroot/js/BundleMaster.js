@@ -57,6 +57,25 @@ function BundleMaster({ triggerToast }) {
                     price: parseFloat(b.price !== undefined ? b.price : (b.Price !== undefined ? b.Price : 0)) || 0
                 })));
             }
+            // Active Journals bhi Bundle selection list mein merge karein
+            const resJournals = await fetch('/api/journal/all');
+            if (resJournals.ok) {
+                const jData = await resJournals.json();
+                const mappedJournals = (Array.isArray(jData) ? jData : [])
+                    .filter(j => j.isActive !== false)
+                    .map(j => ({
+                        id: j.id,
+                        itemName: `[Journal] ${j.name}`,
+                        isbn: j.issn || 'Journal',
+                        authorName: j.publisherName || 'Publisher',
+                        coverImage: j.coverImagePath || '/images/default-cover.png',
+                        noOfPages: parseInt(j.noOfPages || 50, 10) || 50,
+                        vendorName: j.vendorName || 'In-House (B. Jain)',
+                        price: parseFloat(j.price || 0) || 0,
+                        itemType: 'Journal'
+                    }));
+                setAvailableBooks(prev => [...prev, ...mappedJournals]);
+            }
 
             const resVendors = await fetch('/api/vendor/get-all');
             if (resVendors.ok) {
