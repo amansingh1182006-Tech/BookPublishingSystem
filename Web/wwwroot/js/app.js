@@ -4793,7 +4793,7 @@ function BulkGridFormContainer({ categoriesList, languagesList, authorsList, ven
                             <th className="p-2 min-w-[110px]">Language</th>
                             <th className="p-2 min-w-[90px]">Price (₹) *</th>
                             <th className="p-2 min-w-[80px]">Pages *</th>
-                            <th className="p-2 min-w-[160px]">PDF File *</th>
+                            <th className="p-2 min-w-[160px]">PDF File (Optional)</th>
                             <th className="p-2 min-w-[160px]">Cover Image</th>
                             <th className="p-2 w-12 text-center">Action</th>
                         </tr>
@@ -4905,7 +4905,6 @@ function BulkGridFormContainer({ categoriesList, languagesList, authorsList, ven
                                 <td className="p-1">
                                     <input
                                         type="file"
-                                        required
                                         accept="application/pdf"
                                         onChange={e => handleRowChange(idx, 'mainPdf', e.target.files[0])}
                                         className="w-full text-[10px]"
