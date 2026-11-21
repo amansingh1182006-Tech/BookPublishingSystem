@@ -49,12 +49,10 @@
     const handlePublishFullBook = async (e) => {
         e.preventDefault();
         if (submitLockRef.current) return;
-
-        if (!bookCodeInput || !categoryCodeInput || !itemNameInput || !bookPriceInput || !mainPdfFile) {
-            setErrorMsg("Please select Category, fill Item Code, Item Name, Price and select Main PDF file.");
+        if (!bookCodeInput || !categoryCodeInput || !itemNameInput || !bookPriceInput) {
+            setErrorMsg("Please select Category, fill Item Code, Item Name, and Price.");
             return;
         }
-
         submitLockRef.current = true;
         setIsPublishingBook(true);
         setErrorMsg('');
@@ -70,7 +68,7 @@
         formData.append('vendorName', vendorNameInput.trim() || '');
         formData.append('price', parseFloat(bookPriceInput) || 0);
         if (coverImageFile) formData.append('coverImage', coverImageFile);
-        formData.append('mainPdf', mainPdfFile);
+        if (mainPdfFile) formData.append('mainPdf', mainPdfFile);
 
         try {
             const res = await fetch('/api/author/book/upload-full-book', {
@@ -86,7 +84,10 @@
                 }
                 onSuccess(`Book '${itemNameInput.trim()}' uploaded and saved successfully!`);
             } else {
-                setErrorMsg(data.message || `Upload Failed (${res.status}): Server error.`);
+                const validationErrors = data.errors
+                    ? Object.values(data.errors).flat().join(', ')
+                    : '';
+                setErrorMsg(data.message || validationErrors || `Upload Failed (${res.status}): Server error.`);
             }
         } catch (err) {
             setErrorMsg("Network error: " + err.message);
@@ -244,8 +245,8 @@
                         <input type="file" accept="image/*" onChange={e => setCoverImageFile(e.target.files[0])} className="w-full border p-2 rounded bg-gray-50 text-xs" />
                     </div>
                     <div>
-                        <label className="font-bold block mb-1 text-slate-700">Full Book PDF *</label>
-                        <input type="file" accept="application/pdf" required onChange={e => setMainPdfFile(e.target.files[0])} className="w-full border p-2 rounded bg-gray-50 text-xs" />
+                        <label className="font-bold block mb-1 text-slate-700">Full Book PDF (Optional)</label>
+                        <input type="file" accept="application/pdf" onChange={e => setMainPdfFile(e.target.files[0])} className="w-full border p-2 rounded bg-gray-50 text-xs" />
                     </div>
                 </div>
 

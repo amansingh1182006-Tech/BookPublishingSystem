@@ -34,8 +34,8 @@ namespace Application.DTOs
 
         public IFormFile? CoverImage { get; set; }
 
-        [Required(ErrorMessage = "Main Book PDF file is required")]
-        public IFormFile MainPdf { get; set; } = null!;
+
+        public IFormFile? MainPdf { get; set; } = null!;
     }
 
     public class BookUpdateDto

@@ -615,6 +615,11 @@ function App() {
 
     const [masterDropdownOpen, setMasterDropdownOpen] = useState(false);
     const [selectedMaster, setSelectedMaster] = useState('items');
+    const [adminSidebarOpen, setAdminSidebarOpen] = useState(false);
+    const [adminSearchTerm, setAdminSearchTerm] = useState('');
+    const [currentPage, setCurrentPage] = useState(1);
+
+  
     useEffect(() => {
         const handleOutsideClick = (e) => {
             if (!e.target.closest('[data-dropdown-container]')) {
@@ -660,6 +665,10 @@ function App() {
     const [quickAuthorName, setQuickAuthorName] = useState('');
 
     const [rowsPerPage, setRowsPerPage] = useState(10);
+    useEffect(() => {
+        setCurrentPage(1);
+        setAdminSearchTerm('');
+    }, [selectedMaster, rowsPerPage]);
     const [visibleColumns, setVisibleColumns] = useState({
         col1: true,
         col2: true,
@@ -1348,7 +1357,7 @@ function App() {
         handleOpenSingleBookCheckoutWithSuggestion(bookObj);
     };
 
-    // FAST PARALLEL INITIAL BOOT (Loads Store + Session concurrently without heavy admin calls)
+    
     useEffect(() => {
         let isMounted = true;
 
@@ -1867,7 +1876,7 @@ function App() {
         setAuthSuccessMsg('');
 
         if (newPasswordInput !== confirmPasswordInput) {
-            setAuthError("New Password aur Confirm Password match nahi ho rahe hain.");
+            setAuthError("New Password and Confirm Password do not match  .");
             return;
         }
 
@@ -1886,7 +1895,7 @@ function App() {
 
             const data = await window.safeJsonParse(response);
             if (response.ok) {
-                triggerToast(data.message || "Password successfully reset ho gaya hai!");
+                triggerToast(data.message || "Password  reset successfully !");
                 setAuthMode('login');
                 setEmailInput(forgotEmailInput);
                 setForgotEmailInput('');
@@ -2314,42 +2323,77 @@ function App() {
             </header>
 
             <div className={activeTab === 'store' ? 'w-full flex-1' : 'w-full px-3 sm:px-6 lg:px-10 py-6 flex-1 space-y-6'}>
-                {activeTab === 'admin' && isAdmin && (
-                    <div className="w-full space-y-6">
-                        <div className="w-full bg-slate-900 text-white p-6 rounded-lg shadow border-l-8 border-red-600 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                            <div>
-                                <h1 className="text-2xl font-black flex items-center gap-2">
-                                    <i className="fa-solid fa-shield-halved text-red-500"></i> Admin Dashboard
-                                </h1>
-                                <p className="text-xs text-gray-300 mt-1">Manage users, books, approvals and platform settings in one place.</p>
-                            </div>
+                {activeTab === 'admin' && isAdmin && (() => {
+                    const masterMenuItems = [
+                        { key: 'items', label: 'Items Master', icon: 'fa-box', badge: myAuthorBooks.length },
+                        { key: 'plans', label: 'Plans Master', icon: 'fa-credit-card', badge: plansList.length },
+                        { key: 'bundles', label: 'Bundle Master', icon: 'fa-layer-group' },
+                        { key: 'single-books', label: 'Single Book Master', icon: 'fa-book-open-reader' },
+                        { key: 'authors', label: 'Authors', icon: 'fa-user-pen', badge: authorsList.length },
+                        { key: 'categories', label: 'Categories', icon: 'fa-tags', badge: categoriesList.length },
+                        { key: 'languages', label: 'Languages', icon: 'fa-language', badge: languagesList.length },
+                        { key: 'keywords', label: 'Keywords', icon: 'fa-key', badge: keywordsList.length },
+                        { key: 'customers', label: 'Customers', icon: 'fa-users', badge: customersList.length },
+                        { key: 'vendors', label: 'Vendor Master', icon: 'fa-user-gear', badge: vendorsList.length },
+                        { key: 'platform-revenue', label: 'Platform Revenue (70%)', icon: 'fa-vault' },
+                        { key: 'journals', label: 'Journal Master', icon: 'fa-newspaper', badge: storeJournals.length }
+                    ];
 
-                            <div className="relative" data-dropdown-container="actions">
-                                <button
-                                    type="button"
-                                    onClick={() => setMasterDropdownOpen(!masterDropdownOpen)}
-                                    className="bg-[#e31b23] hover:bg-red-700 text-white font-black px-5 py-2.5 rounded shadow text-xs flex items-center gap-2 transition cursor-pointer">
-                                    <i className="fa-solid fa-sliders"></i> Actions List <i className="fa-solid fa-chevron-down text-[10px]"></i>
-                                </button>
-                                {masterDropdownOpen && (
-                                    <div className="absolute left-0 md:left-auto md:right-0 mt-2 w-72 max-w-[85vw] max-h-[65vh] overflow-y-auto bg-white border border-gray-200 text-slate-800 rounded-lg shadow-2xl py-2 z-50 text-xs divide-y">
-                                        <div className="px-3 py-1.5 font-black text-slate-500 uppercase text-[10px] bg-slate-50 sticky top-0 z-10">Select System List</div>
-                                        {[
-                                            { key: 'items', label: 'Items Master ', icon: 'fa-box' },
-                                            { key: 'plans', label: 'Plans Master ', icon: 'fa-credit-card' },
-                                            { key: 'bundles', label: 'Bundle Master ', icon: 'fa-layer-group' },
-                                            { key: 'single-books', label: 'Single Book Master ', icon: 'fa-book-open-reader' },
-                                            { key: 'authors', label: 'Authors ', icon: 'fa-user-pen' },
-                                            { key: 'categories', label: 'Categories ', icon: 'fa-layer-group' },
-                                            { key: 'languages', label: 'Languages ', icon: 'fa-language' },
-                                            { key: 'keywords', label: 'Keywords ', icon: 'fa-key' },
-                                            { key: 'customers', label: 'Customers ', icon: 'fa-users' },
-                                            { key: 'vendors', label: 'Vendor Master ', icon: 'fa-user-gear' },
-                                            { key: 'platform-revenue', label: 'Platform Revenue (70%) ', icon: 'fa-vault' },
-                                            { key: 'journals', label: 'Journal Master ', icon: 'fa-newspaper' }
-                                        ].map(m => (
+                    const searchedData = currentMasterData.filter(item => {
+                        if (!adminSearchTerm.trim()) return true;
+                        const q = adminSearchTerm.toLowerCase();
+                        return String(item.id || '').toLowerCase().includes(q) ||
+                            String(item.name || '').toLowerCase().includes(q) ||
+                            String(item.desc || '').toLowerCase().includes(q) ||
+                            String(item.emailId || '').toLowerCase().includes(q);
+                    });
+
+                    const totalPages = Math.max(1, Math.ceil(searchedData.length / rowsPerPage));
+                    const safePage = Math.min(currentPage, totalPages);
+                    const paginatedData = searchedData.slice((safePage - 1) * rowsPerPage, safePage * rowsPerPage);
+                    const pendingBooksCount = myAuthorBooks.filter(b => !b.isPublished).length;
+
+                    return (
+                        <div className="w-full flex flex-col lg:flex-row gap-5 items-start">
+
+                            {/* MOBILE OVERLAY BACKDROP */}
+                            {adminSidebarOpen && (
+                                <div
+                                    onClick={() => setAdminSidebarOpen(false)}
+                                    className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-40 lg:hidden"
+                                />
+                            )}
+
+                            {/* LEFT INDUSTRY SIDEBAR */}
+                            <aside className={`fixed lg:sticky top-0 lg:top-24 left-0 z-50 lg:z-20 h-full lg:h-[calc(100vh-7rem)] w-72 lg:w-64 shrink-0 bg-[#0B1325] text-white lg:rounded-2xl shadow-xl border border-slate-800 flex flex-col transition-transform duration-300 ${adminSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
+                                <div className="p-4 border-b border-white/10 flex items-center justify-between">
+                                    <div className="flex items-center gap-2.5">
+                                        <div className="w-8 h-8 rounded-lg bg-[#00A884]/20 border border-[#00A884]/40 flex items-center justify-center text-[#00A884]">
+                                            <i className="fa-solid fa-shield-halved text-sm"></i>
+                                        </div>
+                                        <div>
+                                            <span className="text-xs font-black tracking-wide uppercase block text-white">Admin Console</span>
+                                            <span className="text-[10px] text-[#D4AF37] font-bold">BJainRx Enterprise</span>
+                                        </div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setAdminSidebarOpen(false)}
+                                        className="lg:hidden text-slate-400 hover:text-white p-1.5">
+                                        <i className="fa-solid fa-xmark text-base"></i>
+                                    </button>
+                                </div>
+
+                                <div className="flex-1 overflow-y-auto p-3 space-y-1">
+                                    <div className="px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                                        Master Modules
+                                    </div>
+                                    {masterMenuItems.map(m => {
+                                        const isActive = selectedMaster === m.key;
+                                        return (
                                             <button
                                                 key={m.key}
+                                                type="button"
                                                 onClick={() => {
                                                     changeNavState({
                                                         selectedMaster: m.key,
@@ -2359,585 +2403,464 @@ function App() {
                                                         languagePageMode: 'list',
                                                         planPageMode: 'list'
                                                     });
-                                                    setMasterDropdownOpen(false);
+                                                    setAdminSidebarOpen(false);
                                                 }}
-                                                className={`w-full text-left px-4 py-2.5 hover:bg-red-50 flex items-center justify-between font-bold cursor-pointer ${selectedMaster === m.key ? 'text-[#e31b23] bg-red-50/50' : 'text-slate-700'}`}>
-                                                <span className="flex items-center gap-2"><i className={`fa-solid ${m.icon} text-slate-400`}></i> {m.label}</span>
-                                                {selectedMaster === m.key && <i className="fa-solid fa-check text-red-600"></i>}
+                                                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer ${isActive
+                                                    ? 'bg-[#00A884] text-white shadow-md shadow-[#00A884]/20'
+                                                    : 'text-slate-300 hover:bg-white/5 hover:text-white'}`}>
+                                                <span className="flex items-center gap-2.5 truncate">
+                                                    <i className={`fa-solid ${m.icon} w-4 text-center ${isActive ? 'text-white' : 'text-slate-400'}`}></i>
+                                                    <span className="truncate">{m.label}</span>
+                                                </span>
+                                                {m.badge !== undefined && (
+                                                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-extrabold ${isActive ? 'bg-white/20 text-white' : 'bg-slate-800 text-slate-300'}`}>
+                                                        {m.badge}
+                                                    </span>
+                                                )}
                                             </button>
-                                        ))}
+                                        );
+                                    })}
+                                </div>
+                            </aside>
+
+                            {/* RIGHT MAIN WORKSPACE */}
+                            <div className="flex-1 min-w-0 w-full space-y-5">
+
+                                {/* TOP HEADER BAR */}
+                                <div className="bg-gradient-to-r from-[#0B1325] via-[#132240] to-[#0B1325] text-white p-4 sm:p-6 rounded-2xl shadow-md border border-slate-800 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                                    <div className="flex items-center gap-3">
+                                        <button
+                                            type="button"
+                                            onClick={() => setAdminSidebarOpen(true)}
+                                            className="lg:hidden bg-white/10 hover:bg-white/20 text-white p-2.5 rounded-xl border border-white/15 cursor-pointer">
+                                            <i className="fa-solid fa-bars text-base"></i>
+                                        </button>
+                                        <div>
+                                            <div className="flex items-center gap-2">
+                                                <h1 className="text-lg sm:text-2xl font-black tracking-tight">Admin Dashboard</h1>
+                                                <span className="hidden sm:inline-block bg-[#D4AF37]/20 text-[#D4AF37] border border-[#D4AF37]/40 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase">
+                                                    CRM Control
+                                                </span>
+                                            </div>
+                                            <p className="text-xs text-slate-300 mt-0.5">Manage catalog, masters, approvals, and revenue in real time.</p>
+                                        </div>
+                                    </div>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            window.clearApiCache();
+                                            Promise.allSettled([fetchAuthorBooks(), fetchCustomersMaster(), fetchAuthorsMaster(), fetchCategories(), fetchPlansMaster()]);
+                                            triggerToast("Dashboard data refreshed!");
+                                        }}
+                                        className="bg-white/10 hover:bg-[#00A884] text-white font-bold px-4 py-2 rounded-xl text-xs border border-white/15 transition flex items-center gap-2 cursor-pointer self-end sm:self-auto">
+                                        <i className="fa-solid fa-arrows-rotate"></i> Sync Live Data
+                                    </button>
+                                </div>
+
+                                {/* RESPONSIVE KPI SUMMARY CARDS */}
+                                <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
+                                    <div onClick={() => changeNavState({ selectedMaster: 'items', bookPageMode: 'list' })} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs hover:border-[#00A884] transition cursor-pointer flex items-center justify-between">
+                                        <div>
+                                            <span className="text-[11px] font-bold text-slate-500 uppercase">Total Books</span>
+                                            <div className="text-xl sm:text-2xl font-black text-[#0B1325] mt-0.5">{myAuthorBooks.length}</div>
+                                        </div>
+                                        <div className="w-10 h-10 rounded-xl bg-emerald-50 text-[#00A884] flex items-center justify-center text-lg">
+                                            <i className="fa-solid fa-book"></i>
+                                        </div>
+                                    </div>
+
+                                    <div onClick={() => changeNavState({ selectedMaster: 'items', bookPageMode: 'list' })} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs hover:border-amber-500 transition cursor-pointer flex items-center justify-between">
+                                        <div>
+                                            <span className="text-[11px] font-bold text-slate-500 uppercase">Pending Approval</span>
+                                            <div className="text-xl sm:text-2xl font-black text-amber-600 mt-0.5">{pendingBooksCount}</div>
+                                        </div>
+                                        <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-lg">
+                                            <i className="fa-solid fa-clock"></i>
+                                        </div>
+                                    </div>
+
+                                    <div onClick={() => changeNavState({ selectedMaster: 'authors', authorPageMode: 'list' })} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs hover:border-blue-500 transition cursor-pointer flex items-center justify-between">
+                                        <div>
+                                            <span className="text-[11px] font-bold text-slate-500 uppercase">Authors</span>
+                                            <div className="text-xl sm:text-2xl font-black text-[#0B1325] mt-0.5">{authorsList.length}</div>
+                                        </div>
+                                        <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center text-lg">
+                                            <i className="fa-solid fa-user-pen"></i>
+                                        </div>
+                                    </div>
+
+                                    <div onClick={() => changeNavState({ selectedMaster: 'customers' })} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs hover:border-purple-500 transition cursor-pointer flex items-center justify-between">
+                                        <div>
+                                            <span className="text-[11px] font-bold text-slate-500 uppercase">Readers / Users</span>
+                                            <div className="text-xl sm:text-2xl font-black text-[#0B1325] mt-0.5">{customersList.length}</div>
+                                        </div>
+                                        <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center text-lg">
+                                            <i className="fa-solid fa-users"></i>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* ACTION TOOLBAR + LIVE SEARCH BAR */}
+                                {selectedMaster !== 'vendors' && selectedMaster !== 'journals' && selectedMaster !== 'platform-revenue' && (
+                                    <div className="w-full bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-3">
+                                        <div className="flex flex-wrap items-center gap-2.5">
+                                            <span className="text-xs font-black uppercase text-[#0B1325] flex items-center gap-1.5 mr-1">
+                                                <i className="fa-solid fa-list-check text-[#00A884]"></i> {currentHeaderConfig.title}
+                                            </span>
+
+                                            {selectedMaster !== 'bundles' && selectedMaster !== 'customers' && selectedMaster !== 'single-books' && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        if (selectedMaster === 'items') changeNavState({ bookPageMode: 'add-book-page' });
+                                                        else if (selectedMaster === 'authors') changeNavState({ authorPageMode: 'add-author-page' });
+                                                        else if (selectedMaster === 'categories') changeNavState({ categoryPageMode: 'add-category-page' });
+                                                        else if (selectedMaster === 'languages') changeNavState({ languagePageMode: 'add-language-page' });
+                                                        else if (selectedMaster === 'plans') changeNavState({ planPageMode: 'add-plan-page' });
+                                                        else setShowAddModal(true);
+                                                    }}
+                                                    className="bg-[#00A884] hover:bg-emerald-700 text-white font-bold text-xs px-3.5 py-2 rounded-xl shadow-xs flex items-center gap-1.5 transition cursor-pointer">
+                                                    <i className="fa-solid fa-plus"></i> {currentHeaderConfig.buttonText}
+                                                </button>
+                                            )}
+
+                                            {selectedMaster === 'items' && (
+                                                <button type="button" onClick={() => changeNavState({ bookPageMode: 'bulk-grid-page' })} className="bg-[#0B1325] hover:bg-slate-800 text-white font-bold text-xs px-3.5 py-2 rounded-xl shadow-xs flex items-center gap-1.5 transition cursor-pointer">
+                                                    <i className="fa-solid fa-file-excel text-[#00A884]"></i> Bulk Upload Books
+                                                </button>
+                                            )}
+                                            {selectedMaster === 'authors' && (
+                                                <button type="button" onClick={() => changeNavState({ authorPageMode: 'bulk-author-grid-page' })} className="bg-blue-700 hover:bg-blue-800 text-white font-bold text-xs px-3.5 py-2 rounded-xl shadow-xs flex items-center gap-1.5 transition cursor-pointer">
+                                                    <i className="fa-solid fa-file-excel"></i> Bulk Upload Authors
+                                                </button>
+                                            )}
+                                            {selectedMaster === 'categories' && (
+                                                <button type="button" onClick={() => changeNavState({ categoryPageMode: 'bulk-category-grid-page' })} className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs px-3.5 py-2 rounded-xl shadow-xs flex items-center gap-1.5 transition cursor-pointer">
+                                                    <i className="fa-solid fa-file-excel"></i> Bulk Upload Categories
+                                                </button>
+                                            )}
+                                            {selectedMaster === 'languages' && (
+                                                <button type="button" onClick={() => changeNavState({ languagePageMode: 'bulk-language-grid-page' })} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-3.5 py-2 rounded-xl shadow-xs flex items-center gap-1.5 transition cursor-pointer">
+                                                    <i className="fa-solid fa-file-excel"></i> Bulk Upload Languages
+                                                </button>
+                                            )}
+
+                                            {selectedMasterIds.length > 0 && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setDeleteConfirmModal({
+                                                        show: true,
+                                                        id: null,
+                                                        ids: selectedMasterIds,
+                                                        title: `${selectedMasterIds.length} Selected Record(s)`,
+                                                        type: selectedMaster
+                                                    })}
+                                                    className="bg-red-600 hover:bg-red-700 text-white font-bold text-xs px-3.5 py-2 rounded-xl shadow-xs flex items-center gap-1.5 transition cursor-pointer">
+                                                    <i className="fa-solid fa-trash-can"></i> Delete ({selectedMasterIds.length})
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        <div className="flex flex-wrap items-center gap-2.5 text-xs">
+                                            <div className="relative flex-1 sm:w-56">
+                                                <i className="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                                                <input
+                                                    type="text"
+                                                    value={adminSearchTerm}
+                                                    onChange={e => { setAdminSearchTerm(e.target.value); setCurrentPage(1); }}
+                                                    placeholder={`Filter ${selectedMaster}...`}
+                                                    className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-[#00A884] focus:bg-white font-medium"
+                                                />
+                                            </div>
+
+                                            <select
+                                                value={rowsPerPage}
+                                                onChange={e => setRowsPerPage(Number(e.target.value))}
+                                                className="border border-slate-200 rounded-xl px-3 py-2 font-bold bg-slate-50 outline-none cursor-pointer">
+                                                <option value={5}>5 / page</option>
+                                                <option value={10}>10 / page</option>
+                                                <option value={25}>25 / page</option>
+                                                <option value={50}>50 / page</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* SUB-PAGES & MASTER COMPONENTS */}
+                                {(selectedMaster === 'vendors') ? (
+                                    VendorMasterComp ? <VendorMasterComp booksList={myAuthorBooks} triggerToast={triggerToast} isVendorSelfView={false} /> : <div>Vendor Master Component Not Loaded</div>
+                                ) : (selectedMaster === 'journals') ? (
+                                    JournalMasterComp ? <JournalMasterComp categoriesList={categoriesList} languagesList={languagesList} authorsList={authorsList} vendorsList={vendorsList} triggerToast={triggerToast} /> : <div className="p-6 text-center font-bold">Journal Master Component Not Loaded</div>
+                                ) : (selectedMaster === 'platform-revenue') ? (
+                                    PlatformRevenueMasterComp ? <PlatformRevenueMasterComp triggerToast={triggerToast} /> : <div className="p-6 text-center font-bold">Platform Revenue Component Not Loaded</div>
+                                ) : (selectedMaster === 'items' && bookPageMode === 'add-book-page') ? (
+                                    AddBookFormComp ? (
+                                        <AddBookFormComp
+                                            categoriesList={categoriesList}
+                                            languagesList={languagesList}
+                                            authorsList={authorsList}
+                                            vendorsList={vendorsList}
+                                            onOpenAddCategoryModal={() => setShowAddCategoryModal(true)}
+                                            onOpenAddLanguageModal={() => setShowAddLanguageModal(true)}
+                                            onOpenAddAuthorModal={() => setShowAddAuthorModal(true)}
+                                            setShowAddCategoryModal={setShowAddCategoryModal}
+                                            setShowAddLanguageModal={setShowAddLanguageModal}
+                                            setShowAddAuthorModal={setShowAddAuthorModal}
+                                            onSuccess={(msg) => { triggerToast(msg); fetchAuthorBooks(); fetchStoreBooks(); window.history.back(); }}
+                                            onCancel={() => window.history.back()}
+                                        />
+                                    ) : null
+                                ) : selectedMaster === 'items' && bookPageMode === 'bulk-grid-page' ? (
+                                    <div className="w-full bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-200 space-y-4">
+                                        <div className="flex items-center gap-3 border-b pb-3">
+                                            <button type="button" onClick={() => changeNavState({ bookPageMode: 'list' })} className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold p-2.5 rounded-full text-sm cursor-pointer">
+                                                <i className="fa-solid fa-arrow-left"></i>
+                                            </button>
+                                            <h3 className="text-lg sm:text-xl font-bold text-[#0d233a]">Excel-Style Bulk Upload Page</h3>
+                                        </div>
+                                        <BulkGridFormContainer
+                                            categoriesList={categoriesList}
+                                            languagesList={languagesList}
+                                            authorsList={authorsList}
+                                            vendorsList={vendorsList}
+                                            onSuccess={async (msg) => { triggerToast(msg); await fetchAuthorBooks(); await fetchStoreBooks(); changeNavState({ bookPageMode: 'list' }); }}
+                                            onCancel={() => changeNavState({ bookPageMode: 'list' })}
+                                        />
+                                    </div>
+                                ) : selectedMaster === 'items' && bookPageMode === 'edit-book-page' ? (
+                                    EditBookFormComp ? (
+                                        <EditBookFormComp
+                                            editingBook={editingBook}
+                                            languagesList={languagesList}
+                                            onSuccess={(msg) => { triggerToast(msg); setEditingBook(null); fetchAuthorBooks(); fetchStoreBooks(); window.history.back(); }}
+                                            onCancel={() => { setEditingBook(null); window.history.back(); }}
+                                        />
+                                    ) : null
+                                ) : selectedMaster === 'plans' ? (
+                                    <PlanMaster booksList={myAuthorBooks} triggerToast={triggerToast} />
+                                ) : selectedMaster === 'bundles' ? (
+                                    typeof window.BundleMaster !== 'undefined' ? <window.BundleMaster triggerToast={triggerToast} /> : <BundleMaster triggerToast={triggerToast} />
+                                ) : selectedMaster === 'single-books' ? (
+                                    typeof window.SingleBookMaster !== 'undefined' ? <window.SingleBookMaster triggerToast={triggerToast} /> : <div className="p-6 bg-amber-50 border border-amber-300 rounded text-amber-900 font-bold text-xs">Single Book Master not loaded.</div>
+                                ) : selectedMaster === 'categories' && categoryPageMode === 'add-category-page' ? (
+                                    AddCategoryFormComp ? <AddCategoryFormComp onSuccess={(msg) => { triggerToast(msg); fetchCategories(); window.history.back(); }} onCancel={() => window.history.back()} /> : null
+                                ) : selectedMaster === 'categories' && categoryPageMode === 'edit-category-page' ? (
+                                    EditCategoryFormComp ? <EditCategoryFormComp editingCategory={editingCategory} onSuccess={(msg) => { triggerToast(msg); setEditingCategory(null); fetchCategories(); window.history.back(); }} onCancel={() => { setEditingCategory(null); window.history.back(); }} /> : null
+                                ) : selectedMaster === 'categories' && categoryPageMode === 'bulk-category-grid-page' ? (
+                                    <div className="w-full bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-200 space-y-4">
+                                        <div className="flex items-center gap-3 border-b pb-3">
+                                            <button type="button" onClick={() => changeNavState({ categoryPageMode: 'list' })} className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold p-2.5 rounded-full text-sm cursor-pointer"><i className="fa-solid fa-arrow-left"></i></button>
+                                            <h3 className="text-lg font-bold text-[#0d233a]">Bulk Upload Categories</h3>
+                                        </div>
+                                        <BulkCategoryGridContainer onSuccess={async (msg) => { triggerToast(msg); await fetchCategories(); changeNavState({ categoryPageMode: 'list' }); }} onCancel={() => changeNavState({ categoryPageMode: 'list' })} />
+                                    </div>
+                                ) : selectedMaster === 'languages' && languagePageMode === 'add-language-page' ? (
+                                    AddLanguageFormComp ? <AddLanguageFormComp onSuccess={(msg) => { triggerToast(msg); fetchLanguagesMaster(); window.history.back(); }} onCancel={() => window.history.back()} /> : null
+                                ) : selectedMaster === 'languages' && languagePageMode === 'edit-language-page' ? (
+                                    EditLanguageFormComp ? <EditLanguageFormComp editingLanguage={editingLanguage} onSuccess={(msg) => { triggerToast(msg); setEditingLanguage(null); fetchLanguagesMaster(); window.history.back(); }} onCancel={() => { setEditingLanguage(null); window.history.back(); }} /> : null
+                                ) : selectedMaster === 'languages' && languagePageMode === 'bulk-language-grid-page' ? (
+                                    <div className="w-full bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-200 space-y-4">
+                                        <div className="flex items-center gap-3 border-b pb-3">
+                                            <button type="button" onClick={() => changeNavState({ languagePageMode: 'list' })} className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold p-2.5 rounded-full text-sm cursor-pointer"><i className="fa-solid fa-arrow-left"></i></button>
+                                            <h3 className="text-lg font-bold text-[#0d233a]">Bulk Upload Languages</h3>
+                                        </div>
+                                        <BulkLanguageGridContainer onSuccess={async (msg) => { triggerToast(msg); await fetchLanguagesMaster(); changeNavState({ languagePageMode: 'list' }); }} onCancel={() => changeNavState({ languagePageMode: 'list' })} />
+                                    </div>
+                                ) : selectedMaster === 'authors' && authorPageMode === 'add-author-page' ? (
+                                    AddAuthorFormComp ? <AddAuthorFormComp onSuccess={(msg) => { triggerToast(msg); fetchAuthorsMaster(); window.history.back(); }} onCancel={() => window.history.back()} /> : null
+                                ) : selectedMaster === 'authors' && authorPageMode === 'edit-author-page' ? (
+                                    ExternalEditAuthorFormComp ? <ExternalEditAuthorFormComp editingAuthor={editingAuthor} onSuccess={(msg) => { triggerToast(msg); setEditingAuthor(null); fetchAuthorsMaster(); window.history.back(); }} onCancel={() => { setEditingAuthor(null); window.history.back(); }} /> : null
+                                ) : selectedMaster === 'authors' && authorPageMode === 'bulk-author-grid-page' ? (
+                                    <div className="w-full bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-200 space-y-4">
+                                        <div className="flex items-center gap-3 border-b pb-3">
+                                            <button type="button" onClick={() => changeNavState({ authorPageMode: 'list' })} className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold p-2.5 rounded-full text-sm cursor-pointer"><i className="fa-solid fa-arrow-left"></i></button>
+                                            <h3 className="text-lg font-bold text-[#0d233a]">Bulk Upload Authors</h3>
+                                        </div>
+                                        <BulkAuthorGridContainer onSuccess={async (msg) => { triggerToast(msg); await fetchAuthorsMaster(); changeNavState({ authorPageMode: 'list' }); }} onCancel={() => changeNavState({ authorPageMode: 'list' })} />
+                                    </div>
+                                ) : (
+                                    /* RESPONSIVE DATA LIST (MOBILE CARDS + DESKTOP STICKY TABLE) */
+                                    <div className="w-full bg-white p-4 sm:p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+                                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                                            <h3 className="text-sm sm:text-base font-black text-[#0B1325] capitalize flex items-center gap-2">
+                                                <i className="fa-solid fa-table-list text-[#00A884]"></i>
+                                                <span>{selectedMaster} Directory ({searchedData.length})</span>
+                                            </h3>
+                                            <span className="text-xs font-bold text-slate-500">
+                                                Page {safePage} of {totalPages}
+                                            </span>
+                                        </div>
+
+                                        {/* MOBILE CARD VIEW */}
+                                        <div className="grid grid-cols-1 gap-3 md:hidden">
+                                            {paginatedData.map((item, idx) => (
+                                                <div key={idx} className="p-4 rounded-xl border border-slate-200 bg-slate-50/70 space-y-2.5">
+                                                    <div className="flex items-start justify-between gap-2">
+                                                        <div>
+                                                            <span className="text-[10px] font-mono font-bold text-indigo-600 block truncate max-w-[200px]">{item.id}</span>
+                                                            <h4 className="font-black text-sm text-[#0B1325]">{item.name}</h4>
+                                                        </div>
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={selectedMasterIds.includes(item.id)}
+                                                            onChange={() => handleSelectSingleMasterRow(item.id)}
+                                                            className="w-4 h-4 accent-[#00A884]"
+                                                        />
+                                                    </div>
+                                                    <p className="text-xs text-slate-600 line-clamp-2">{item.desc}</p>
+                                                    <div className="pt-2 border-t border-slate-200 flex flex-wrap items-center justify-end gap-3 text-xs font-bold">
+                                                        {selectedMaster === 'items' && item.raw && (
+                                                            <>
+                                                                <button onClick={() => handleOpenPdfModal(item.raw)} className="text-purple-700"><i className="fa-solid fa-file-pdf text-red-600 mr-1"></i>PDF</button>
+                                                                {!item.isPublished && (
+                                                                    <button onClick={() => handleApproveBook(item.raw, item.name)} className="text-emerald-700"><i className="fa-solid fa-check mr-1"></i>Approve</button>
+                                                                )}
+                                                            </>
+                                                        )}
+                                                        <button
+                                                            onClick={() => setDeleteConfirmModal({ show: true, id: item.id, ids: [], title: item.name, type: selectedMaster })}
+                                                            className="text-red-600">
+                                                            <i className="fa-solid fa-trash mr-1"></i>Delete
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        {/* DESKTOP COMPACT TABLE */}
+                                        <div className="hidden md:block overflow-x-auto w-full border border-slate-200 rounded-xl">
+                                            <table className="w-full text-left text-slate-800 text-xs border-collapse">
+                                                <thead className="bg-slate-100 text-slate-700 uppercase border-b font-extrabold sticky top-0 z-10">
+                                                    <tr>
+                                                        <th className="p-3 w-10 text-center">
+                                                            <input type="checkbox" checked={isAllSelected} onChange={(e) => handleSelectAllMasterRows(e, paginatedData)} className="w-4 h-4 cursor-pointer accent-[#00A884]" />
+                                                        </th>
+                                                        <th className="p-3 whitespace-nowrap">Code / ID</th>
+                                                        <th className="p-3 whitespace-nowrap">Name</th>
+                                                        {selectedMaster === 'customers' ? (
+                                                            <>
+                                                                <th className="p-3">Mobile</th>
+                                                                <th className="p-3">Email</th>
+                                                                <th className="p-3">State</th>
+                                                            </>
+                                                        ) : selectedMaster === 'items' ? (
+                                                            <>
+                                                                <th className="p-3">Category</th>
+                                                                <th className="p-3">Author</th>
+                                                                <th className="p-3">Language</th>
+                                                                <th className="p-3">Price</th>
+                                                                <th className="p-3">Pages</th>
+                                                                <th className="p-3">Status</th>
+                                                            </>
+                                                        ) : (
+                                                            <th className="p-3">Details</th>
+                                                        )}
+                                                        <th className="p-3 text-right sticky right-0 bg-slate-100 shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.1)]">Actions</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100">
+                                                    {paginatedData.map((item, index) => {
+                                                        const isChecked = selectedMasterIds.includes(item.id);
+                                                        return (
+                                                            <tr
+                                                                key={index}
+                                                                onClick={() => {
+                                                                    if (selectedMaster === 'items' && item.raw) handleOpenEditBook(item.raw);
+                                                                    else if (selectedMaster === 'plans' && item.raw) handleOpenEditPlan(item.raw);
+                                                                    else if (selectedMaster === 'categories' && item.raw) handleOpenEditCategoryPage(item.raw);
+                                                                    else if (selectedMaster === 'languages' && item.raw) handleOpenEditLanguagePage(item.raw);
+                                                                    else if (selectedMaster === 'keywords' && item.raw) handleOpenEditKeyword(item.raw);
+                                                                    else if (selectedMaster === 'authors' && item.raw) handleOpenEditAuthorPage(item.raw);
+                                                                    else if (selectedMaster === 'customers' && item.raw) handleOpenCustomerFullProfile(item.raw);
+                                                                }}
+                                                                className={`hover:bg-emerald-50/50 cursor-pointer transition ${isChecked ? 'bg-amber-50/60' : 'bg-white'}`}>
+                                                                <td className="p-3 text-center" onClick={e => e.stopPropagation()}>
+                                                                    <input type="checkbox" checked={isChecked} onChange={() => handleSelectSingleMasterRow(item.id)} className="w-4 h-4 cursor-pointer accent-[#00A884]" />
+                                                                </td>
+                                                                <td className="p-3 font-mono font-bold text-indigo-600 max-w-[130px] truncate" title={item.id}>{item.id}</td>
+                                                                <td className="p-3 font-bold text-slate-900 max-w-[200px] truncate" title={item.name}>{item.name}</td>
+
+                                                                {selectedMaster === 'customers' ? (
+                                                                    <>
+                                                                        <td className="p-3">{item.mobileNo}</td>
+                                                                        <td className="p-3">{item.emailId}</td>
+                                                                        <td className="p-3">{item.state}</td>
+                                                                    </>
+                                                                ) : selectedMaster === 'items' && item.raw ? (
+                                                                    <>
+                                                                        <td className="p-3 font-bold text-amber-700 whitespace-nowrap">{getBookCategoryName(item.raw)}</td>
+                                                                        <td className="p-3 font-bold text-blue-700 whitespace-nowrap">{item.raw.extractedAuthorName || item.raw.authorName || 'Dr. Samuel Hahnemann'}</td>
+                                                                        <td className="p-3 whitespace-nowrap">{item.raw.language || 'English'}</td>
+                                                                        <td className="p-3 font-black text-emerald-700 whitespace-nowrap">₹{item.raw.price ?? item.raw.Price}</td>
+                                                                        <td className="p-3 font-semibold whitespace-nowrap">{item.raw.noOfPages || 1}</td>
+                                                                        <td className="p-3 whitespace-nowrap">
+                                                                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${item.isPublished ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                                                                                {item.isPublished ? 'Live' : 'Pending'}
+                                                                            </span>
+                                                                        </td>
+                                                                    </>
+                                                                ) : (
+                                                                    <td className="p-3 text-slate-600">{item.desc}</td>
+                                                                )}
+
+                                                                <td className="p-3 text-right whitespace-nowrap sticky right-0 bg-white shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.08)] space-x-2" onClick={e => e.stopPropagation()}>
+                                                                    {selectedMaster === 'items' && item.raw && (
+                                                                        <>
+                                                                            <button onClick={() => handleOpenPdfModal(item.raw)} className="text-purple-600 hover:underline font-bold cursor-pointer">
+                                                                                <i className="fa-solid fa-file-pdf text-red-600 mr-1"></i>PDF
+                                                                            </button>
+                                                                            {!item.isPublished && (
+                                                                                <button onClick={() => handleApproveBook(item.raw, item.name)} className="text-emerald-600 hover:underline font-bold cursor-pointer">
+                                                                                    <i className="fa-solid fa-check mr-1"></i>Approve
+                                                                                </button>
+                                                                            )}
+                                                                        </>
+                                                                    )}
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => setDeleteConfirmModal({ show: true, id: item.id, ids: [], title: item.name, type: selectedMaster })}
+                                                                        className="text-red-600 hover:underline font-bold cursor-pointer">
+                                                                        <i className="fa-solid fa-trash mr-1"></i>Delete
+                                                                    </button>
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        </div>
+
+                                        {/* PAGINATION CONTROLS */}
+                                        {searchedData.length > 0 && (
+                                            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 text-xs text-slate-600">
+                                                <span>
+                                                    Showing <strong>{(safePage - 1) * rowsPerPage + 1}</strong> to <strong>{Math.min(safePage * rowsPerPage, searchedData.length)}</strong> of <strong>{searchedData.length}</strong> entries
+                                                </span>
+                                                <div className="flex items-center gap-1.5">
+                                                    <button
+                                                        type="button"
+                                                        disabled={safePage <= 1}
+                                                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                                        className="px-3 py-1.5 rounded-lg border border-slate-200 font-bold hover:bg-slate-100 disabled:opacity-40 cursor-pointer">
+                                                        ← Prev
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        disabled={safePage >= totalPages}
+                                                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                                        className="px-3 py-1.5 rounded-lg border border-slate-200 font-bold hover:bg-slate-100 disabled:opacity-40 cursor-pointer">
+                                                        Next →
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </div>
                         </div>
-
-                        {selectedMaster !== 'vendors' && selectedMaster !== 'journals' && selectedMaster !== 'platform-revenue' && (
-                            <div className="w-full bg-white p-4 rounded-lg border border-gray-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
-                                <div className="flex items-center gap-3">
-                                    <span className="text-xs font-black uppercase text-slate-500 flex items-center gap-1">
-                                        <i className="fa-solid fa-list-check text-[#e31b23]"></i> {currentHeaderConfig.title}
-                                    </span>
-                                    {selectedMaster !== 'bundles' && selectedMaster !== 'customers' && selectedMaster !== 'single-books' && (
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                if (selectedMaster === 'items') {
-                                                    changeNavState({ bookPageMode: 'add-book-page' });
-                                                } else if (selectedMaster === 'authors') {
-                                                    changeNavState({ authorPageMode: 'add-author-page' });
-                                                } else if (selectedMaster === 'categories') {
-                                                    changeNavState({ categoryPageMode: 'add-category-page' });
-                                                } else if (selectedMaster === 'languages') {
-                                                    changeNavState({ languagePageMode: 'add-language-page' });
-                                                } else if (selectedMaster === 'plans') {
-                                                    changeNavState({ planPageMode: 'add-plan-page' });
-                                                } else {
-                                                    setShowAddModal(true);
-                                                }
-                                            }}
-                                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3.5 py-1.5 rounded shadow flex items-center gap-1.5 transition cursor-pointer">
-                                            <i className="fa-solid fa-plus"></i> {currentHeaderConfig.buttonText}
-                                        </button>
-                                    )}
-
-                                    {/* BULK UPLOAD BUTTONS FOR ALL MASTERS */}
-                                    {selectedMaster === 'items' && (
-                                        <button
-                                            type="button"
-                                            onClick={() => changeNavState({ bookPageMode: 'bulk-grid-page' })}
-                                            className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs px-3.5 py-1.5 rounded shadow flex items-center gap-1.5 transition cursor-pointer">
-                                            <i className="fa-solid fa-file-excel"></i> Bulk Upload Books
-                                        </button>
-                                    )}
-
-                                    {selectedMaster === 'authors' && (
-                                        <button
-                                            type="button"
-                                            onClick={() => changeNavState({ authorPageMode: 'bulk-author-grid-page' })}
-                                            className="bg-blue-700 hover:bg-blue-800 text-white font-bold text-xs px-3.5 py-1.5 rounded shadow flex items-center gap-1.5 transition cursor-pointer">
-                                            <i className="fa-solid fa-file-excel"></i> Bulk Upload Authors
-                                        </button>
-                                    )}
-
-                                    {selectedMaster === 'categories' && (
-                                        <button
-                                            type="button"
-                                            onClick={() => changeNavState({ categoryPageMode: 'bulk-category-grid-page' })}
-                                            className="bg-amber-700 hover:bg-amber-800 text-white font-bold text-xs px-3.5 py-1.5 rounded shadow flex items-center gap-1.5 transition cursor-pointer">
-                                            <i className="fa-solid fa-file-excel"></i> Bulk Upload Categories
-                                        </button>
-                                    )}
-
-                                    {selectedMaster === 'languages' && (
-                                        <button
-                                            type="button"
-                                            onClick={() => changeNavState({ languagePageMode: 'bulk-language-grid-page' })}
-                                            className="bg-indigo-700 hover:bg-indigo-800 text-white font-bold text-xs px-3.5 py-1.5 rounded shadow flex items-center gap-1.5 transition cursor-pointer">
-                                            <i className="fa-solid fa-file-excel"></i> Bulk Upload Languages
-                                        </button>
-                                    )}
-
-                                    {selectedMasterIds.length > 0 && (
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                setDeleteConfirmModal({
-                                                    show: true,
-                                                    id: null,
-                                                    ids: selectedMasterIds,
-                                                    title: `${selectedMasterIds.length} Selected Record(s)`,
-                                                    type: selectedMaster
-                                                });
-                                            }}
-                                            className="bg-red-600 hover:bg-red-700 text-white font-bold text-xs px-3.5 py-1.5 rounded shadow flex items-center gap-1.5 transition cursor-pointer animate-pulse">
-                                            <i className="fa-solid fa-trash-can"></i> Delete Selected ({selectedMasterIds.length})
-                                        </button>
-                                    )}
-                                </div>
-
-                                <div className="flex items-center gap-4 text-xs">
-                                    <div className="flex items-center gap-1.5">
-                                        <label className="font-bold text-slate-600">Rows Count:</label>
-                                        <select
-                                            value={rowsPerPage}
-                                            onChange={e => setRowsPerPage(Number(e.target.value))}
-                                            className="border rounded px-2 py-1 font-bold bg-gray-50 outline-none">
-                                            <option value={5}>5 Rows</option>
-                                            <option value={10}>10 Rows</option>
-                                            <option value={20}>20 Rows</option>
-                                        </select>
-                                    </div>
-
-                                    <div className="flex items-center gap-2 border-l pl-4">
-                                        <span className="font-bold text-slate-600">Toggle Columns:</span>
-                                        <button onClick={() => toggleColumn('col1')} className={`px-2 py-1 text-[10px] font-bold rounded cursor-pointer ${visibleColumns.col1 ? 'bg-blue-100 text-blue-800' : 'bg-gray-200 text-gray-500 line-through'}`}>ID/Code</button>
-                                        <button onClick={() => toggleColumn('col2')} className={`px-2 py-1 text-[10px] font-bold rounded cursor-pointer ${visibleColumns.col2 ? 'bg-blue-100 text-blue-800' : 'bg-gray-200 text-gray-500 line-through'}`}>Name</button>
-                                        <button onClick={() => toggleColumn('col3')} className={`px-2 py-1 text-[10px] font-bold rounded cursor-pointer ${visibleColumns.col3 ? 'bg-blue-100 text-blue-800' : 'bg-gray-200 text-gray-500 line-through'}`}>Details</button>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {(selectedMaster === 'vendors') ? (
-                            VendorMasterComp ? (
-                                <VendorMasterComp
-                                    booksList={myAuthorBooks}
-                                    triggerToast={triggerToast}
-                                    isVendorSelfView={false}
-                                />
-                            ) : <div>Vendor Master Component Not Loaded</div>
-                        ) : (selectedMaster === 'journals') ? (
-                            JournalMasterComp ? (
-                                <JournalMasterComp
-                                    categoriesList={categoriesList}
-                                    languagesList={languagesList}
-                                    authorsList={authorsList}
-                                    vendorsList={vendorsList}
-                                    triggerToast={triggerToast}
-                                />
-                            ) : <div className="p-6 text-center font-bold">Journal Master Component Not Loaded</div>
-                        ) : (selectedMaster === 'platform-revenue') ? (
-                            PlatformRevenueMasterComp ? (
-                                <PlatformRevenueMasterComp triggerToast={triggerToast} />
-                            ) : <div className="p-6 text-center font-bold">Platform Revenue Component Not Loaded</div>
-                        ) : (selectedMaster === 'items' && bookPageMode === 'add-book-page') ? (
-                            AddBookFormComp ? (
-                                <AddBookFormComp
-                                    categoriesList={categoriesList}
-                                    languagesList={languagesList}
-                                    authorsList={authorsList}
-                                    vendorsList={vendorsList}
-                                    onOpenAddCategoryModal={() => setShowAddCategoryModal(true)}
-                                    onOpenAddLanguageModal={() => setShowAddLanguageModal(true)}
-                                    onOpenAddAuthorModal={() => setShowAddAuthorModal(true)}
-                                    setShowAddCategoryModal={setShowAddCategoryModal}
-                                    setShowAddLanguageModal={setShowAddLanguageModal}
-                                    setShowAddAuthorModal={setShowAddAuthorModal}
-                                    onSuccess={(msg) => {
-                                        triggerToast(msg);
-                                        fetchAuthorBooks();
-                                        fetchStoreBooks();
-                                        window.history.back();
-                                    }}
-                                    onCancel={() => window.history.back()}
-                                />
-                            ) : null
-                        ) : selectedMaster === 'items' && bookPageMode === 'bulk-grid-page' ? (
-                            <div className="w-full bg-white p-6 rounded-lg shadow-md border border-slate-200 space-y-4">
-                                <div className="flex items-center justify-between border-b pb-3">
-                                    <div className="flex items-center gap-3">
-                                        <button
-                                            type="button"
-                                            onClick={() => changeNavState({ bookPageMode: 'list' })}
-                                            className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold p-2.5 rounded-full text-sm cursor-pointer flex items-center justify-center transition shadow-sm">
-                                            <i className="fa-solid fa-arrow-left"></i>
-                                        </button>
-                                        <h3 className="text-xl font-bold text-[#0d233a] flex items-center gap-2">
-                                            <i className="fa-solid fa-table-cells text-emerald-600"></i> Excel-Style Bulk Upload Page
-                                        </h3>
-                                    </div>
-                                </div>
-
-                                <BulkGridFormContainer
-                                    categoriesList={categoriesList}
-                                    languagesList={languagesList}
-                                    authorsList={authorsList}
-                                    vendorsList={vendorsList}
-                                    onSuccess={async (msg) => {
-                                        triggerToast(msg);
-                                        await fetchAuthorBooks();
-                                        await fetchStoreBooks();
-                                        changeNavState({ bookPageMode: 'list' });
-                                    }}
-                                    onCancel={() => changeNavState({ bookPageMode: 'list' })}
-                                />
-                            </div>
-                        ) : selectedMaster === 'items' && bookPageMode === 'edit-book-page' ? (
-                            EditBookFormComp ? (
-                                <EditBookFormComp
-                                    editingBook={editingBook}
-                                    languagesList={languagesList}
-                                    onSuccess={(msg) => {
-                                        triggerToast(msg);
-                                        setEditingBook(null);
-                                        fetchAuthorBooks();
-                                        fetchStoreBooks();
-                                        window.history.back();
-                                    }}
-                                    onCancel={() => {
-                                        setEditingBook(null);
-                                        window.history.back();
-                                    }}
-                                />
-                            ) : null
-                        ) : selectedMaster === 'plans' ? (
-                            <PlanMaster booksList={myAuthorBooks} triggerToast={triggerToast} />
-                        ) : selectedMaster === 'bundles' ? (
-                            typeof window.BundleMaster !== 'undefined' ? (
-                                <window.BundleMaster triggerToast={triggerToast} />
-                            ) : (
-                                <BundleMaster triggerToast={triggerToast} />
-                            )
-                        ) : selectedMaster === 'single-books' ? (
-                            typeof window.SingleBookMaster !== 'undefined' ? (
-                                <window.SingleBookMaster triggerToast={triggerToast} />
-                            ) : (
-                                <div className="p-6 bg-amber-50 border border-amber-300 rounded text-amber-900 font-bold text-xs">
-                                    Single Book Master load nahi hua hai. SingleBookMaster.js ko server par update karein.
-                                </div>
-                            )
-                        ) : selectedMaster === 'categories' && categoryPageMode === 'add-category-page' ? (
-                            AddCategoryFormComp ? (
-                                <AddCategoryFormComp
-                                    onSuccess={(msg) => {
-                                        triggerToast(msg);
-                                        fetchCategories();
-                                        window.history.back();
-                                    }}
-                                    onCancel={() => window.history.back()}
-                                />
-                            ) : null
-                        ) : selectedMaster === 'categories' && categoryPageMode === 'edit-category-page' ? (
-                            EditCategoryFormComp ? (
-                                <EditCategoryFormComp
-                                    editingCategory={editingCategory}
-                                    onSuccess={(msg) => {
-                                        triggerToast(msg);
-                                        setEditingCategory(null);
-                                        fetchCategories();
-                                        window.history.back();
-                                    }}
-                                    onCancel={() => {
-                                        setEditingCategory(null);
-                                        window.history.back();
-                                    }}
-                                />
-                            ) : null
-                        ) : selectedMaster === 'categories' && categoryPageMode === 'bulk-category-grid-page' ? (
-                            <div className="w-full bg-white p-6 rounded-lg shadow-md border border-slate-200 space-y-4">
-                                <div className="flex items-center justify-between border-b pb-3">
-                                    <div className="flex items-center gap-3">
-                                        <button
-                                            type="button"
-                                            onClick={() => changeNavState({ categoryPageMode: 'list' })}
-                                            className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold p-2.5 rounded-full text-sm cursor-pointer transition shadow-sm">
-                                            <i className="fa-solid fa-arrow-left"></i>
-                                        </button>
-                                        <h3 className="text-xl font-bold text-[#0d233a] flex items-center gap-2">
-                                            <i className="fa-solid fa-layer-group text-amber-600"></i> Bulk Upload Categories
-                                        </h3>
-                                    </div>
-                                </div>
-                                <BulkCategoryGridContainer
-                                    onSuccess={async (msg) => {
-                                        triggerToast(msg);
-                                        await fetchCategories();
-                                        changeNavState({ categoryPageMode: 'list' });
-                                    }}
-                                    onCancel={() => changeNavState({ categoryPageMode: 'list' })}
-                                />
-                            </div>
-                        ) : selectedMaster === 'languages' && languagePageMode === 'add-language-page' ? (
-                            AddLanguageFormComp ? (
-                                <AddLanguageFormComp
-                                    onSuccess={(msg) => {
-                                        triggerToast(msg);
-                                        fetchLanguagesMaster();
-                                        window.history.back();
-                                    }}
-                                    onCancel={() => window.history.back()}
-                                />
-                            ) : null
-                        ) : selectedMaster === 'languages' && languagePageMode === 'edit-language-page' ? (
-                            EditLanguageFormComp ? (
-                                <EditLanguageFormComp
-                                    editingLanguage={editingLanguage}
-                                    onSuccess={(msg) => {
-                                        triggerToast(msg);
-                                        setEditingLanguage(null);
-                                        fetchLanguagesMaster();
-                                        window.history.back();
-                                    }}
-                                    onCancel={() => {
-                                        setEditingLanguage(null);
-                                        window.history.back();
-                                    }}
-                                />
-                            ) : null
-                        ) : selectedMaster === 'languages' && languagePageMode === 'bulk-language-grid-page' ? (
-                            <div className="w-full bg-white p-6 rounded-lg shadow-md border border-slate-200 space-y-4">
-                                <div className="flex items-center justify-between border-b pb-3">
-                                    <div className="flex items-center gap-3">
-                                        <button
-                                            type="button"
-                                            onClick={() => changeNavState({ languagePageMode: 'list' })}
-                                            className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold p-2.5 rounded-full text-sm cursor-pointer transition shadow-sm">
-                                            <i className="fa-solid fa-arrow-left"></i>
-                                        </button>
-                                        <h3 className="text-xl font-bold text-[#0d233a] flex items-center gap-2">
-                                            <i className="fa-solid fa-language text-indigo-600"></i> Bulk Upload Languages
-                                        </h3>
-                                    </div>
-                                </div>
-                                <BulkLanguageGridContainer
-                                    onSuccess={async (msg) => {
-                                        triggerToast(msg);
-                                        await fetchLanguagesMaster();
-                                        changeNavState({ languagePageMode: 'list' });
-                                    }}
-                                    onCancel={() => changeNavState({ languagePageMode: 'list' })}
-                                />
-                            </div>
-                        ) : selectedMaster === 'authors' && authorPageMode === 'add-author-page' ? (
-                            AddAuthorFormComp ? (
-                                <AddAuthorFormComp
-                                    onSuccess={(msg) => {
-                                        triggerToast(msg);
-                                        fetchAuthorsMaster();
-                                        window.history.back();
-                                    }}
-                                    onCancel={() => window.history.back()}
-                                />
-                            ) : null
-                        ) : selectedMaster === 'authors' && authorPageMode === 'edit-author-page' ? (
-                            ExternalEditAuthorFormComp ? (
-                                <ExternalEditAuthorFormComp
-                                    editingAuthor={editingAuthor}
-                                    onSuccess={(msg) => {
-                                        triggerToast(msg);
-                                        setEditingAuthor(null);
-                                        fetchAuthorsMaster();
-                                        window.history.back();
-                                    }}
-                                    onCancel={() => {
-                                        setEditingAuthor(null);
-                                        window.history.back();
-                                    }}
-                                />
-                            ) : null
-                        ) : selectedMaster === 'authors' && authorPageMode === 'bulk-author-grid-page' ? (
-                            <div className="w-full bg-white p-6 rounded-lg shadow-md border border-slate-200 space-y-4">
-                                <div className="flex items-center justify-between border-b pb-3">
-                                    <div className="flex items-center gap-3">
-                                        <button
-                                            type="button"
-                                            onClick={() => changeNavState({ authorPageMode: 'list' })}
-                                            className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold p-2.5 rounded-full text-sm cursor-pointer transition shadow-sm">
-                                            <i className="fa-solid fa-arrow-left"></i>
-                                        </button>
-                                        <h3 className="text-xl font-bold text-[#0d233a] flex items-center gap-2">
-                                            <i className="fa-solid fa-user-pen text-blue-600"></i> Bulk Upload Authors
-                                        </h3>
-                                    </div>
-                                </div>
-                                <BulkAuthorGridContainer
-                                    onSuccess={async (msg) => {
-                                        triggerToast(msg);
-                                        await fetchAuthorsMaster();
-                                        changeNavState({ authorPageMode: 'list' });
-                                    }}
-                                    onCancel={() => changeNavState({ authorPageMode: 'list' })}
-                                />
-                            </div>
-                        ) : (
-                            <div className="w-full bg-white p-6 rounded-lg border border-gray-200 shadow-sm space-y-4">
-                                <h3 className="text-base font-bold text-[#0d233a] border-b pb-2 capitalize flex items-center justify-between">
-                                    <span><i className="fa-solid fa-list text-[#e31b23] me-2"></i>{selectedMaster} List View ({currentMasterData.length})</span>
-                                    <span className="text-xs text-slate-500">Showing Top {rowsPerPage} Rows</span>
-                                </h3>
-
-                                <div className="overflow-x-auto overflow-y-auto w-full max-h-[500px] border border-gray-200 rounded-lg shadow-inner">
-                                    <table className="w-full text-left text-slate-800 text-xs relative border-collapse">
-                                        <thead className="bg-slate-100 text-slate-600 uppercase border-b font-bold sticky top-0 z-20 shadow-sm">
-                                            <tr>
-                                                <th className="p-3 w-10 text-center">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={isAllSelected}
-                                                        onChange={(e) => handleSelectAllMasterRows(e, currentMasterData.slice(0, rowsPerPage))}
-                                                        className="w-4 h-4 cursor-pointer accent-[#e31b23]"
-                                                    />
-                                                </th>
-
-                                                {visibleColumns.col1 && (
-                                                    <th className="p-3">
-                                                        {selectedMaster === 'authors' ? 'Author ID' :
-                                                            selectedMaster === 'plans' ? 'Plan ID' :
-                                                                selectedMaster === 'categories' ? 'Category Code' :
-                                                                    selectedMaster === 'languages' ? 'Language Code' :
-                                                                        selectedMaster === 'keywords' ? 'Keyword Code' :
-                                                                            selectedMaster === 'customers' ? 'Customer ID' :
-                                                                                'Book Code'}
-                                                    </th>
-                                                )}
-
-                                                {visibleColumns.col2 && (
-                                                    <th className="p-3">
-                                                        {selectedMaster === 'authors' ? 'Author Name' :
-                                                            selectedMaster === 'plans' ? 'Plan Name' :
-                                                                selectedMaster === 'categories' ? 'Category Name' :
-                                                                    selectedMaster === 'languages' ? 'Language Name' :
-                                                                        selectedMaster === 'keywords' ? 'Keyword Name' :
-                                                                            selectedMaster === 'customers' ? 'Customer Name' :
-                                                                                'Book Name'}
-                                                    </th>
-                                                )}
-
-                                                {selectedMaster === 'customers' ? (
-                                                    <>
-                                                        <th className="p-3">Mobile Number</th>
-                                                        <th className="p-3">Email ID</th>
-                                                        <th className="p-3">Address</th>
-                                                        <th className="p-3">State</th>
-                                                        <th className="p-3">Country</th>
-                                                        <th className="p-3">Postal / Pincode</th>
-                                                    </>
-                                                ) : selectedMaster === 'items' ? (
-                                                    <>
-                                                        <th className="p-3">Category</th>
-                                                        <th className="p-3">ISBN</th>
-                                                        <th className="p-3">Author Name</th>
-                                                        <th className="p-3">Published By</th>
-                                                        <th className="p-3">Vendor Name</th>
-                                                        <th className="p-3">Language</th>
-                                                        <th className="p-3">Price (₹)</th>
-                                                        <th className="p-3">Pages</th>
-                                                    </>
-                                                ) : (
-                                                    visibleColumns.col3 && (
-                                                        <th className="p-3">
-                                                            {selectedMaster === 'authors' ? 'Created Date' : 'Description / Details'}
-                                                        </th>
-                                                    )
-                                                )}
-
-                                                <th className="p-3 text-right">Actions</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y">
-                                            {currentMasterData.slice(0, rowsPerPage).map((item, index) => {
-                                                const isChecked = selectedMasterIds.includes(item.id);
-
-                                                return (
-                                                    <tr
-                                                        key={index}
-                                                        onClick={() => {
-                                                            if (selectedMaster === 'items' && item.raw) handleOpenEditBook(item.raw);
-                                                            else if (selectedMaster === 'plans' && item.raw) handleOpenEditPlan(item.raw);
-                                                            else if (selectedMaster === 'categories' && item.raw) handleOpenEditCategoryPage(item.raw);
-                                                            else if (selectedMaster === 'languages' && item.raw) handleOpenEditLanguagePage(item.raw);
-                                                            else if (selectedMaster === 'keywords' && item.raw) handleOpenEditKeyword(item.raw);
-                                                            else if (selectedMaster === 'authors' && item.raw) handleOpenEditAuthorPage(item.raw);
-                                                            else if (selectedMaster === 'customers' && item.raw) {
-                                                                const targetUserId = item.raw.userId || item.raw.UserId;
-                                                                if (targetUserId) {
-                                                                    window.location.href = `/Reader/Profile?userId=${encodeURIComponent(targetUserId)}`;
-                                                                } else {
-                                                                    handleOpenCustomerFullProfile(item.raw);
-                                                                }
-                                                            }
-                                                        }}
-                                                        className={`hover:bg-blue-50/70 cursor-pointer transition ${isChecked ? 'bg-amber-50/60' : ''}`}>
-
-                                                        <td className="p-3 text-center" onClick={e => e.stopPropagation()}>
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={isChecked}
-                                                                onChange={() => handleSelectSingleMasterRow(item.id)}
-                                                                className="w-4 h-4 cursor-pointer accent-[#e31b23]"
-                                                            />
-                                                        </td>
-
-                                                        {visibleColumns.col1 && (
-                                                            <td className="p-3 font-mono font-bold text-indigo-600">{item.id}</td>
-                                                        )}
-                                                        {visibleColumns.col2 && (
-                                                            <td className="p-3 font-bold text-slate-900">{item.name}</td>
-                                                        )}
-
-                                                        {selectedMaster === 'customers' ? (
-                                                            <>
-                                                                <td className="p-3 text-slate-700">{item.mobileNo}</td>
-                                                                <td className="p-3 text-slate-700">{item.emailId}</td>
-                                                                <td className="p-3 text-slate-700 max-w-xs truncate" title={item.address}>{item.address}</td>
-                                                                <td className="p-3 text-slate-700">{item.state}</td>
-                                                                <td className="p-3 text-slate-700">{item.country}</td>
-                                                                <td className="p-3 font-mono text-slate-700">{item.postalCode}</td>
-                                                            </>
-                                                        ) : selectedMaster === 'items' && item.raw ? (
-                                                            <>
-                                                                <td className="p-3 font-bold text-amber-700">
-                                                                    {getBookCategoryName(item.raw)}
-                                                                </td>
-                                                                <td className="p-3 font-mono text-slate-600">
-                                                                    {item.raw.isbn || item.raw.ISBN || item.raw.Isbn || 'N/A'}
-                                                                </td>
-                                                                <td className="p-3 font-bold text-blue-700">
-                                                                    {item.raw.extractedAuthorName || item.raw.authorName || item.raw.AuthorName || item.raw.author || item.raw.Author || 'Dr. Samuel Hahnemann'}
-                                                                </td>
-                                                                <td className="p-3 font-bold text-slate-700">
-                                                                    {item.raw.extractedPublisherName || item.raw.createdBy || item.raw.CreatedBy || item.raw.publisherName || item.raw.PublisherName || 'System Administrator'}
-                                                                </td>
-                                                                <td className="p-3 font-bold text-indigo-700">
-                                                                    {item.raw.vendorName || item.raw.VendorName || 'In-House (B. Jain)'}
-                                                                </td>
-                                                                <td className="p-3 font-medium text-slate-700">
-                                                                    {item.raw.language || item.raw.Language || 'English'}
-                                                                </td>
-                                                                <td className="p-3 font-black text-emerald-700">
-                                                                    ₹{item.raw.price !== undefined ? item.raw.price : item.raw.Price}
-                                                                </td>
-                                                                <td className="p-3 font-semibold text-slate-600">
-                                                                    {item.raw.noOfPages || item.raw.NoOfPages || 1}
-                                                                </td>
-                                                            </>
-                                                        ) : (
-                                                            visibleColumns.col3 && (
-                                                                <td className="p-3 text-slate-600">{item.desc}</td>
-                                                            )
-                                                        )}
-
-                                                        <td className="p-3 text-right space-x-2" onClick={e => e.stopPropagation()}>
-                                                            {selectedMaster === 'items' && item.raw && (
-                                                                <>
-                                                                    <button onClick={(e) => { e.stopPropagation(); handleOpenPdfModal(item.raw); }} className="text-purple-600 hover:underline font-bold me-2 cursor-pointer">
-                                                                        <i className="fa-solid fa-file-pdf text-red-600 me-1"></i> View PDF
-                                                                    </button>
-                                                                    {!item.isPublished && isAdmin && (
-                                                                        <button onClick={(e) => { e.stopPropagation(); handleApproveBook(item.raw, item.name); }} className="text-emerald-600 hover:underline font-bold me-2 cursor-pointer">
-                                                                            <i className="fa-solid fa-check me-1"></i> Approve
-                                                                        </button>
-                                                                    )}
-                                                                </>
-                                                            )}
-                                                            <button
-                                                                type="button"
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    const targetId = item.id || (item.raw ? (item.raw.id || item.raw.Id || item.raw.itemNo) : item.name);
-                                                                    setSelectedMasterIds([]);
-                                                                    setDeleteConfirmModal({
-                                                                        show: true,
-                                                                        id: targetId,
-                                                                        ids: [],
-                                                                        title: item.name,
-                                                                        type: selectedMaster
-                                                                    });
-                                                                }}
-                                                                className="text-[#e31b23] hover:underline font-bold cursor-pointer">
-                                                                <i className="fa-solid fa-trash me-1"></i> Delete
-                                                            </button>
-                                                        </td>
-                                                    </tr>
-                                                );
-                                            })}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                )}
+                    );
+                })()}
 
                 {activeTab === 'vendor-profile' && isVendor && (
                     VendorMasterComp ? (
@@ -4545,7 +4468,7 @@ function BulkGridFormContainer({ categoriesList, languagesList, authorsList, ven
 
     const handleRemoveRow = (index) => {
         if (rows.length <= 1) {
-            alert("Kam se kam 1 row honi chahiye.");
+            alert("There must be at least 1 row.");
             return;
         }
         setRows(rows.filter((_, i) => i !== index));
@@ -4553,7 +4476,7 @@ function BulkGridFormContainer({ categoriesList, languagesList, authorsList, ven
 
     const handleDownloadExcelTemplate = () => {
         if (!window.XLSX) {
-            alert("Excel library load ho rahi hai, 2 second baad dubara try karein.");
+            alert("The Excel library is loading. Please try again in 2 seconds.");
             return;
         }
 
@@ -4591,7 +4514,7 @@ function BulkGridFormContainer({ categoriesList, languagesList, authorsList, ven
         if (!file) return;
 
         if (!window.XLSX) {
-            alert("Excel library load nahi hui hai. Page ko Ctrl+Shift+R se refresh karein.");
+            alert("The Excel library has not loaded. Please refresh the page with Ctrl+Shift+R.");
             return;
         }
 
@@ -4604,7 +4527,7 @@ function BulkGridFormContainer({ categoriesList, languagesList, authorsList, ven
                 const jsonRows = window.XLSX.utils.sheet_to_json(firstSheet, { defval: "" });
 
                 if (!jsonRows || jsonRows.length === 0) {
-                    alert("Excel sheet khali hai! Kam se kam 1 book row bharein.");
+                    alert("The Excel sheet is empty! Please fill in at least 1 book row.");
                     return;
                 }
 
@@ -4681,15 +4604,15 @@ function BulkGridFormContainer({ categoriesList, languagesList, authorsList, ven
                 }).filter(r => r.itemName.length > 0 || r.isbn.length > 0);
 
                 if (importedRows.length === 0) {
-                    alert("Excel columns match nahi hue! Kripya Sample Excel ke column headers use karein.");
+                    alert("The Excel columns don't match! Please use the column headers from the Sample Excel.");
                     return;
                 }
 
                 setRows(importedRows);
-                alert(`${importedRows.length} books Excel file se table mein load ho gayi hain! Ab PDF files attach karke 'Upload All Books' dabayein.`);
+                alert(`${importedRows.length} The books have been loaded into the table from the Excel file! Now attach the PDF files and click 'Upload All Books.`);
             } catch (err) {
                 console.error("Excel read error:", err);
-                alert("Excel file padhne mein error aaya. Valid .xlsx ya .csv file upload karein.");
+                alert("There was an error reading the Excel file. Please upload a valid .xlsx or .csv file.");
             }
         };
         reader.readAsArrayBuffer(file);
@@ -4698,7 +4621,7 @@ function BulkGridFormContainer({ categoriesList, languagesList, authorsList, ven
 
     const handleParseExcelPaste = () => {
         if (!pasteText || !pasteText.trim()) {
-            alert("Kripya Excel se copy kiya hua data text area me paste karein.");
+            alert("Please paste the data copied from Excel into the text area.");
             return;
         }
 
@@ -4734,7 +4657,7 @@ function BulkGridFormContainer({ categoriesList, languagesList, authorsList, ven
             setRows(parsedRows);
             setPasteText('');
             setShowPasteBox(false);
-            alert(`${parsedRows.length} rows Excel se successfully import ho gayi hain! Ab aap Files upload kar sakte hain.`);
+            alert(`${parsedRows.length} Rows have been imported successfully from Excel! You can now upload the files.`);
         }
     };
 
@@ -4743,7 +4666,7 @@ function BulkGridFormContainer({ categoriesList, languagesList, authorsList, ven
 
         const validRows = rows.filter(r => r.itemName && r.itemName.trim().length > 0);
         if (validRows.length === 0) {
-            alert("Kripya kam se kam 1 book ka Book Name fill karein!");
+            alert("Please fill in the Book Name for at least 1 book!");
             return;
         }
 

@@ -15,6 +15,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Threading.Tasks;
 
 namespace Web.Areas.Author.Controllers
@@ -46,8 +47,6 @@ namespace Web.Areas.Author.Controllers
             if (string.IsNullOrWhiteSpace(dto.ItemNo))
                 return BadRequest(new { message = "Item Code is required." });
 
-            if (dto.MainPdf == null || dto.MainPdf.Length == 0)
-                return BadRequest(new { message = "Main PDF file is required." });
 
             var currentUser = await _userManager.GetUserAsync(User);
             if (currentUser == null) return Unauthorized(new { message = "Session expired." });
@@ -115,42 +114,45 @@ namespace Web.Areas.Author.Controllers
 
                 _dbContext.Books.Add(book);
 
-                var chunkInfos = _storageService.ProcessAndSplitPdfInterleaved(dto.MainPdf, dto.ItemNo, 4);
-
-                foreach (var info in chunkInfos)
+                if (dto.MainPdf != null && dto.MainPdf.Length > 0)
                 {
-                    if (info.TableTarget == "Alpha")
+                    var chunkInfos = _storageService.ProcessAndSplitPdfInterleaved(dto.MainPdf, dto.ItemNo, 4);
+
+                    foreach (var info in chunkInfos)
                     {
-                        _dbContext.BookSegmentsAlpha.Add(new BookSegmentAlpha
+                        if (info.TableTarget == "Alpha")
                         {
-                            Id = info.ChunkId,
-                            BookId = book.Id,
-                            ParentChunkId = info.ParentChunkId,
-                            StorageRelativePath = info.StorageRelativePath,
-                            CreatedAt = DateTime.UtcNow
-                        });
-                    }
-                    else if (info.TableTarget == "Beta")
-                    {
-                        _dbContext.BookSegmentsBeta.Add(new BookSegmentBeta
+                            _dbContext.BookSegmentsAlpha.Add(new BookSegmentAlpha
+                            {
+                                Id = info.ChunkId,
+                                BookId = book.Id,
+                                ParentChunkId = info.ParentChunkId,
+                                StorageRelativePath = info.StorageRelativePath,
+                                CreatedAt = DateTime.UtcNow
+                            });
+                        }
+                        else if (info.TableTarget == "Beta")
                         {
-                            Id = info.ChunkId,
-                            BookId = book.Id,
-                            ParentChunkId = info.ParentChunkId,
-                            StorageRelativePath = info.StorageRelativePath,
-                            CreatedAt = DateTime.UtcNow
-                        });
-                    }
-                    else
-                    {
-                        _dbContext.BookSegmentsGamma.Add(new BookSegmentGamma
+                            _dbContext.BookSegmentsBeta.Add(new BookSegmentBeta
+                            {
+                                Id = info.ChunkId,
+                                BookId = book.Id,
+                                ParentChunkId = info.ParentChunkId,
+                                StorageRelativePath = info.StorageRelativePath,
+                                CreatedAt = DateTime.UtcNow
+                            });
+                        }
+                        else
                         {
-                            Id = info.ChunkId,
-                            BookId = book.Id,
-                            ParentChunkId = info.ParentChunkId,
-                            StorageRelativePath = info.StorageRelativePath,
-                            CreatedAt = DateTime.UtcNow
-                        });
+                            _dbContext.BookSegmentsGamma.Add(new BookSegmentGamma
+                            {
+                                Id = info.ChunkId,
+                                BookId = book.Id,
+                                ParentChunkId = info.ParentChunkId,
+                                StorageRelativePath = info.StorageRelativePath,
+                                CreatedAt = DateTime.UtcNow
+                            });
+                        }
                     }
                 }
 
@@ -158,7 +160,9 @@ namespace Web.Areas.Author.Controllers
 
                 return Ok(new
                 {
-                    message = $"Book '{book.ItemName}' split and saved directly to Desktop Storage successfully!",
+                    message = (dto.MainPdf != null && dto.MainPdf.Length > 0)
+                        ? $"Book '{book.ItemName}' split and saved directly to Desktop Storage successfully!"
+                        : $"Book '{book.ItemName}' saved to Items list successfully (without PDF)!",
                     bookId = book.Id
                 });
             }
