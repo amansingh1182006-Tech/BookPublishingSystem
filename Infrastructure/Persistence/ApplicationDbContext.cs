@@ -53,6 +53,11 @@ namespace Infrastructure.Persistence
             {
                 entity.ToTable("AspNetRoles");
             });
+            builder.Entity<Microsoft.AspNetCore.Identity.IdentityUserRole<string>>().ToTable("AspNetUserRoles");
+            builder.Entity<Microsoft.AspNetCore.Identity.IdentityUserClaim<string>>().ToTable("AspNetUserClaims");
+            builder.Entity<Microsoft.AspNetCore.Identity.IdentityUserLogin<string>>().ToTable("AspNetUserLogins");
+            builder.Entity<Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>>().ToTable("AspNetRoleClaims");
+            builder.Entity<Microsoft.AspNetCore.Identity.IdentityUserToken<string>>().ToTable("AspNetUserTokens");
 
             builder.Entity<BookSegmentAlpha>().ToTable("BookSegmentAlpha");
             builder.Entity<BookSegmentBeta>().ToTable("BookSegmentBeta");
