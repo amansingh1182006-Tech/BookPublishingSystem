@@ -7,6 +7,7 @@ using Infrastructure.Persistence;
 using Infrastructure.Persistence.Seeders;
 using Infrastructure.Services;
 using Infrastructure.Storage;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.StaticFiles;
 using Serilog;
@@ -55,6 +56,20 @@ builder.Services.AddControllersWithViews()
         
         options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
     });
+
+builder.Services.Configure<FormOptions>(options =>
+{
+    options.ValueCountLimit = int.MaxValue;
+    options.MultipartBodyLengthLimit = 524_288_000; 
+});
+
+
+builder.WebHost.ConfigureKestrel(serverOptions =>
+{
+    serverOptions.Limits.MaxRequestBodySize = 524_288_000; 
+    serverOptions.Limits.KeepAliveTimeout = TimeSpan.FromMinutes(10);
+    serverOptions.Limits.RequestHeadersTimeout = TimeSpan.FromMinutes(10);
+});
 
 var app = builder.Build();
 

@@ -33,7 +33,7 @@ namespace Infrastructure.Services
             var activeRules = await _dbContext.VendorRoyaltyRules
                 .Where(r => includedBookIds.Contains(r.BookId)
                             && r.IsRoyaltyApplicable
-                            && r.LiveStatus == "Live"
+                            && (r.LiveStatus == null || r.LiveStatus == "" || r.LiveStatus == "Live" || r.LiveStatus == "Active")
                             && r.RoyaltyPageThreshold > 0)
                 .ToListAsync();
 

@@ -95,7 +95,8 @@
 
         // Timeout controller (25 seconds max so server doesn't hang UI)
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 25000);
+        const timeoutMs = isBinary ? 120000 : 25000;
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
         if (!finalInit.signal) {
             finalInit.signal = controller.signal;
         }
@@ -684,6 +685,14 @@ function App() {
     const [plansList, setPlansList] = useState([]);
     const [storeBooks, setStoreBooks] = useState([]);
     const [storeJournals, setStoreJournals] = useState([]);
+    const [contactMessages, setContactMessages] = useState([]);
+    const [contactForm, setContactForm] = useState({
+        senderName: '',
+        emailAddress: '',
+        inquiryCategory: 'Reader Subscription Assistance',
+        messageText: ''
+    });
+    const [sendingContact, setSendingContact] = useState(false);
     const [myAuthorBooks, setMyAuthorBooks] = useState([]);
     const [loadingBooks, setLoadingBooks] = useState(false);
 
@@ -1232,6 +1241,17 @@ function App() {
             console.error("Fetch store journals error:", e);
         }
     };
+    const fetchContactMessages = async () => {
+        try {
+            const res = await fetch('/api/contactmessages');
+            if (res.ok) {
+                const data = await window.safeJsonParse(res);
+                setContactMessages(Array.isArray(data) ? data : []);
+            }
+        } catch (e) {
+            console.error("Fetch contact messages error:", e);
+        }
+    };
 
     const getBookAuthorName = (b) => {
         if (!b) return 'Dr. Samuel Hahnemann';
@@ -1429,6 +1449,7 @@ function App() {
         else if (selectedMaster === 'languages') fetchLanguagesMaster();
         else if (selectedMaster === 'keywords') fetchKeywordsMaster();
         else if (selectedMaster === 'vendors') fetchVendorsMaster();
+        else if (selectedMaster === 'messages') fetchContactMessages();
         else if (selectedMaster === 'items') {
             Promise.allSettled([fetchAuthorBooks(), fetchVendorsMaster(), fetchAuthorsMaster()]);
         }
@@ -1440,7 +1461,8 @@ function App() {
                 fetchAuthorBooks(),
                 fetchAuthorsMaster(),
                 fetchCategories(),
-                fetchLanguagesMaster()
+                fetchLanguagesMaster(),
+                fetchContactMessages()
             ]);
         }
     }, [user.isLoggedIn, user.role, activeTab]);
@@ -1680,8 +1702,9 @@ function App() {
                 endpoints = [`/api/keyword/delete/${encodedVal}`];
             } else if (selectedMaster === 'customers') {
                 endpoints = [`/api/admin/admin/delete-customer/${encodedVal}`];
+            } else if (selectedMaster === 'messages') {
+                endpoints = [`/api/contactmessages/${encodedVal}`];
             }
-
             let deletedSuccessfully = false;
 
             for (const url of endpoints) {
@@ -1718,6 +1741,7 @@ function App() {
             else if (selectedMaster === 'languages') await fetchLanguagesMaster();
             else if (selectedMaster === 'keywords') await fetchKeywordsMaster();
             else if (selectedMaster === 'customers') await fetchCustomersMaster();
+            else if (selectedMaster === 'messages') await fetchContactMessages();
         } else {
             triggerToast("Failed to delete selected record(s). Check API route constraints.", 'error');
         }
@@ -1984,6 +2008,14 @@ function App() {
                     postalCode: c.postalCode || c.PostalCode || '-',
                     raw: c
                 }));
+            case 'messages':
+                return contactMessages.map(m => ({
+                    id: m.id,
+                    name: m.senderName,
+                    desc: m.messageText,
+                    emailId: m.emailAddress,
+                    raw: m
+                }));
             default:
                 return [];
         }
@@ -2007,6 +2039,8 @@ function App() {
                 return { title: 'KEYWORD LIST', buttonText: 'Add Keyword' };
             case 'customers':
                 return { title: 'CUSTOMER LIST' };
+            case 'messages':
+                return { title: 'SUPPORT MESSAGES LIST', buttonText: '' };
             case 'items':
             default:
                 return { title: 'BOOK LIST', buttonText: 'Add Item' };
@@ -2109,8 +2143,12 @@ function App() {
                         <div
                             onClick={() => { setSelectedCategoryFilter('All'); changeNavState({ activeTab: 'store' }); }}
                             className="flex items-center space-x-3 cursor-pointer shrink-0">
-                            <div className="w-11 h-11 rounded-xl bg-navyDark flex items-center justify-center text-white shadow-md border border-emeraldPrimary/30">
-                                <i className="fa-solid fa-book-medical text-emeraldPrimary text-2xl"></i>
+                            <div className="w-11 h-11 rounded-xl flex items-center justify-center overflow-hidden shrink-0">
+                                <img
+                                    src="/images/B.jainLogo.png"
+                                    alt="B.JainRx Logo"
+                                    className="w-full h-full object-contain"
+                                />
                             </div>
                             <div>
                                 <div className="flex items-center">
@@ -2336,7 +2374,8 @@ function App() {
                         { key: 'customers', label: 'Customers', icon: 'fa-users', badge: customersList.length },
                         { key: 'vendors', label: 'Vendor Master', icon: 'fa-user-gear', badge: vendorsList.length },
                         { key: 'platform-revenue', label: 'Platform Revenue (70%)', icon: 'fa-vault' },
-                        { key: 'journals', label: 'Journal Master', icon: 'fa-newspaper', badge: storeJournals.length }
+                        { key: 'journals', label: 'Journal Master', icon: 'fa-newspaper', badge: storeJournals.length },
+                        { key: 'messages', label: 'Support Messages', icon: 'fa-envelope', badge: contactMessages.length }
                     ];
 
                     const searchedData = currentMasterData.filter(item => {
@@ -2345,6 +2384,7 @@ function App() {
                         return String(item.id || '').toLowerCase().includes(q) ||
                             String(item.name || '').toLowerCase().includes(q) ||
                             String(item.desc || '').toLowerCase().includes(q) ||
+                            String(item.raw?.vendorName || item.raw?.VendorName || '').toLowerCase().includes(q) ||
                             String(item.emailId || '').toLowerCase().includes(q);
                     });
 
@@ -2509,7 +2549,7 @@ function App() {
                                                 <i className="fa-solid fa-list-check text-[#00A884]"></i> {currentHeaderConfig.title}
                                             </span>
 
-                                            {selectedMaster !== 'bundles' && selectedMaster !== 'customers' && selectedMaster !== 'single-books' && (
+                                            {selectedMaster !== 'bundles' && selectedMaster !== 'customers' && selectedMaster !== 'single-books' && selectedMaster !== 'messages' && (
                                                 <button
                                                     type="button"
                                                     onClick={() => {
@@ -2738,16 +2778,25 @@ function App() {
                                                         </th>
                                                         <th className="p-3 whitespace-nowrap">Code / ID</th>
                                                         <th className="p-3 whitespace-nowrap">Name</th>
-                                                        {selectedMaster === 'customers' ? (
-                                                            <>
-                                                                <th className="p-3">Mobile</th>
-                                                                <th className="p-3">Email</th>
-                                                                <th className="p-3">State</th>
-                                                            </>
+                                                                                                                                {selectedMaster === 'messages' ? (
+                                                                                                                                    <>
+                                                                                                                                        <th className="p-3">Email Address</th>
+                                                                                                                                        <th className="p-3">Category</th>
+                                                                                                                                        <th className="p-3">Message</th>
+                                                                                                                                        <th className="p-3">Date</th>
+                                                                                                                                        <th className="p-3">Status</th>
+                                                                                                                                    </>
+                                                                                                                                ) : selectedMaster === 'customers' ? (
+                                                                                                                                    <>
+                                                                                                                                        <th className="p-3">Mobile</th>
+                                                                                                                                        <th className="p-3">Email</th>
+                                                                                                                                        <th className="p-3">State</th>
+                                                                                                                                    </>
                                                         ) : selectedMaster === 'items' ? (
                                                             <>
                                                                 <th className="p-3">Category</th>
                                                                 <th className="p-3">Author</th>
+                                                                <th className="p-3">Vendor Name</th>
                                                                 <th className="p-3">Language</th>
                                                                 <th className="p-3">Price</th>
                                                                 <th className="p-3">Pages</th>
@@ -2780,8 +2829,27 @@ function App() {
                                                                 </td>
                                                                 <td className="p-3 font-mono font-bold text-indigo-600 max-w-[130px] truncate" title={item.id}>{item.id}</td>
                                                                 <td className="p-3 font-bold text-slate-900 max-w-[200px] truncate" title={item.name}>{item.name}</td>
-
-                                                                {selectedMaster === 'customers' ? (
+                                                                {selectedMaster === 'messages' && item.raw ? (
+                                                                    <>
+                                                                        <td className="p-3 font-semibold text-blue-700 whitespace-nowrap">{item.raw.emailAddress}</td>
+                                                                        <td className="p-3 font-bold text-amber-700 whitespace-nowrap">{item.raw.inquiryCategory}</td>
+                                                                        <td className="p-3 max-w-xs truncate" title={item.raw.messageText}>{item.raw.messageText}</td>
+                                                                        <td className="p-3 whitespace-nowrap text-slate-500">
+                                                                            {new Date(item.raw.createdAt).toLocaleDateString('en-IN')}
+                                                                        </td>
+                                                                        <td className="p-3 whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={async () => {
+                                                                                    await fetch(`/api/contactmessages/${item.id}/resolve`, { method: 'PUT' });
+                                                                                    fetchContactMessages();
+                                                                                }}
+                                                                                className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold cursor-pointer ${item.raw.status === 'Resolved' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                                                                                {item.raw.status}
+                                                                            </button>
+                                                                        </td>
+                                                                    </>
+                                                                ) : selectedMaster === 'customers' ? (
                                                                     <>
                                                                         <td className="p-3">{item.mobileNo}</td>
                                                                         <td className="p-3">{item.emailId}</td>
@@ -2791,6 +2859,7 @@ function App() {
                                                                     <>
                                                                         <td className="p-3 font-bold text-amber-700 whitespace-nowrap">{getBookCategoryName(item.raw)}</td>
                                                                         <td className="p-3 font-bold text-blue-700 whitespace-nowrap">{item.raw.extractedAuthorName || item.raw.authorName || 'Dr. Samuel Hahnemann'}</td>
+                                                                        <td className="p-3 font-bold text-purple-700 whitespace-nowrap">{item.raw.vendorName || item.raw.VendorName || 'In-House (B. Jain)'}</td>
                                                                         <td className="p-3 whitespace-nowrap">{item.raw.language || 'English'}</td>
                                                                         <td className="p-3 font-black text-emerald-700 whitespace-nowrap">₹{item.raw.price ?? item.raw.Price}</td>
                                                                         <td className="p-3 font-semibold whitespace-nowrap">{item.raw.noOfPages || 1}</td>
@@ -3146,7 +3215,7 @@ function App() {
                                                                 className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
                                                             />
                                                             <span className="absolute top-3 left-3 bg-navyDark/90 text-white text-[10px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider shadow">
-                                                                {b.categoryCode || b.CategoryCode || 'HOMEO'}
+                                                                {getBookCategoryName(b)}
                                                             </span>
                                                             {(b.isRoyaltyApplicable || b.IsRoyaltyApplicable) && (
                                                                 <span className="absolute top-3 right-3 bg-goldAccent text-navyDark text-[10px] font-extrabold px-2.5 py-1 rounded-full shadow flex items-center gap-1">
@@ -3499,10 +3568,37 @@ function App() {
 
                                     <div className="lg:col-span-7 bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
                                         <form
-                                            onSubmit={(e) => {
+                                            onSubmit={async (e) => {
                                                 e.preventDefault();
-                                                triggerToast('Message sent! Our support team will respond shortly.');
-                                                e.target.reset();
+                                                if (!contactForm.senderName.trim() || !contactForm.emailAddress.trim() || !contactForm.messageText.trim()) {
+                                                    triggerToast('Please fill all required fields.', 'error');
+                                                    return;
+                                                }
+                                                setSendingContact(true);
+                                                try {
+                                                    const res = await fetch('/api/contactmessages', {
+                                                        method: 'POST',
+                                                        headers: { 'Content-Type': 'application/json' },
+                                                        body: JSON.stringify(contactForm)
+                                                    });
+                                                    const data = await window.safeJsonParse(res);
+                                                    if (res.ok) {
+                                                        triggerToast(data.message || 'Message sent! Our support team will respond shortly.');
+                                                        setContactForm({
+                                                            senderName: '',
+                                                            emailAddress: '',
+                                                            inquiryCategory: 'Reader Subscription Assistance',
+                                                            messageText: ''
+                                                        });
+                                                        if (isAdmin) fetchContactMessages();
+                                                    } else {
+                                                        triggerToast(data.message || 'Failed to send message.', 'error');
+                                                    }
+                                                } catch (err) {
+                                                    triggerToast('Network error: ' + err.message, 'error');
+                                                } finally {
+                                                    setSendingContact(false);
+                                                }
                                             }}
                                             className="space-y-4">
                                             <h3 className="font-bold text-navyDark text-base mb-2">Send us a Direct Message</h3>
@@ -3510,31 +3606,57 @@ function App() {
                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                                 <div>
                                                     <label className="block text-xs font-semibold text-slate-600 mb-1">Your Name</label>
-                                                    <input type="text" required placeholder="Dr. Sharma" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emeraldPrimary" />
+                                                    <input
+                                                        type="text"
+                                                        required
+                                                        placeholder="Dr. Sharma"
+                                                        value={contactForm.senderName}
+                                                        onChange={e => setContactForm({ ...contactForm, senderName: e.target.value })}
+                                                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emeraldPrimary"
+                                                    />
                                                 </div>
                                                 <div>
                                                     <label className="block text-xs font-semibold text-slate-600 mb-1">Email Address</label>
-                                                    <input type="email" required placeholder="doctor@clinic.com" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emeraldPrimary" />
+                                                    <input
+                                                        type="email"
+                                                        required
+                                                        placeholder="doctor@clinic.com"
+                                                        value={contactForm.emailAddress}
+                                                        onChange={e => setContactForm({ ...contactForm, emailAddress: e.target.value })}
+                                                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emeraldPrimary"
+                                                    />
                                                 </div>
                                             </div>
 
                                             <div>
                                                 <label className="block text-xs font-semibold text-slate-600 mb-1">Inquiry Category</label>
-                                                <select className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emeraldPrimary">
-                                                    <option>Reader Subscription Assistance</option>
-                                                    <option>Publisher / Author Inquiry</option>
-                                                    <option>Institutional & College Access</option>
-                                                    <option>General Support</option>
+                                                <select
+                                                    value={contactForm.inquiryCategory}
+                                                    onChange={e => setContactForm({ ...contactForm, inquiryCategory: e.target.value })}
+                                                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emeraldPrimary">
+                                                    <option value="Reader Subscription Assistance">Reader Subscription Assistance</option>
+                                                    <option value="Publisher / Author Inquiry">Publisher / Author Inquiry</option>
+                                                    <option value="Institutional & College Access">Institutional & College Access</option>
+                                                    <option value="General Support">General Support</option>
                                                 </select>
                                             </div>
 
                                             <div>
                                                 <label className="block text-xs font-semibold text-slate-600 mb-1">Your Message</label>
-                                                <textarea rows="4" required placeholder="Describe how we can help you..." className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emeraldPrimary"></textarea>
+                                                <textarea
+                                                    rows="4"
+                                                    required
+                                                    placeholder="Describe how we can help you..."
+                                                    value={contactForm.messageText}
+                                                    onChange={e => setContactForm({ ...contactForm, messageText: e.target.value })}
+                                                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emeraldPrimary"></textarea>
                                             </div>
 
-                                            <button type="submit" className="w-full bg-emeraldPrimary hover:bg-emeraldHover text-white font-bold py-3.5 rounded-xl text-xs transition shadow-md cursor-pointer">
-                                                Send Message
+                                            <button
+                                                type="submit"
+                                                disabled={sendingContact}
+                                                className="w-full bg-emeraldPrimary hover:bg-emeraldHover text-white font-bold py-3.5 rounded-xl text-xs transition shadow-md cursor-pointer disabled:opacity-50">
+                                                {sendingContact ? 'Sending Message...' : 'Send Message'}
                                             </button>
                                         </form>
                                     </div>

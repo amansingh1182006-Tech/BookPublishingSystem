@@ -104,8 +104,9 @@ namespace Web.Controllers
                     }
                     else
                     {
-                        vendor30 = Math.Round(grossAmount * 0.30m, 2);
-                        vendorNames = "Royalty Pool (30%)";
+                        // Koi royalty-based book nahi hai -> 0% Vendor, 100% Platform
+                        vendor30 = 0m;
+                        vendorNames = "No Royalty Book (100% Platform)";
                     }
 
                     decimal platform70 = Math.Round(grossAmount - vendor30, 2);
@@ -132,7 +133,7 @@ namespace Web.Controllers
                         GrossAmount = grossAmount,
                         VendorRoyalty30 = vendor30,
                         PlatformShare70 = platform70,
-                        Status = "Settled (70/30 Split)"
+                        Status = vendor30 > 0 ? "Settled (70/30 Split)" : "Settled (100% Platform)"
                     });
                 }
                 var subscriptions = await _dbContext.UserSubscriptions
@@ -162,8 +163,9 @@ namespace Web.Controllers
                     }
                     else
                     {
-                        vendor30 = Math.Round(grossAmount * 0.30m, 2);
-                        vendorNames = "Royalty Pool (30%)";
+                        
+                        vendor30 = 0m;
+                        vendorNames = "No Royalty Book (100% Platform)";
                     }
 
                     decimal platform70 = Math.Round(grossAmount - vendor30, 2);
@@ -187,7 +189,9 @@ namespace Web.Controllers
                         GrossAmount = grossAmount,
                         VendorRoyalty30 = vendor30,
                         PlatformShare70 = platform70,
-                        Status = isPlanActive ? "Active • 70/30 Split" : "Settled (70/30 Split)"
+                        Status = vendor30 > 0
+                            ? (isPlanActive ? "Active • 70/30 Split" : "Settled (70/30 Split)")
+                            : (isPlanActive ? "Active • 100% Platform" : "Settled (100% Platform)")
                     });
                 }
                 IEnumerable<PlatformRevenueLedgerDto> query = ledgerEntries

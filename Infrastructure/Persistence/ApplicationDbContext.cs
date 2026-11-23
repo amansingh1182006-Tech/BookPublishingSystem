@@ -38,6 +38,7 @@ namespace Infrastructure.Persistence
         public DbSet<VendorRoyaltyTransaction> VendorRoyaltyTransactions { get; set; }
 
         public DbSet<Journal> Journals { get; set; }
+        public DbSet<ContactMessage> ContactMessages { get; set; }
 
         protected override void OnModelCreating(ModelBuilder builder)
         {
