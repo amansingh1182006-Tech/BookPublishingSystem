@@ -3204,72 +3204,140 @@ function App() {
                                             </button>
                                         </div>
                                     ) : (
-                                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 gap-5 sm:gap-6">
-                                            {filteredStoreBooks.map(b => (
-                                                <div key={b.id || b.Id} className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-xl transition duration-300 flex flex-col justify-between group">
-                                                    <div>
-                                                        <div className="h-56 bg-slate-100 relative overflow-hidden">
-                                                            <img
-                                                                src={b.image || b.Image || '/images/default-cover.png'}
-                                                                alt={b.itemName || b.ItemName}
-                                                                className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
-                                                            />
-                                                            <span className="absolute top-3 left-3 bg-navyDark/90 text-white text-[10px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider shadow">
-                                                                {getBookCategoryName(b)}
-                                                            </span>
-                                                            {(b.isRoyaltyApplicable || b.IsRoyaltyApplicable) && (
-                                                                <span className="absolute top-3 right-3 bg-goldAccent text-navyDark text-[10px] font-extrabold px-2.5 py-1 rounded-full shadow flex items-center gap-1">
-                                                                    <i className="fa-solid fa-crown"></i> Royalty
-                                                                </span>
-                                                            )}
-                                                        </div>
+                                                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3.5 sm:gap-6">
+                                                    {filteredStoreBooks.map(b => {
+                                                        const coverSrc = b.image || b.Image || '/images/default-cover.png';
+                                                        const bookTitle = b.itemName || b.ItemName || 'Untitled Edition';
+                                                        const bookPrice = b.price !== undefined ? b.price : (b.Price ?? 0);
+                                                        const pageCount = b.noOfPages || b.NoOfPages;
+                                                        const bookLang = b.language || b.Language || 'English';
 
-                                                        <div className="p-5">
-                                                            <h3 className="font-bold text-navyDark text-sm leading-snug line-clamp-2" title={b.itemName || b.ItemName}>
-                                                                {b.itemName || b.ItemName}
-                                                            </h3>
-                                                            <p className="text-xs text-slate-500 mt-1">by {getBookAuthorName(b)}</p>
-                                                        </div>
-                                                    </div>
+                                                        return (
+                                                            <div
+                                                                key={b.id || b.Id}
+                                                                className="bg-white rounded-2xl border border-slate-200/90 overflow-hidden shadow-xs hover:shadow-xl hover:-translate-y-1 hover:border-emeraldPrimary/50 transition-all duration-300 flex flex-col justify-between group">
 
-                                                    <div className="p-5 pt-0">
-                                                        <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
-                                                            <span className="text-lg font-black text-navyDark">
-                                                                ₹{b.price !== undefined ? b.price : b.Price}
-                                                            </span>
-                                                            <div className="flex space-x-2">
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={async () => {
-                                                                        if (!user.isLoggedIn) {
-                                                                            setPendingBookForPlan(b);
-                                                                            openAuthModal('login');
-                                                                            return;
-                                                                        }
-                                                                        const hasPlanHistory = hasEverPurchasedPlan || await checkUserPlanHistory();
-                                                                        if (!hasPlanHistory) {
-                                                                            setPendingBookForPlan(b);
-                                                                            changeNavState({ activeTab: 'user-plans' });
-                                                                            triggerToast("Please choose a Subscription Plan first!");
-                                                                            return;
-                                                                        }
-                                                                        handleOpenSingleBookCheckoutWithSuggestion(b);
-                                                                    }}
-                                                                    className="bg-emeraldPrimary hover:bg-emeraldHover text-white px-3 py-1.5 rounded-xl text-xs font-bold transition shadow-sm cursor-pointer flex items-center gap-1">
-                                                                    <i className="fa-solid fa-cart-shopping"></i> Buy
-                                                                </button>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => handleReadAccess(b)}
-                                                                    className="bg-navyDark hover:bg-navyDeep text-white px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1">
-                                                                    <i className="fa-solid fa-book-open text-emeraldPrimary"></i> Read
-                                                                </button>
+                                                                {/* TOP COVER CONTAINER (NO CROPPING + PORTRAIT ASPECT RATIO) */}
+                                                                <div>
+                                                                    <div
+                                                                        onClick={() => handleReadAccess(b)}
+                                                                        className="relative aspect-[3/4] w-full bg-gradient-to-b from-slate-100 via-slate-50 to-slate-100 p-3 sm:p-4 flex items-center justify-center overflow-hidden cursor-pointer border-b border-slate-100">
+
+                                                                        {/* Subtle Ambient Blur Background */}
+                                                                        <img
+                                                                            src={coverSrc}
+                                                                            alt=""
+                                                                            aria-hidden="true"
+                                                                            className="absolute inset-0 w-full h-full object-cover opacity-15 blur-md scale-110 pointer-events-none"
+                                                                        />
+
+                                                                        {/* Actual Full Book Cover (Never Cropped) */}
+                                                                        <img
+                                                                            src={coverSrc}
+                                                                            alt={bookTitle}
+                                                                            loading="lazy"
+                                                                            onError={(e) => { e.currentTarget.src = '/images/default-cover.png'; }}
+                                                                            className="relative z-10 max-h-full max-w-full w-auto h-auto object-contain rounded-md shadow-md group-hover:scale-105 transition-transform duration-500"
+                                                                        />
+
+                                                                        {/* Top Badges */}
+                                                                        <div className="absolute top-2.5 left-2.5 right-2.5 z-20 flex items-start justify-between gap-1.5 pointer-events-none">
+                                                                            <span className="bg-navyDark/90 backdrop-blur-xs text-white text-[9px] sm:text-[10px] font-extrabold px-2.5 py-0.5 rounded-md uppercase tracking-wider shadow-xs truncate max-w-[70%]">
+                                                                                {getBookCategoryName(b)}
+                                                                            </span>
+
+                                                                            {(b.isRoyaltyApplicable || b.IsRoyaltyApplicable) && (
+                                                                                <span className="bg-goldAccent text-navyDark text-[9px] font-black px-2 py-0.5 rounded-md shadow-xs flex items-center gap-1 shrink-0">
+                                                                                    <i className="fa-solid fa-crown text-[8px]"></i>
+                                                                                    <span className="hidden sm:inline">Royalty</span>
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+
+                                                                        {/* Hover Quick-Read Overlay (Desktop) */}
+                                                                        <div className="hidden sm:flex absolute inset-x-0 bottom-0 z-20 p-3 bg-gradient-to-t from-navyDark/80 via-navyDark/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 justify-center">
+                                                                            <span className="text-[11px] font-bold text-white flex items-center gap-1.5">
+                                                                                <i className="fa-solid fa-eye text-emeraldPrimary"></i> Click to Preview / Read
+                                                                            </span>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    {/* BOOK METADATA BODY */}
+                                                                    <div className="p-3 sm:p-4 space-y-1.5">
+                                                                        {/* Language & Pages Micro-Tags */}
+                                                                        <div className="flex items-center flex-wrap gap-1.5 text-[10px] font-bold text-slate-500">
+                                                                            <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
+                                                                                {bookLang}
+                                                                            </span>
+                                                                            {pageCount > 0 && (
+                                                                                <span className="bg-emeraldLight/70 text-emeraldPrimary px-2 py-0.5 rounded">
+                                                                                    {pageCount} Pages
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+
+                                                                        {/* Title */}
+                                                                        <h3
+                                                                            onClick={() => handleReadAccess(b)}
+                                                                            className="font-extrabold text-navyDark text-xs sm:text-sm leading-snug line-clamp-2 min-h-[2.4rem] group-hover:text-emeraldPrimary transition-colors cursor-pointer"
+                                                                            title={bookTitle}>
+                                                                            {bookTitle}
+                                                                        </h3>
+
+                                                                        {/* Author */}
+                                                                        <p className="text-[11px] sm:text-xs text-slate-500 font-medium truncate">
+                                                                            by <span className="text-slate-700 font-semibold">{getBookAuthorName(b)}</span>
+                                                                        </p>
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* PRICE & ACTION FOOTER */}
+                                                                <div className="p-3 sm:p-4 pt-0 mt-auto">
+                                                                    <div className="pt-2.5 border-t border-slate-100 flex flex-col xs:flex-row sm:flex-col xl:flex-row items-stretch sm:items-stretch xl:items-center justify-between gap-2">
+                                                                        <div className="flex items-baseline justify-between xl:block">
+                                                                            <span className="text-[10px] text-slate-400 font-bold uppercase xl:hidden">Digital Edition</span>
+                                                                            <span className="text-base sm:text-lg font-black text-navyDark tracking-tight">
+                                                                                ₹{Number(bookPrice).toLocaleString('en-IN')}
+                                                                            </span>
+                                                                        </div>
+
+                                                                        <div className="grid grid-cols-2 gap-1.5 w-full xl:w-auto">
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={async () => {
+                                                                                    if (!user.isLoggedIn) {
+                                                                                        setPendingBookForPlan(b);
+                                                                                        openAuthModal('login');
+                                                                                        return;
+                                                                                    }
+                                                                                    const hasPlanHistory = hasEverPurchasedPlan || await checkUserPlanHistory();
+                                                                                    if (!hasPlanHistory) {
+                                                                                        setPendingBookForPlan(b);
+                                                                                        changeNavState({ activeTab: 'user-plans' });
+                                                                                        triggerToast("Please choose a Subscription Plan first!");
+                                                                                        return;
+                                                                                    }
+                                                                                    handleOpenSingleBookCheckoutWithSuggestion(b);
+                                                                                }}
+                                                                                className="bg-emeraldPrimary hover:bg-emeraldHover text-white px-2.5 py-2 rounded-xl text-[11px] font-bold transition shadow-xs cursor-pointer flex items-center justify-center gap-1">
+                                                                                <i className="fa-solid fa-cart-shopping text-[10px]"></i>
+                                                                                <span>Buy</span>
+                                                                            </button>
+
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => handleReadAccess(b)}
+                                                                                className="bg-navyDark hover:bg-navyDeep text-white px-2.5 py-2 rounded-xl text-[11px] font-bold transition cursor-pointer flex items-center justify-center gap-1">
+                                                                                <i className="fa-solid fa-book-open text-emeraldPrimary text-[10px]"></i>
+                                                                                <span>Read</span>
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
                                                             </div>
-                                                        </div>
-                                                    </div>
+                                                        );
+                                                    })}
                                                 </div>
-                                            ))}
-                                        </div>
                                     )}
                                 </div>
 
@@ -3288,7 +3356,7 @@ function App() {
                                             </span>
                                         </div>
 
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3.5 sm:gap-6">
                                             {filteredStoreJournals.map(j => {
                                                 const journalAsItem = {
                                                     ...j,
@@ -3299,13 +3367,17 @@ function App() {
                                                     streamUrl: `/api/journal/view-pdf/${j.id}`
                                                 };
                                                 return (
-                                                    <div key={j.id} className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-xl transition flex flex-col justify-between">
+                                                    <div key={j.id} className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between group">
                                                         <div>
-                                                            <div className="h-52 bg-slate-100 relative overflow-hidden">
+                                                            <div
+                                                                onClick={() => handleReadAccess(journalAsItem)}
+                                                                className="aspect-[3/4] bg-slate-50 p-3 sm:p-4 relative overflow-hidden flex items-center justify-center border-b border-slate-100 cursor-pointer">
                                                                 <img
                                                                     src={j.coverImagePath || '/images/default-cover.png'}
                                                                     alt={j.name}
-                                                                    className="w-full h-full object-cover"
+                                                                    loading="lazy"
+                                                                    onError={(e) => { e.currentTarget.src = '/images/default-cover.png'; }}
+                                                                    className="max-h-full max-w-full w-auto h-auto object-contain rounded-md shadow-md group-hover:scale-105 transition-transform duration-500"
                                                                 />
                                                                 <span className="absolute top-3 left-3 bg-publisherPurple text-white text-[10px] font-extrabold px-2.5 py-1 rounded-full uppercase">
                                                                     {j.frequency || 'Journal'}
