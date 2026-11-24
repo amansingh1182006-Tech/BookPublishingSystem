@@ -2976,30 +2976,77 @@ function App() {
 
                 {activeTab === 'store' && (
                     <main className="w-full overflow-x-hidden">
-                        {/* HERO BANNER SECTION */}
-                        <section className="hero-pattern text-white relative py-16 lg:py-24 overflow-hidden">
-                            <div className="w-full px-4 sm:px-8 lg:px-12">
-                                <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+                        {/* HERO BANNER SECTION (INDUSTRY-STANDARD RESPONSIVE SHOWCASE) */}
+                        <section className="hero-pattern text-white relative py-12 sm:py-16 lg:py-20 overflow-hidden border-b border-white/10">
+                            {/* Subtle Ambient Lighting Effects */}
+                            <div className="pointer-events-none absolute -top-24 -left-24 w-96 h-96 rounded-full bg-emeraldPrimary/15 blur-3xl"></div>
+                            <div className="pointer-events-none absolute -bottom-32 right-10 w-[28rem] h-[28rem] rounded-full bg-goldAccent/10 blur-3xl"></div>
 
+                            <div className="relative z-10 w-full px-4 sm:px-8 lg:px-12">
+                                <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-12 items-center">
+
+                                    {/* LEFT COLUMN: VALUE PROPOSITION + HERO SEARCH + CTAs */}
                                     <div className="lg:col-span-7 space-y-6 text-center lg:text-left">
-                                        <span className="inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-emeraldPrimary/20 text-emeraldPrimary text-xs font-bold tracking-wide border border-emeraldPrimary/30">
+                                        <div className="inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-emeraldPrimary/15 text-emeraldPrimary text-[11px] sm:text-xs font-bold tracking-wide border border-emeraldPrimary/30 backdrop-blur-xs">
                                             <i className="fa-solid fa-shield-halved text-goldAccent"></i>
                                             <span>Official B. Jain Homeopathy Digital Platform • Since 1966</span>
-                                        </span>
+                                        </div>
 
-                                        <h1 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight leading-tight">
-                                            The World's Largest <br />
-                                            <span className="text-transparent bg-clip-text bg-gradient-to-r from-emeraldPrimary to-teal-200">
+                                        <h1 className="text-3xl sm:text-5xl xl:text-6xl font-extrabold tracking-tight leading-[1.12]">
+                                            The World's Largest <br className="hidden sm:block" />
+                                            <span className="text-transparent bg-clip-text bg-gradient-to-r from-emeraldPrimary via-teal-300 to-emerald-200">
                                                 Homeopathy Digital Library
                                             </span>
                                         </h1>
 
-                                        <p className="text-slate-300 text-base sm:text-lg font-light max-w-2xl leading-relaxed mx-auto lg:mx-0">
+                                        <p className="text-slate-300 text-sm sm:text-base lg:text-lg font-normal max-w-2xl leading-relaxed mx-auto lg:mx-0">
                                             Access authentic Homeopathic works, Materia Medica, Repertories, and Academic Journals on demand. Read seamlessly with DRM protection and instant search.
                                         </p>
 
-                                        {/* CTA Options */}
-                                        <div className="flex flex-col sm:flex-row justify-center lg:justify-start gap-4 pt-2">
+                                        {/* Instant Hero Search Bar */}
+                                        <div className="max-w-xl mx-auto lg:mx-0">
+                                            <div className="flex items-center bg-white/10 backdrop-blur-md border border-white/20 focus-within:border-emeraldPrimary focus-within:bg-white/15 rounded-2xl p-1.5 shadow-xl transition-all">
+                                                <div className="pl-3 pr-2 text-emeraldPrimary">
+                                                    <i className="fa-solid fa-magnifying-glass text-sm"></i>
+                                                </div>
+                                                <input
+                                                    type="text"
+                                                    value={searchQuery}
+                                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') scrollToHomeSection('catalog-section');
+                                                    }}
+                                                    placeholder="Search by book title, author, or ISBN..."
+                                                    className="w-full bg-transparent text-white placeholder-slate-400 text-xs sm:text-sm py-2.5 px-2 outline-none"
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => scrollToHomeSection('catalog-section')}
+                                                    className="bg-emeraldPrimary hover:bg-emeraldHover text-white font-bold text-xs px-4 sm:px-5 py-2.5 rounded-xl transition shrink-0 cursor-pointer shadow-md">
+                                                    Search
+                                                </button>
+                                            </div>
+
+                                            {/* Quick Category Filter Pills */}
+                                            <div className="flex flex-wrap items-center justify-center lg:justify-start gap-2 mt-3 text-[11px]">
+                                                <span className="text-slate-400 font-semibold">Popular:</span>
+                                                {['Materia Medica', 'Repertory', 'Organon', 'Clinical'].map(tag => (
+                                                    <button
+                                                        key={tag}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setSelectedCategoryFilter(tag);
+                                                            scrollToHomeSection('catalog-section');
+                                                        }}
+                                                        className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-emeraldPrimary/20 text-slate-300 hover:text-emeraldPrimary border border-white/10 transition cursor-pointer font-medium">
+                                                        {tag}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        {/* Primary & Secondary Action Buttons */}
+                                        <div className="flex flex-col sm:flex-row justify-center lg:justify-start gap-3.5 pt-1">
                                             <button
                                                 type="button"
                                                 onClick={() => {
@@ -3010,10 +3057,11 @@ function App() {
                                                         scrollToHomeSection('catalog-section');
                                                     }
                                                 }}
-                                                className="bg-emeraldPrimary hover:bg-emeraldHover text-white font-bold px-8 py-4 rounded-xl transition shadow-lg shadow-emeraldPrimary/30 flex items-center justify-center space-x-2 text-sm cursor-pointer">
-                                                <i className="fa-solid fa-user-graduate"></i>
+                                                className="bg-emeraldPrimary hover:bg-emeraldHover text-white font-bold px-7 py-3.5 rounded-xl transition shadow-lg shadow-emeraldPrimary/30 flex items-center justify-center space-x-2 text-xs sm:text-sm cursor-pointer">
+                                                <i className="fa-solid fa-book-open"></i>
                                                 <span>{user.isLoggedIn ? 'Explore Digital Library' : 'Join as Reader / Practitioner'}</span>
                                             </button>
+
                                             <button
                                                 type="button"
                                                 onClick={() => {
@@ -3026,78 +3074,111 @@ function App() {
                                                         changeNavState({ activeTab: 'user-plans' });
                                                     }
                                                 }}
-                                                className="bg-white/10 hover:bg-white/20 text-white font-bold px-8 py-4 rounded-xl border border-white/20 transition flex items-center justify-center space-x-2 text-sm backdrop-blur-md cursor-pointer">
-                                                <i className="fa-solid fa-book-open-reader text-goldAccent"></i>
-                                                <span>{isAdmin ? 'Open Admin Console' : 'Publisher / Author Portal'}</span>
+                                                className="bg-white/10 hover:bg-white/20 text-white font-bold px-7 py-3.5 rounded-xl border border-white/20 transition flex items-center justify-center space-x-2 text-xs sm:text-sm backdrop-blur-md cursor-pointer">
+                                                <i className={`fa-solid ${isAdmin ? 'fa-sliders' : 'fa-crown'} text-goldAccent`}></i>
+                                                <span>{isAdmin ? 'Open Admin Console' : 'View Membership Plans'}</span>
                                             </button>
                                         </div>
 
-                                        {/* Highlights list */}
-                                        <div className="grid grid-cols-3 gap-4 text-center lg:text-left pt-6 border-t border-white/10 text-xs text-slate-300 font-medium">
+                                        {/* Trust Metrics Strip */}
+                                        <div className="grid grid-cols-3 gap-3 sm:gap-6 text-center lg:text-left pt-5 border-t border-white/10">
                                             <div>
-                                                <h4 className="text-xl font-extrabold text-white">{storeBooks.length > 0 ? `${storeBooks.length}+` : '10,000+'}</h4>
-                                                <p className="text-slate-400">Verified Titles</p>
+                                                <h4 className="text-lg sm:text-2xl font-black text-white">
+                                                    {storeBooks.length > 0 ? `${storeBooks.length}+` : '10,000+'}
+                                                </h4>
+                                                <p className="text-[11px] sm:text-xs text-slate-400 font-medium">Verified Titles</p>
                                             </div>
                                             <div>
-                                                <h4 className="text-xl font-extrabold text-white">60,000+</h4>
-                                                <p className="text-slate-400">Active Doctors</p>
+                                                <h4 className="text-lg sm:text-2xl font-black text-white">60,000+</h4>
+                                                <p className="text-[11px] sm:text-xs text-slate-400 font-medium">Active Doctors</p>
                                             </div>
                                             <div>
-                                                <h4 className="text-xl font-extrabold text-white">100%</h4>
-                                                <p className="text-slate-400">DRM Copyright Protected</p>
+                                                <h4 className="text-lg sm:text-2xl font-black text-emeraldPrimary">100%</h4>
+                                                <p className="text-[11px] sm:text-xs text-slate-400 font-medium">DRM Protected</p>
                                             </div>
                                         </div>
                                     </div>
 
-                                    {/* Right Side Featured Clinical Choice Card (Connected to Live Store Book) */}
+                                    {/* RIGHT COLUMN: FEATURED CLINICAL CHOICE (ZERO-CROP PORTRAIT SHOWCASE) */}
                                     <div className="lg:col-span-5 flex justify-center">
                                         {(() => {
                                             const featuredBook = storeBooks[0];
+                                            const featuredCover = featuredBook?.image || featuredBook?.Image || '/images/default-cover.png';
+                                            const featuredTitle = featuredBook?.itemName || featuredBook?.ItemName || "Kent's Lectures on Materia Medica";
+                                            const featuredAuthor = featuredBook ? getBookAuthorName(featuredBook) : 'Dr. James Tyler Kent';
+                                            const featuredCategory = featuredBook ? getBookCategoryName(featuredBook) : 'Materia Medica';
+                                            const featuredPrice = featuredBook?.price !== undefined ? featuredBook.price : (featuredBook?.Price ?? 499);
+
                                             return (
-                                                <div className="bg-navyDeep p-5 sm:p-6 rounded-3xl border border-white/10 shadow-2xl w-full max-w-md relative mt-4 lg:mt-0">
-                                                    <div className="absolute -top-4 -right-4 bg-goldAccent text-navyDark font-extrabold text-xs px-4 py-1.5 rounded-full shadow-lg">
-                                                        Featured Edition
+                                                <div className="bg-navyDeep/95 backdrop-blur-md p-5 sm:p-6 rounded-3xl border border-white/15 shadow-2xl w-full max-w-md relative">
+                                                    {/* Floating Gold Pill */}
+                                                    <div className="absolute -top-3.5 right-5 bg-gradient-to-r from-goldAccent to-amber-300 text-navyDark font-black text-[11px] px-3.5 py-1 rounded-full shadow-lg flex items-center gap-1.5">
+                                                        <i className="fa-solid fa-star text-[10px]"></i>
+                                                        <span>Featured Edition</span>
                                                     </div>
 
-                                                    <h3 className="text-white font-bold text-lg mb-1 flex items-center">
-                                                        <i className="fa-solid fa-bookmark text-emeraldPrimary mr-2"></i> Featured Clinical Choice
-                                                    </h3>
-                                                    <p className="text-slate-400 text-xs mb-4">
-                                                        {featuredBook ? `By ${getBookAuthorName(featuredBook)}` : 'Included in Reader Membership'}
-                                                    </p>
+                                                    {/* Header */}
+                                                    <div className="mb-4">
+                                                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-emeraldPrimary">
+                                                            {featuredCategory}
+                                                        </span>
+                                                        <h3 className="text-white font-extrabold text-base sm:text-lg leading-snug line-clamp-1 mt-0.5" title={featuredTitle}>
+                                                            {featuredTitle}
+                                                        </h3>
+                                                        <p className="text-slate-400 text-xs mt-0.5">
+                                                            by <span className="text-slate-200 font-semibold">{featuredAuthor}</span>
+                                                        </p>
+                                                    </div>
 
-                                                    <div className="h-60 rounded-2xl overflow-hidden mb-4 relative shadow-lg bg-slate-900">
+                                                    {/* Portrait Book Cover Showcase (Never Cropped) */}
+                                                    <div
+                                                        onClick={() => featuredBook ? handleReadAccess(featuredBook) : scrollToHomeSection('catalog-section')}
+                                                        className="relative h-64 sm:h-72 rounded-2xl overflow-hidden mb-4 bg-slate-900/90 border border-white/10 flex items-center justify-center p-4 cursor-pointer group">
+                                                        {/* Soft Blurred Backdrop */}
                                                         <img
-                                                            src={featuredBook?.image || featuredBook?.Image || 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&w=600&q=80'}
-                                                            alt={featuredBook?.itemName || 'Featured Homeopathy Book'}
-                                                            className="w-full h-full object-cover"
+                                                            src={featuredCover}
+                                                            alt=""
+                                                            aria-hidden="true"
+                                                            className="absolute inset-0 w-full h-full object-cover opacity-20 blur-xl scale-125 pointer-events-none"
                                                         />
-                                                        <div className="absolute inset-0 bg-gradient-to-t from-navyDark via-navyDark/30 to-transparent flex items-end p-4">
-                                                            <span className="text-xs font-bold text-white line-clamp-2">
-                                                                {featuredBook?.itemName || featuredBook?.ItemName || "Kent's Lectures on Materia Medica"}
-                                                            </span>
+                                                        {/* Crisp Full Portrait Book Cover */}
+                                                        <img
+                                                            src={featuredCover}
+                                                            alt={featuredTitle}
+                                                            onError={(e) => { e.currentTarget.src = '/images/default-cover.png'; }}
+                                                            className="relative z-10 max-h-full max-w-full w-auto h-auto object-contain rounded-lg shadow-[0_15px_35px_rgba(0,0,0,0.65)] group-hover:scale-105 transition-transform duration-500"
+                                                        />
+                                                        {/* Price Tag Pill */}
+                                                        <span className="absolute bottom-3 right-3 z-20 bg-navyDark/90 backdrop-blur-xs text-white border border-white/15 text-xs font-black px-3 py-1 rounded-lg shadow">
+                                                            ₹{Number(featuredPrice).toLocaleString('en-IN')}
+                                                        </span>
+                                                    </div>
+
+                                                    {/* Feature Checklist */}
+                                                    <div className="grid grid-cols-2 gap-2 border-t border-white/10 pt-3.5 text-[11px] text-slate-300">
+                                                        <div className="flex items-center gap-1.5">
+                                                            <i className="fa-solid fa-circle-check text-emeraldPrimary"></i>
+                                                            <span>DRM Watermarked</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-1.5">
+                                                            <i className="fa-solid fa-circle-check text-emeraldPrimary"></i>
+                                                            <span>Auto Page Sync</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-1.5">
+                                                            <i className="fa-solid fa-circle-check text-emeraldPrimary"></i>
+                                                            <span>Instant Cloud Access</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-1.5">
+                                                            <i className="fa-solid fa-circle-check text-emeraldPrimary"></i>
+                                                            <span>Multi-Device Ready</span>
                                                         </div>
                                                     </div>
 
-                                                    <div className="space-y-2.5 border-t border-white/10 pt-4 text-xs">
-                                                        <div className="flex justify-between text-slate-300">
-                                                            <span>DRM Watermarked Reader</span>
-                                                            <i className="fa-solid fa-check text-emeraldPrimary"></i>
-                                                        </div>
-                                                        <div className="flex justify-between text-slate-300">
-                                                            <span>Auto Page Progress Sync</span>
-                                                            <i className="fa-solid fa-check text-emeraldPrimary"></i>
-                                                        </div>
-                                                        <div className="flex justify-between text-slate-300">
-                                                            <span>Bundle & Single Book Access</span>
-                                                            <i className="fa-solid fa-check text-emeraldPrimary"></i>
-                                                        </div>
-                                                    </div>
-
+                                                    {/* CTA Button */}
                                                     <button
                                                         type="button"
                                                         onClick={() => featuredBook ? handleReadAccess(featuredBook) : scrollToHomeSection('catalog-section')}
-                                                        className="mt-5 w-full bg-emeraldPrimary hover:bg-emeraldHover text-white font-bold py-3 rounded-xl transition text-xs flex items-center justify-center space-x-2 cursor-pointer">
+                                                        className="mt-4 w-full bg-emeraldPrimary hover:bg-emeraldHover text-white font-bold py-3 rounded-xl transition text-xs flex items-center justify-center space-x-2 shadow-lg shadow-emeraldPrimary/25 cursor-pointer">
                                                         <span>{featuredBook ? 'Read Featured Edition' : 'Browse Complete Catalog'}</span>
                                                         <i className="fa-solid fa-arrow-right"></i>
                                                     </button>
@@ -3111,41 +3192,59 @@ function App() {
                         </section>
 
                         {/* CATEGORIES HIGHLIGHT SECTION */}
-                        <section id="categories" className="py-14 bg-white border-b border-slate-200">
+                        <section id="categories" className="py-12 sm:py-16 bg-white border-b border-slate-200">
                             <div className="w-full px-4 sm:px-8 lg:px-12">
-                                <div className="flex flex-col md:flex-row md:items-end justify-between mb-8">
+                                <div className="flex flex-col sm:flex-row sm:items-end justify-between mb-8 gap-3">
                                     <div>
                                         <span className="text-xs font-bold uppercase tracking-wider text-emeraldPrimary">Curated Library</span>
-                                        <h2 className="text-3xl font-extrabold text-navyDark mt-1">Explore Homeopathy Book Categories</h2>
+                                        <h2 className="text-2xl sm:text-3xl font-extrabold text-navyDark mt-1">Explore Homeopathy Book Categories</h2>
                                     </div>
                                     <button
                                         type="button"
                                         onClick={() => { setSelectedCategoryFilter('All'); scrollToHomeSection('catalog-section'); }}
-                                        className="text-xs font-bold text-emeraldPrimary hover:text-emeraldHover mt-3 md:mt-0 flex items-center cursor-pointer">
-                                        Show All Categories &rarr;
+                                        className="text-xs font-bold text-emeraldPrimary hover:text-emeraldHover flex items-center gap-1 cursor-pointer self-start sm:self-auto">
+                                        <span>Show All Categories ({storeBooks.length})</span>
+                                        <i className="fa-solid fa-arrow-right text-[10px]"></i>
                                     </button>
                                 </div>
 
-                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 sm:gap-5">
                                     {[
                                         { title: 'Materia Medica', desc: 'Detailed remedy pictures, keynotes, and clinical provings.', icon: 'fa-pills', bg: 'bg-emeraldLight', text: 'text-emeraldPrimary' },
                                         { title: 'Repertory', desc: 'Kent, Synthesis, Boenninghausen, and modern rubrics.', icon: 'fa-list-check', bg: 'bg-amber-50', text: 'text-amber-600' },
                                         { title: 'Organon', desc: 'Hahnemannian principles, chronic miasms, and philosophy.', icon: 'fa-book-journal-whills', bg: 'bg-blue-50', text: 'text-blue-600' },
                                         { title: 'Clinical', desc: 'Specialized clinical therapeutics, oncology, and pediatrics.', icon: 'fa-stethoscope', bg: 'bg-purple-50', text: 'text-purple-600' },
                                         { title: 'Pharmacy', desc: 'Potentisation scales, drug preparation, and pharmacopoeia.', icon: 'fa-vial', bg: 'bg-teal-50', text: 'text-teal-600' }
-                                    ].map((cat, idx) => (
-                                        <div
-                                            key={idx}
-                                            onClick={() => { setSelectedCategoryFilter(cat.title); scrollToHomeSection('catalog-section'); }}
-                                            className={`bg-creamBg rounded-2xl p-5 border transition cursor-pointer group ${selectedCategoryFilter === cat.title ? 'border-emeraldPrimary ring-2 ring-emeraldPrimary/20 shadow-lg' : 'border-slate-200 hover:border-emeraldPrimary hover:shadow-xl'}`}>
-                                            <div className={`w-12 h-12 ${cat.bg} ${cat.text} rounded-xl flex items-center justify-center text-xl mb-4 group-hover:scale-110 transition`}>
-                                                <i className={`fa-solid ${cat.icon}`}></i>
+                                    ].map((cat, idx) => {
+                                        const count = storeBooks.filter(b =>
+                                            getBookCategoryName(b).toLowerCase().includes(cat.title.toLowerCase())
+                                        ).length;
+
+                                        return (
+                                            <div
+                                                key={idx}
+                                                onClick={() => { setSelectedCategoryFilter(cat.title); scrollToHomeSection('catalog-section'); }}
+                                                className={`bg-creamBg rounded-2xl p-5 border transition-all duration-300 cursor-pointer group flex flex-col justify-between hover:-translate-y-1 ${selectedCategoryFilter === cat.title ? 'border-emeraldPrimary ring-2 ring-emeraldPrimary/20 shadow-lg bg-white' : 'border-slate-200 hover:border-emeraldPrimary hover:bg-white hover:shadow-xl'}`}>
+                                                <div>
+                                                    <div className="flex items-center justify-between mb-4">
+                                                        <div className={`w-11 h-11 ${cat.bg} ${cat.text} rounded-xl flex items-center justify-center text-lg group-hover:scale-110 transition-transform`}>
+                                                            <i className={`fa-solid ${cat.icon}`}></i>
+                                                        </div>
+                                                        <span className="text-[10px] font-extrabold bg-white border border-slate-200 text-slate-600 px-2.5 py-0.5 rounded-full">
+                                                            {count} {count === 1 ? 'Title' : 'Titles'}
+                                                        </span>
+                                                    </div>
+                                                    <h3 className="font-extrabold text-navyDark text-base group-hover:text-emeraldPrimary transition-colors">{cat.title}</h3>
+                                                    <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">{cat.desc}</p>
+                                                </div>
+
+                                                <div className={`mt-4 pt-3 border-t border-slate-200/70 text-[11px] font-bold ${cat.text} flex items-center justify-between`}>
+                                                    <span>Browse Titles</span>
+                                                    <i className="fa-solid fa-arrow-right group-hover:translate-x-1 transition-transform"></i>
+                                                </div>
                                             </div>
-                                            <h3 className="font-bold text-navyDark text-base group-hover:text-emeraldPrimary transition">{cat.title}</h3>
-                                            <p className="text-xs text-slate-500 mt-1">{cat.desc}</p>
-                                            <span className={`inline-block mt-4 text-[11px] font-bold ${cat.text}`}>Browse Titles &rarr;</span>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             </div>
                         </section>
@@ -3437,112 +3536,186 @@ function App() {
                             </div>
                         </section>
 
-                        {/* ABOUT US SECTION */}
-                        <section id="about-us" className="py-20 bg-white border-b border-slate-200">
+                        {/* ABOUT US SECTION (MEDICAL PUBLISHING HERITAGE & RESPONSIVE ARCHITECTURE) */}
+                        <section id="about-us" className="py-16 sm:py-20 bg-white border-b border-slate-200 overflow-hidden">
                             <div className="w-full px-4 sm:px-8 lg:px-12">
-                                <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
-                                    <div className="lg:col-span-6 space-y-5">
-                                        <span className="text-xs font-bold uppercase tracking-wider text-emeraldPrimary">About B. Jain Publishing House</span>
-                                        <h2 className="text-3xl sm:text-4xl font-extrabold text-navyDark leading-tight">
-                                            Pioneering Homeopathic Knowledge Since 1966
+                                <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-14 items-center">
+
+                                    {/* LEFT CONTENT & PILLARS */}
+                                    <div className="lg:col-span-7 space-y-6">
+                                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emeraldLight text-emeraldPrimary text-xs font-extrabold uppercase tracking-wider">
+                                            <i className="fa-solid fa-award"></i>
+                                            <span>About B. Jain Publishing House</span>
+                                        </div>
+
+                                        <h2 className="text-2xl sm:text-4xl font-extrabold text-navyDark leading-tight">
+                                            Pioneering Homeopathic Knowledge <span className="text-emeraldPrimary">Since 1966</span>
                                         </h2>
-                                        <p className="text-slate-600 text-sm leading-relaxed">
-                                            B. Jain Publishers is the world's largest publisher of homeopathic books, repertories, and journals. Through <strong>BJainRx</strong>, we bring this vast heritage into the digital age with instant search, bundle subscriptions, and copyright-protected cloud accessibility.
+
+                                        <p className="text-slate-600 text-sm sm:text-base leading-relaxed">
+                                            B. Jain Publishers is the world's largest publisher of homeopathic books, repertories, and peer-reviewed journals. Through <strong className="text-navyDark">BJainRx</strong>, we bring six decades of clinical literature into the digital era with instant search, curated bundles, and DRM-protected cloud access.
                                         </p>
 
-                                        <div className="grid grid-cols-2 gap-4 pt-4">
-                                            <div className="bg-creamBg p-4 rounded-xl border border-slate-200">
-                                                <i className="fa-solid fa-shield-halved text-emeraldPrimary text-lg mb-2"></i>
-                                                <h4 className="font-bold text-navyDark text-sm">Genuine & Verified</h4>
-                                                <p className="text-xs text-slate-500 mt-1">Directly authentic from original manuscripts and verified editors.</p>
+                                        {/* Feature Grid */}
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                                            <div className="bg-creamBg p-4 sm:p-5 rounded-2xl border border-slate-200/80 hover:border-emeraldPrimary/50 transition flex items-start gap-3.5">
+                                                <div className="w-10 h-10 rounded-xl bg-emeraldLight text-emeraldPrimary flex items-center justify-center text-base shrink-0">
+                                                    <i className="fa-solid fa-shield-halved"></i>
+                                                </div>
+                                                <div>
+                                                    <h4 className="font-extrabold text-navyDark text-sm">Genuine & Verified</h4>
+                                                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">Directly digitized from original manuscripts and peer-reviewed clinical editions.</p>
+                                                </div>
                                             </div>
-                                            <div className="bg-creamBg p-4 rounded-xl border border-slate-200">
-                                                <i className="fa-solid fa-cloud-arrow-down text-emeraldPrimary text-lg mb-2"></i>
-                                                <h4 className="font-bold text-navyDark text-sm">Multi-Device Cloud</h4>
-                                                <p className="text-xs text-slate-500 mt-1">Read on Windows, macOS, Android, or iOS with automatic bookmark sync.</p>
+
+                                            <div className="bg-creamBg p-4 sm:p-5 rounded-2xl border border-slate-200/80 hover:border-emeraldPrimary/50 transition flex items-start gap-3.5">
+                                                <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center text-base shrink-0">
+                                                    <i className="fa-solid fa-cloud-arrow-down"></i>
+                                                </div>
+                                                <div>
+                                                    <h4 className="font-extrabold text-navyDark text-sm">Multi-Device Cloud</h4>
+                                                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">Read seamlessly across Windows, macOS, Android, and iOS with live page sync.</p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Heritage Stats Bar */}
+                                        <div className="grid grid-cols-3 gap-3 sm:gap-6 pt-4 border-t border-slate-100">
+                                            <div>
+                                                <div className="text-xl sm:text-2xl font-black text-navyDark">58+ Yrs</div>
+                                                <div className="text-[11px] font-semibold text-slate-500">Publishing Legacy</div>
+                                            </div>
+                                            <div>
+                                                <div className="text-xl sm:text-2xl font-black text-emeraldPrimary">120+</div>
+                                                <div className="text-[11px] font-semibold text-slate-500">Countries Served</div>
+                                            </div>
+                                            <div>
+                                                <div className="text-xl sm:text-2xl font-black text-navyDark">100%</div>
+                                                <div className="text-[11px] font-semibold text-slate-500">Authentic Editions</div>
                                             </div>
                                         </div>
                                     </div>
 
-                                    <div className="lg:col-span-6 flex justify-center">
-                                        <div className="relative max-w-md w-full">
-                                            <img src="https://images.unsplash.com/photo-1512820790803-83ca734da794?auto=format&fit=crop&w=800&q=80" alt="B Jain Heritage Books" className="rounded-3xl shadow-2xl w-full object-cover h-96" />
-                                            <div className="absolute -bottom-6 -left-6 bg-navyDark text-white p-5 rounded-2xl shadow-xl border border-emeraldPrimary/30 max-w-xs">
-                                                <div className="flex items-center space-x-3">
-                                                    <div className="w-10 h-10 rounded-full bg-emeraldPrimary flex items-center justify-center font-bold text-navyDark">
-                                                        55+
-                                                    </div>
-                                                    <div>
-                                                        <h4 className="font-bold text-xs">Years of Trust</h4>
-                                                        <p className="text-[10px] text-slate-400">Serving practitioners across 120+ countries</p>
-                                                    </div>
+                                    {/* RIGHT EDITORIAL HERITAGE CARD (NO OVERFLOW ON MOBILE) */}
+                                    <div className="lg:col-span-5 flex justify-center">
+                                        <div className="relative w-full max-w-md">
+                                            <div className="rounded-3xl overflow-hidden shadow-2xl border border-slate-200 bg-navyDark relative">
+                                                <img
+                                                    src="https://images.unsplash.com/photo-1507842217343-583bb7270b66?auto=format&fit=crop&w=800&q=80"
+                                                    alt="B. Jain Digital Medical Library Archive"
+                                                    className="w-full h-72 sm:h-80 object-cover opacity-85"
+                                                />
+                                                <div className="absolute inset-0 bg-gradient-to-t from-navyDark via-navyDark/40 to-transparent"></div>
+                                                <div className="absolute bottom-0 inset-x-0 p-5 sm:p-6 text-white">
+                                                    <span className="text-[10px] font-black uppercase tracking-wider bg-emeraldPrimary/90 text-white px-2.5 py-1 rounded-md">
+                                                        Global Medical Archive
+                                                    </span>
+                                                    <p className="text-sm sm:text-base font-bold mt-2 leading-snug">
+                                                        Empowering Homeopathic Colleges, Researchers & Clinicians Worldwide
+                                                    </p>
+                                                </div>
+                                            </div>
+
+                                            {/* Responsive Floating Trust Pill (Safe on Mobile & Desktop) */}
+                                            <div className="mt-4 sm:mt-0 sm:absolute sm:-bottom-5 sm:-left-5 bg-navyDark text-white p-4 rounded-2xl shadow-xl border border-emeraldPrimary/40 flex items-center gap-3.5 max-w-xs mx-auto sm:mx-0">
+                                                <div className="w-11 h-11 rounded-xl bg-emeraldPrimary flex items-center justify-center font-black text-navyDark text-sm shrink-0">
+                                                    58+
+                                                </div>
+                                                <div>
+                                                    <h4 className="font-extrabold text-xs text-white">Years of Clinical Trust</h4>
+                                                    <p className="text-[11px] text-slate-300">Serving 60,000+ practitioners globally</p>
                                                 </div>
                                             </div>
                                         </div>
                                     </div>
+
                                 </div>
                             </div>
                         </section>
 
-                        {/* PLANS & SUBSCRIPTION PRICING SECTION (CONNECTED TO LIVE PLANS) */}
-                        <section id="plans" className="py-20 bg-creamBg border-b border-slate-200">
+                        {/* PLANS & SUBSCRIPTION PRICING SECTION (ENTERPRISE SAAS PRICING UI) */}
+                        <section id="plans" className="py-16 sm:py-20 bg-creamBg border-b border-slate-200">
                             <div className="w-full px-4 sm:px-8 lg:px-12">
-                                <div className="text-center max-w-3xl mx-auto mb-12 space-y-3">
-                                    <span className="text-xs font-bold uppercase tracking-wider text-emeraldPrimary">Simple & Transparent Pricing</span>
-                                    <h2 className="text-3xl sm:text-4xl font-extrabold text-navyDark">Choose Your Reader Access Plan</h2>
-                                    <p className="text-slate-600 text-sm">Unlock homeopathic books with a membership plan. Add special rare titles or bundles whenever you need.</p>
+                                <div className="text-center max-w-3xl mx-auto mb-12 sm:mb-14 space-y-3">
+                                    <span className="inline-block text-xs font-extrabold uppercase tracking-wider text-emeraldPrimary bg-emeraldLight px-3.5 py-1 rounded-full">
+                                        Simple & Transparent Pricing
+                                    </span>
+                                    <h2 className="text-2xl sm:text-4xl font-extrabold text-navyDark">
+                                        Choose Your Reader Access Plan
+                                    </h2>
+                                    <p className="text-slate-600 text-xs sm:text-sm max-w-xl mx-auto">
+                                        Unlock verified homeopathic books with a membership plan. Add special rare editions or curated bundles anytime.
+                                    </p>
                                 </div>
 
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-stretch">
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8 items-stretch max-w-6xl mx-auto">
                                     {(plansList.length > 0 ? plansList.slice(0, 3) : [
-                                        { id: 'p1', planName: 'Starter Reader', priceIncludingTax: 499, validityInDays: 30, targetUser: 'Student', maxBookLimit: 5 },
-                                        { id: 'p2', planName: 'Practitioner Subscription', priceIncludingTax: 1499, validityInDays: 180, targetUser: 'Practitioner', maxBookLimit: 25 },
-                                        { id: 'p3', planName: 'Clinical Pro Master', priceIncludingTax: 2499, validityInDays: 365, targetUser: 'Clinic / Researcher', maxBookLimit: -1 }
+                                        { id: 'p1', planName: 'Basic Plan', priceIncludingTax: 999, validityInDays: 365, targetUser: 'Reader', maxBookLimit: 3 },
+                                        { id: 'p2', planName: 'Advance Plan', priceIncludingTax: 1999, validityInDays: 730, targetUser: 'Reader', maxBookLimit: 10 },
+                                        { id: 'p3', planName: 'Premium Plan', priceIncludingTax: 2999, validityInDays: 1095, targetUser: 'Reader', maxBookLimit: -1 }
                                     ]).map((plan, idx) => {
                                         const isFeatured = idx === 1;
                                         const pName = plan.planName || plan.PlanName;
-                                        const pPrice = plan.priceIncludingTax ?? plan.PriceIncludingTax ?? 999;
-                                        const pDays = plan.validityInDays || plan.ValidityInDays || 365;
+                                        const pPrice = Number(plan.priceIncludingTax ?? plan.PriceIncludingTax ?? 999);
+                                        const pDays = Number(plan.validityInDays || plan.ValidityInDays || 365);
                                         const pLimit = plan.maxBookLimit ?? plan.MaxBookLimit;
+                                        const approxMonths = Math.max(1, Math.round(pDays / 30));
+                                        const perMonthCost = Math.round(pPrice / approxMonths);
 
                                         return (
                                             <div
                                                 key={plan.id || idx}
                                                 className={isFeatured
-                                                    ? "bg-navyDark text-white rounded-3xl p-8 border-2 border-emeraldPrimary shadow-2xl flex flex-col justify-between relative transform md:-translate-y-4"
-                                                    : "bg-white rounded-3xl p-8 border border-slate-200 flex flex-col justify-between"}>
+                                                    ? "bg-navyDark text-white rounded-3xl p-6 sm:p-8 border-2 border-emeraldPrimary shadow-2xl flex flex-col justify-between relative md:-translate-y-3 transition-transform"
+                                                    : "bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-xs hover:shadow-xl hover:border-emeraldPrimary/40 transition-all flex flex-col justify-between"}>
                                                 {isFeatured && (
-                                                    <span className="absolute -top-3.5 right-8 bg-emeraldPrimary text-white font-extrabold text-[10px] uppercase tracking-wider px-3 py-1 rounded-full shadow">
+                                                    <span className="absolute -top-3.5 right-6 bg-gradient-to-r from-emeraldPrimary to-teal-400 text-white font-black text-[10px] uppercase tracking-wider px-3.5 py-1 rounded-full shadow-md">
                                                         Most Popular Choice
                                                     </span>
                                                 )}
 
                                                 <div>
-                                                    <span className={`text-xs font-bold uppercase tracking-wider ${isFeatured ? 'text-emeraldPrimary' : 'text-slate-500'}`}>
-                                                        {plan.targetUser || plan.TargetUser || 'Reader Pass'}
-                                                    </span>
-                                                    <h3 className={`text-2xl font-bold mt-1 ${isFeatured ? 'text-white' : 'text-navyDark'}`}>{pName}</h3>
-                                                    <p className={`text-xs mt-2 ${isFeatured ? 'text-slate-300' : 'text-slate-500'}`}>
-                                                        Valid for {pDays} Days • Full DRM Reader Access
-                                                    </p>
-
-                                                    <div className="my-6">
-                                                        <span className={`text-4xl font-black ${isFeatured ? 'text-white' : 'text-navyDark'}`}>₹{pPrice}</span>
-                                                        <span className={`text-xs ${isFeatured ? 'text-slate-400' : 'text-slate-500'}`}> / {pDays} days</span>
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <span className={`text-[11px] font-extrabold uppercase tracking-wider ${isFeatured ? 'text-emeraldPrimary' : 'text-slate-500'}`}>
+                                                            {plan.targetUser || plan.TargetUser || 'Reader Pass'}
+                                                        </span>
+                                                        <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${isFeatured ? 'bg-white/10 text-slate-200' : 'bg-slate-100 text-slate-600'}`}>
+                                                            ~₹{perMonthCost}/mo
+                                                        </span>
                                                     </div>
 
-                                                    <ul className={`space-y-3 text-xs mb-6 ${isFeatured ? 'text-slate-200' : 'text-slate-600'}`}>
-                                                        <li className="flex items-center">
-                                                            <i className="fa-solid fa-circle-check text-emeraldPrimary mr-2"></i>
-                                                            <span><strong>{pLimit === -1 ? 'Unlimited' : `${pLimit || 10}+`} Books</strong> Included Access</span>
+                                                    <h3 className={`text-xl sm:text-2xl font-extrabold mt-2 ${isFeatured ? 'text-white' : 'text-navyDark'}`}>
+                                                        {pName}
+                                                    </h3>
+                                                    <p className={`text-xs mt-1.5 ${isFeatured ? 'text-slate-300' : 'text-slate-500'}`}>
+                                                        Valid for {pDays} Days ({approxMonths} Months) • Full DRM Access
+                                                    </p>
+
+                                                    <div className={`my-6 pb-6 border-b ${isFeatured ? 'border-white/10' : 'border-slate-100'}`}>
+                                                        <span className={`text-3xl sm:text-4xl font-black tracking-tight ${isFeatured ? 'text-white' : 'text-navyDark'}`}>
+                                                            ₹{pPrice.toLocaleString('en-IN')}
+                                                        </span>
+                                                        <span className={`text-xs font-medium ml-1 ${isFeatured ? 'text-slate-400' : 'text-slate-500'}`}>
+                                                            / {pDays} days (incl. tax)
+                                                        </span>
+                                                    </div>
+
+                                                    <ul className={`space-y-3 text-xs mb-8 ${isFeatured ? 'text-slate-200' : 'text-slate-600'}`}>
+                                                        <li className="flex items-start gap-2.5">
+                                                            <i className="fa-solid fa-circle-check text-emeraldPrimary mt-0.5"></i>
+                                                            <span><strong>{pLimit === -1 ? 'Unlimited' : `${pLimit || 3}+`} Books</strong> Included Access</span>
                                                         </li>
-                                                        <li className="flex items-center">
-                                                            <i className="fa-solid fa-circle-check text-emeraldPrimary mr-2"></i>
+                                                        <li className="flex items-start gap-2.5">
+                                                            <i className="fa-solid fa-circle-check text-emeraldPrimary mt-0.5"></i>
                                                             <span>DRM Protected Continuous PDF Reader</span>
                                                         </li>
-                                                        <li className="flex items-center">
-                                                            <i className="fa-solid fa-circle-check text-emeraldPrimary mr-2"></i>
+                                                        <li className="flex items-start gap-2.5">
+                                                            <i className="fa-solid fa-circle-check text-emeraldPrimary mt-0.5"></i>
                                                             <span>Automatic Page Progress & Library Sync</span>
+                                                        </li>
+                                                        <li className="flex items-start gap-2.5">
+                                                            <i className="fa-solid fa-circle-check text-emeraldPrimary mt-0.5"></i>
+                                                            <span>Eligible for Curated Book Bundles</span>
                                                         </li>
                                                     </ul>
                                                 </div>
@@ -3557,9 +3730,10 @@ function App() {
                                                         }
                                                     }}
                                                     className={isFeatured
-                                                        ? "w-full bg-emeraldPrimary hover:bg-emeraldHover text-white font-bold py-3.5 rounded-xl text-xs transition shadow-lg shadow-emeraldPrimary/30 cursor-pointer"
-                                                        : "w-full bg-navyDark hover:bg-navyDeep text-white font-bold py-3 rounded-xl text-xs transition cursor-pointer"}>
-                                                    Select {pName}
+                                                        ? "w-full bg-emeraldPrimary hover:bg-emeraldHover text-white font-bold py-3.5 rounded-xl text-xs transition shadow-lg shadow-emeraldPrimary/30 cursor-pointer flex items-center justify-center gap-2"
+                                                        : "w-full bg-navyDark hover:bg-navyDeep text-white font-bold py-3.5 rounded-xl text-xs transition cursor-pointer flex items-center justify-center gap-2"}>
+                                                    <span>Select {pName}</span>
+                                                    <i className="fa-solid fa-arrow-right text-[10px]"></i>
                                                 </button>
                                             </div>
                                         );
@@ -3569,76 +3743,92 @@ function App() {
                         </section>
 
                         {/* SERVICES & PUBLISHER SECTION */}
-                        <section id="services" className="py-20 bg-white border-b border-slate-200">
+                        <section id="services" className="py-16 sm:py-20 bg-white border-b border-slate-200">
                             <div className="w-full px-4 sm:px-8 lg:px-12">
-                                <div className="text-center max-w-2xl mx-auto mb-12">
-                                    <span className="text-xs font-bold uppercase tracking-wider text-emeraldPrimary">Our Core Services</span>
-                                    <h2 className="text-3xl font-extrabold text-navyDark mt-1">Services for Readers & Authors</h2>
-                                    <p className="text-slate-600 text-sm mt-2">Whether you are a practicing physician, student, or book author, BJainRx provides digital distribution and security.</p>
+                                <div className="text-center max-w-2xl mx-auto mb-12 space-y-2">
+                                    <span className="text-xs font-extrabold uppercase tracking-wider text-emeraldPrimary">Our Core Services</span>
+                                    <h2 className="text-2xl sm:text-4xl font-extrabold text-navyDark">Services for Readers & Authors</h2>
+                                    <p className="text-slate-600 text-xs sm:text-sm">Whether you are a practicing physician, student, or book author, BJainRx provides end-to-end digital distribution and security.</p>
                                 </div>
 
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                                    <div className="bg-creamBg p-6 rounded-2xl border border-slate-200 space-y-3">
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
+                                    <div className="bg-creamBg p-6 sm:p-7 rounded-2xl border border-slate-200/90 hover:border-emeraldPrimary/50 hover:shadow-lg transition-all space-y-3.5">
                                         <div className="w-12 h-12 bg-emeraldLight text-emeraldPrimary rounded-xl flex items-center justify-center text-xl">
                                             <i className="fa-solid fa-laptop-medical"></i>
                                         </div>
-                                        <h3 className="font-bold text-navyDark text-base">Digital Reader Ecosystem</h3>
-                                        <p className="text-xs text-slate-500 leading-relaxed">High-speed e-book rendering engine with zoom controls, continuous scroll, and automatic page progress tracking.</p>
+                                        <h3 className="font-extrabold text-navyDark text-base sm:text-lg">Digital Reader Ecosystem</h3>
+                                        <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">High-speed e-book rendering engine with zoom controls, continuous scroll, and automatic page progress tracking.</p>
                                     </div>
 
-                                    <div className="bg-creamBg p-6 rounded-2xl border border-slate-200 space-y-3">
+                                    <div className="bg-creamBg p-6 sm:p-7 rounded-2xl border border-slate-200/90 hover:border-publisherPurple/40 hover:shadow-lg transition-all space-y-3.5">
                                         <div className="w-12 h-12 bg-purple-50 text-publisherPurple rounded-xl flex items-center justify-center text-xl">
                                             <i className="fa-solid fa-feather-pointed"></i>
                                         </div>
-                                        <h3 className="font-bold text-navyDark text-base">Publisher & Author Portal</h3>
-                                        <p className="text-xs text-slate-500 leading-relaxed">Publish your original homeopathic research, clinical case studies, or new translations to a worldwide audience of 60,000+ doctors.</p>
+                                        <h3 className="font-extrabold text-navyDark text-base sm:text-lg">Publisher & Author Portal</h3>
+                                        <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">Publish your original homeopathic research, clinical case studies, or new translations to a worldwide audience of 60,000+ doctors.</p>
                                     </div>
 
-                                    <div className="bg-creamBg p-6 rounded-2xl border border-slate-200 space-y-3">
+                                    <div className="bg-creamBg p-6 sm:p-7 rounded-2xl border border-slate-200/90 hover:border-amber-400/60 hover:shadow-lg transition-all space-y-3.5">
                                         <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center text-xl">
                                             <i className="fa-solid fa-shield-halved"></i>
                                         </div>
-                                        <h3 className="font-bold text-navyDark text-base">Copyright & Anti-Piracy DRM</h3>
-                                        <p className="text-xs text-slate-500 leading-relaxed">Protected license signatures and dynamic visible watermarks prevent illegal copying, ensuring author copyrights remain protected.</p>
+                                        <h3 className="font-extrabold text-navyDark text-base sm:text-lg">Copyright & Anti-Piracy DRM</h3>
+                                        <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">Protected license signatures and dynamic visible watermarks prevent illegal copying, ensuring author copyrights remain protected.</p>
                                     </div>
                                 </div>
                             </div>
                         </section>
 
                         {/* CONTACT US SECTION */}
-                        <section id="contact" className="py-20 bg-creamBg">
+                        <section id="contact" className="py-16 sm:py-20 bg-creamBg">
                             <div className="w-full px-4 sm:px-8 lg:px-12">
-                                <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
-                                    <div className="lg:col-span-5 space-y-6">
-                                        <span className="text-xs font-bold uppercase tracking-wider text-emeraldPrimary">Get in Touch</span>
-                                        <h2 className="text-3xl font-extrabold text-navyDark">Contact Customer & Reader Support</h2>
-                                        <p className="text-slate-600 text-sm leading-relaxed">Have questions about your subscription plan, book licenses, or submitting a manuscript for publication? Our team is available to assist you.</p>
+                                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
 
-                                        <div className="space-y-4 pt-2 text-xs">
-                                            <div className="flex items-center space-x-3 text-slate-700">
-                                                <div className="w-9 h-9 bg-emeraldLight text-emeraldPrimary rounded-lg flex items-center justify-center text-sm font-bold">
+                                    {/* LEFT SUPPORT INFO CARDS */}
+                                    <div className="lg:col-span-5 space-y-6">
+                                        <div>
+                                            <span className="text-xs font-extrabold uppercase tracking-wider text-emeraldPrimary">Get in Touch</span>
+                                            <h2 className="text-2xl sm:text-3xl font-extrabold text-navyDark mt-1">Contact Customer & Reader Support</h2>
+                                            <p className="text-slate-600 text-xs sm:text-sm leading-relaxed mt-2">
+                                                Have questions about your subscription plan, book licenses, or submitting a manuscript for publication? Our team is available to assist you.
+                                            </p>
+                                        </div>
+
+                                        <div className="space-y-3 text-xs">
+                                            <div className="bg-white p-4 rounded-2xl border border-slate-200/80 flex items-start gap-3.5 shadow-2xs">
+                                                <div className="w-10 h-10 bg-emeraldLight text-emeraldPrimary rounded-xl flex items-center justify-center text-sm shrink-0">
                                                     <i className="fa-solid fa-location-dot"></i>
                                                 </div>
-                                                <span>B. Jain Publishers (P) Ltd., D-157, Sector 63, Noida, U.P., India</span>
+                                                <div>
+                                                    <span className="font-extrabold text-navyDark block">Headquarters</span>
+                                                    <span className="text-slate-600 mt-0.5 block">B. Jain Publishers (P) Ltd., D-157, Sector 63, Noida, U.P., India</span>
+                                                </div>
                                             </div>
 
-                                            <div className="flex items-center space-x-3 text-slate-700">
-                                                <div className="w-9 h-9 bg-emeraldLight text-emeraldPrimary rounded-lg flex items-center justify-center text-sm font-bold">
+                                            <a href="mailto:support@bjainrx.com" className="bg-white p-4 rounded-2xl border border-slate-200/80 hover:border-emeraldPrimary transition flex items-start gap-3.5 shadow-2xs block">
+                                                <div className="w-10 h-10 bg-emeraldLight text-emeraldPrimary rounded-xl flex items-center justify-center text-sm shrink-0">
                                                     <i className="fa-solid fa-envelope"></i>
                                                 </div>
-                                                <span>support@bjainrx.com | publisher@bjainrx.com</span>
-                                            </div>
+                                                <div>
+                                                    <span className="font-extrabold text-navyDark block">Email Support</span>
+                                                    <span className="text-slate-600 mt-0.5 block">support@bjainrx.com | publisher@bjainrx.com</span>
+                                                </div>
+                                            </a>
 
-                                            <div className="flex items-center space-x-3 text-slate-700">
-                                                <div className="w-9 h-9 bg-emeraldLight text-emeraldPrimary rounded-lg flex items-center justify-center text-sm font-bold">
+                                            <a href="tel:+911204933333" className="bg-white p-4 rounded-2xl border border-slate-200/80 hover:border-emeraldPrimary transition flex items-start gap-3.5 shadow-2xs block">
+                                                <div className="w-10 h-10 bg-emeraldLight text-emeraldPrimary rounded-xl flex items-center justify-center text-sm shrink-0">
                                                     <i className="fa-solid fa-phone"></i>
                                                 </div>
-                                                <span>+91 120 493 3333 | Toll Free: 1800 11 1414</span>
-                                            </div>
+                                                <div>
+                                                    <span className="font-extrabold text-navyDark block">Direct Helpline</span>
+                                                    <span className="text-slate-600 mt-0.5 block">+91 120 493 3333 | Toll Free: 1800 11 1414</span>
+                                                </div>
+                                            </a>
                                         </div>
                                     </div>
 
-                                    <div className="lg:col-span-7 bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
+                                    {/* RIGHT CONTACT FORM */}
+                                    <div className="lg:col-span-7 bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm">
                                         <form
                                             onSubmit={async (e) => {
                                                 e.preventDefault();
@@ -3673,39 +3863,42 @@ function App() {
                                                 }
                                             }}
                                             className="space-y-4">
-                                            <h3 className="font-bold text-navyDark text-base mb-2">Send us a Direct Message</h3>
+                                            <div className="border-b border-slate-100 pb-3">
+                                                <h3 className="font-extrabold text-navyDark text-base sm:text-lg">Send us a Direct Message</h3>
+                                                <p className="text-xs text-slate-500 mt-0.5">Our support team typically responds within 24 working hours.</p>
+                                            </div>
 
                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                                 <div>
-                                                    <label className="block text-xs font-semibold text-slate-600 mb-1">Your Name</label>
+                                                    <label className="block text-xs font-bold text-slate-700 mb-1">Your Name *</label>
                                                     <input
                                                         type="text"
                                                         required
                                                         placeholder="Dr. Sharma"
                                                         value={contactForm.senderName}
                                                         onChange={e => setContactForm({ ...contactForm, senderName: e.target.value })}
-                                                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emeraldPrimary"
+                                                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emeraldPrimary transition"
                                                     />
                                                 </div>
                                                 <div>
-                                                    <label className="block text-xs font-semibold text-slate-600 mb-1">Email Address</label>
+                                                    <label className="block text-xs font-bold text-slate-700 mb-1">Email Address *</label>
                                                     <input
                                                         type="email"
                                                         required
                                                         placeholder="doctor@clinic.com"
                                                         value={contactForm.emailAddress}
                                                         onChange={e => setContactForm({ ...contactForm, emailAddress: e.target.value })}
-                                                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emeraldPrimary"
+                                                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emeraldPrimary transition"
                                                     />
                                                 </div>
                                             </div>
 
                                             <div>
-                                                <label className="block text-xs font-semibold text-slate-600 mb-1">Inquiry Category</label>
+                                                <label className="block text-xs font-bold text-slate-700 mb-1">Inquiry Category</label>
                                                 <select
                                                     value={contactForm.inquiryCategory}
                                                     onChange={e => setContactForm({ ...contactForm, inquiryCategory: e.target.value })}
-                                                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emeraldPrimary">
+                                                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emeraldPrimary transition">
                                                     <option value="Reader Subscription Assistance">Reader Subscription Assistance</option>
                                                     <option value="Publisher / Author Inquiry">Publisher / Author Inquiry</option>
                                                     <option value="Institutional & College Access">Institutional & College Access</option>
@@ -3714,21 +3907,22 @@ function App() {
                                             </div>
 
                                             <div>
-                                                <label className="block text-xs font-semibold text-slate-600 mb-1">Your Message</label>
+                                                <label className="block text-xs font-bold text-slate-700 mb-1">Your Message *</label>
                                                 <textarea
                                                     rows="4"
                                                     required
                                                     placeholder="Describe how we can help you..."
                                                     value={contactForm.messageText}
                                                     onChange={e => setContactForm({ ...contactForm, messageText: e.target.value })}
-                                                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emeraldPrimary"></textarea>
+                                                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emeraldPrimary transition"></textarea>
                                             </div>
 
                                             <button
                                                 type="submit"
                                                 disabled={sendingContact}
-                                                className="w-full bg-emeraldPrimary hover:bg-emeraldHover text-white font-bold py-3.5 rounded-xl text-xs transition shadow-md cursor-pointer disabled:opacity-50">
-                                                {sendingContact ? 'Sending Message...' : 'Send Message'}
+                                                className="w-full bg-emeraldPrimary hover:bg-emeraldHover text-white font-bold py-3.5 rounded-xl text-xs sm:text-sm transition shadow-md shadow-emeraldPrimary/20 cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2">
+                                                <i className="fa-solid fa-paper-plane"></i>
+                                                <span>{sendingContact ? 'Sending Message...' : 'Send Message'}</span>
                                             </button>
                                         </form>
                                     </div>
