@@ -15,8 +15,6 @@ namespace Web.Controllers
         {
             _context = context;
         }
-
-
         [HttpGet]
         public ActionResult<IEnumerable<ContactMessageResponseDto>> GetAllMessages()
         {
@@ -36,8 +34,6 @@ namespace Web.Controllers
 
             return Ok(messages);
         }
-
-
         [HttpPost]
         public async Task<IActionResult> SubmitMessage([FromBody] CreateContactMessageDto dto)
         {
@@ -60,8 +56,6 @@ namespace Web.Controllers
 
             return Ok(new { message = "Your message has been received. Our support team will contact you soon!", id = entity.Id });
         }
-
-        
         [HttpPut("{id}/resolve")]
         public async Task<IActionResult> MarkAsResolved(Guid id)
         {
@@ -73,8 +67,6 @@ namespace Web.Controllers
 
             return Ok(new { status = msg.Status });
         }
-
-        
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteMessage(Guid id)
         {

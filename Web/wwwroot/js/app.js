@@ -1,6 +1,107 @@
 ﻿const { useState, useEffect, useCallback, useRef } = React;
 
 // ============================================================================
+// ULTRA-SMOOTH 60FPS PHYSICS SCROLL & 3D ENGINE (BROWSER-INDEPENDENT)
+// ============================================================================
+window.smoothScrollToY = function (targetY, duration = 750) {
+    const startY = window.pageYOffset || document.documentElement.scrollTop || 0;
+    const distance = targetY - startY;
+    if (Math.abs(distance) < 2) return;
+
+    let startTime = null;
+
+    // Ease-in-out cubic curve (silky acceleration & deceleration)
+    const easeInOutCubic = (t) => t < 0.5
+        ? 4 * t * t * t
+        : 1 - Math.pow(-2 * t + 2, 3) / 2;
+
+    function animationStep(currentTime) {
+        if (!startTime) startTime = currentTime;
+        const elapsed = currentTime - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        const eased = easeInOutCubic(progress);
+
+        window.scrollTo(0, startY + distance * eased);
+
+        if (elapsed < duration) {
+            requestAnimationFrame(animationStep);
+        }
+    }
+
+    requestAnimationFrame(animationStep);
+};
+
+(function injectSmoothAnd3DEngine() {
+    if (document.getElementById('bjain-3d-smooth-styles')) return;
+    const style = document.createElement('style');
+    style.id = 'bjain-3d-smooth-styles';
+    style.innerHTML = `
+        html {
+            scroll-padding-top: 88px;
+        }
+        body {
+            -webkit-font-smoothing: antialiased;
+            overscroll-behavior-y: none;
+        }
+        /* 3D Perspective & Realistic Hardcover Book Model */
+        .perspective-1200 {
+            perspective: 1200px;
+        }
+        .book-3d-stage {
+            transform-style: preserve-3d;
+            transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+            will-change: transform;
+        }
+        .book-3d-spine {
+            position: absolute;
+            top: 2px;
+            bottom: 2px;
+            left: -14px;
+            width: 16px;
+            background: linear-gradient(90deg, #06101e 0%, #1e3a5f 50%, #0d233a 100%);
+            transform: rotateY(-80deg);
+            transform-origin: right center;
+            border-radius: 3px 0 0 3px;
+            box-shadow: inset 0 0 6px rgba(0,0,0,0.8);
+        }
+        .book-3d-pages {
+            position: absolute;
+            top: 4px;
+            bottom: 4px;
+            right: -10px;
+            width: 12px;
+            background: repeating-linear-gradient(
+                90deg,
+                #f8fafc 0px,
+                #e2e8f0 1px,
+                #ffffff 2px
+            );
+            transform: rotateY(75deg);
+            transform-origin: left center;
+            border-radius: 0 2px 2px 0;
+            box-shadow: 2px 0 8px rgba(0,0,0,0.35);
+        }
+        @keyframes float3dSlow {
+            0%, 100% { transform: translateY(0px) rotateY(-12deg) rotateX(4deg); }
+            50% { transform: translateY(-10px) rotateY(-6deg) rotateX(2deg); }
+        }
+        .animate-book-3d-float {
+            animation: float3dSlow 5s ease-in-out infinite;
+        }
+        .card-3d-hover {
+            transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.35s ease;
+            transform-style: preserve-3d;
+            will-change: transform;
+        }
+        .card-3d-hover:hover {
+            transform: translateY(-8px) rotateX(2deg) rotateY(-2deg);
+            box-shadow: 0 22px 40px -12px rgba(11, 19, 37, 0.22);
+        }
+    `;
+    document.head.appendChild(style);
+})();
+
+// ============================================================================
 // 1. INDUSTRY-STANDARD API CLIENT & GLOBAL FETCH INTERCEPTOR (LOCAL + SERVER)
 // ============================================================================
 (function () {
@@ -244,50 +345,464 @@ function InternalEditAuthorForm({ editingAuthor, onSuccess, onCancel }) {
 // DRM PDF VIEWER (FAST MOUSE SCROLL & NAVIGABLE PAGINATION ENGINE)
 // ----------------------------------------------------------------------
 
+// ----------------------------------------------------------------------
+// 3D ROTATABLE HARDCOVER OPEN BOOK DRM PDF VIEWER (3D TILT + FLIP + ZOOM)
+// ----------------------------------------------------------------------
 function SecurePdfViewerModal({ book, user, onClose }) {
-    const canvasRef = useRef(null);
+    const leftCanvasRef = useRef(null);
+    const rightCanvasRef = useRef(null);
+    const flipFrontCanvasRef = useRef(null);
+    const flipBackCanvasRef = useRef(null);
     const containerRef = useRef(null);
-    const renderTaskRef = useRef(null);
-    const isScrollingRef = useRef(false);
+    const isFlippingRef = useRef(false);
+    const dragRotateRef = useRef({ active: false, startX: 0, startY: 0, baseYaw: 0, basePitch: 0 });
 
     const [loading, setLoading] = useState(true);
     const [renderingPage, setRenderingPage] = useState(false);
     const [errorMsg, setErrorMsg] = useState('');
-    const startPage = Math.max(1, parseInt(book?.initialPage || 1, 10) || 1);
+    const startPage = Math.max(1, parseInt(book?.initialPage || book?.lastReadPage || 1, 10) || 1);
     const [numPages, setNumPages] = useState(0);
     const [pageNumber, setPageNumber] = useState(1);
     const [jumpPageInput, setJumpPageInput] = useState('1');
     const [pdfDoc, setPdfDoc] = useState(null);
-    const [zoomScale, setZoomScale] = useState(1.35);
+
+    // True Zoom Scale (1.0 = Fit Screen 100%, up to 2.6 = 260%)
+    const [zoomLevel, setZoomLevel] = useState(1.0);
+
+    // 3D Book Rotation Angles (Degrees)
+    const [bookYaw, setBookYaw] = useState(0);     // Left / Right rotation (rotateY)
+    const [bookPitch, setBookPitch] = useState(0); // Up / Down tilt (rotateX)
+
+    // 3D Physical Book Flip States
+    const [bookSpreadMode, setBookSpreadMode] = useState(true);
+    const [flipDirection, setFlipDirection] = useState(null); // 'next' | 'prev' | null
+    const [flipAngle, setFlipAngle] = useState(0);
+
+    // Editorial UI States
+    const [readerTheme, setReaderTheme] = useState('light'); // 'light' | 'sepia' | 'dark'
+    const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [tocSections, setTocSections] = useState([]);
+    const [bookmarks, setBookmarks] = useState([]);
+    const [isBlurred, setIsBlurred] = useState(false);
 
     const realId = typeof book === 'object' && book !== null
         ? (book.id || book.Id || book.itemNo || book.ItemNo || book.bookId)
         : book;
 
+    const bookTitle = book?.itemName || book?.ItemName || book?.title || "Secured Book View";
+    const bookAuthor = book?.authorName || book?.AuthorName || book?.author || "B. Jain Publishers";
+    const bookCategory = book?.categoryName || book?.CategoryName || book?.categoryCode || "Clinical Edition";
     const userEmail = user?.email || user?.Email || "reader@bjain.com";
+    const bookmarkStorageKey = `bjain_drm_bookmarks_${realId || 'default'}`;
 
+    // Inject Realistic Hardcover Open Book, 3D Rotation & 3D Flip CSS
     useEffect(() => {
+        const oldStyle = document.getElementById('bjain-physical-book-flip-css');
+        if (oldStyle) oldStyle.remove();
+
+        const st = document.createElement('style');
+        st.id = 'bjain-physical-book-flip-css';
+        st.innerHTML = `
+            .drm-wood-desk {
+                background-color: #9e764c;
+                background-image:
+                    radial-gradient(ellipse at center, rgba(255,245,230,0.16) 0%, rgba(32,18,6,0.52) 100%),
+                    repeating-linear-gradient(0deg, rgba(65,38,14,0.13) 0px, rgba(65,38,14,0.13) 2px, transparent 2px, transparent 14px),
+                    linear-gradient(90deg, #8b633b 0%, #a98054 32%, #986f45 68%, #7e5832 100%);
+            }
+            .drm-book-perspective {
+                perspective: 2400px;
+            }
+            .drm-3d-rotatable-book {
+                transform-style: preserve-3d;
+                transition: transform 0.22s ease-out;
+                will-change: transform;
+            }
+            .drm-3d-rotatable-book.is-dragging {
+                transition: none;
+            }
+            .drm-hardcover-board {
+                background: linear-gradient(180deg, #6e1418 0%, #8b1c21 50%, #590e12 100%);
+                padding: 8px 10px 11px 10px;
+                border-radius: 10px;
+                transform-style: preserve-3d;
+                box-shadow:
+                    0 32px 65px -12px rgba(18, 9, 2, 0.72),
+                    0 12px 24px -6px rgba(0, 0, 0, 0.45),
+                    inset 0 1px 1px rgba(255, 255, 255, 0.22);
+            }
+            .drm-page-stack-left {
+                padding-left: 11px;
+                background: repeating-linear-gradient(
+                    90deg,
+                    #d6d1c7 0px,
+                    #f5f2eb 1.5px,
+                    #c8c2b6 3px
+                );
+                border-radius: 8px 0 0 8px;
+                box-shadow: inset 3px 0 6px rgba(0,0,0,0.18);
+            }
+            .drm-page-stack-right {
+                padding-right: 11px;
+                background: repeating-linear-gradient(
+                    270deg,
+                    #d6d1c7 0px,
+                    #f5f2eb 1.5px,
+                    #c8c2b6 3px
+                );
+                border-radius: 0 8px 8px 0;
+                box-shadow: inset -3px 0 6px rgba(0,0,0,0.18);
+            }
+            .drm-paper-leaf-left {
+                border-radius: 6px 14px 10px 4px / 10px 18px 8px 4px;
+                background-image: linear-gradient(
+                    90deg,
+                    rgba(0,0,0,0.06) 0%,
+                    rgba(255,255,255,0) 7%,
+                    rgba(255,255,255,0.25) 75%,
+                    rgba(15,23,42,0.07) 93%,
+                    rgba(15,23,42,0.26) 100%
+                );
+                box-shadow: inset -12px 0 22px -10px rgba(0,0,0,0.28);
+            }
+            .drm-paper-leaf-right {
+                border-radius: 14px 6px 4px 10px / 18px 10px 4px 8px;
+                background-image: linear-gradient(
+                    270deg,
+                    rgba(0,0,0,0.06) 0%,
+                    rgba(255,255,255,0) 7%,
+                    rgba(255,255,255,0.25) 75%,
+                    rgba(15,23,42,0.06) 93%,
+                    rgba(15,23,42,0.24) 100%
+                );
+                box-shadow: inset 12px 0 22px -10px rgba(0,0,0,0.25);
+            }
+            .drm-flip-leaf {
+                transform-style: preserve-3d;
+                will-change: transform;
+            }
+            .drm-flip-face {
+                backface-visibility: hidden;
+                -webkit-backface-visibility: hidden;
+            }
+            .drm-flip-face-back {
+                transform: rotateY(180deg);
+                backface-visibility: hidden;
+                -webkit-backface-visibility: hidden;
+            }
+            .drm-page-curl-corner {
+                background: linear-gradient(135deg, transparent 50%, rgba(15,23,42,0.12) 54%, rgba(255,255,255,0.95) 62%, rgba(203,213,225,0.9) 100%);
+                box-shadow: -3px -3px 10px rgba(0,0,0,0.18);
+                transition: width 0.22s ease, height 0.22s ease;
+            }
+            .drm-page-host:hover .drm-page-curl-corner {
+                width: 46px;
+                height: 46px;
+            }
+        `;
+        document.head.appendChild(st);
+
         if (window.pdfjsLib) {
             window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
         }
     }, []);
 
+    // Drag-to-Rotate 3D Book Handler (when dragging hardcover frame)
+    useEffect(() => {
+        const onMouseMove = (e) => {
+            if (!dragRotateRef.current.active) return;
+            const dx = e.clientX - dragRotateRef.current.startX;
+            const dy = e.clientY - dragRotateRef.current.startY;
+            const nextYaw = Math.max(-24, Math.min(24, Number((dragRotateRef.current.baseYaw + dx * 0.14).toFixed(1))));
+            const nextPitch = Math.max(-16, Math.min(16, Number((dragRotateRef.current.basePitch - dy * 0.12).toFixed(1))));
+            setBookYaw(nextYaw);
+            setBookPitch(nextPitch);
+        };
+
+        const onMouseUp = () => {
+            if (dragRotateRef.current.active) {
+                dragRotateRef.current.active = false;
+            }
+        };
+
+        window.addEventListener('mousemove', onMouseMove);
+        window.addEventListener('mouseup', onMouseUp);
+        return () => {
+            window.removeEventListener('mousemove', onMouseMove);
+            window.removeEventListener('mouseup', onMouseUp);
+        };
+    }, []);
+
+    const handleCoverMouseDown = (e) => {
+        // Only start 3D drag-rotate when clicking the maroon cover board itself
+        if (e.target.closest('.drm-page-host')) return;
+        dragRotateRef.current = {
+            active: true,
+            startX: e.clientX,
+            startY: e.clientY,
+            baseYaw: bookYaw,
+            basePitch: bookPitch
+        };
+    };
+
+    // Load Bookmarks
+    useEffect(() => {
+        try {
+            const saved = localStorage.getItem(bookmarkStorageKey);
+            if (saved) setBookmarks(JSON.parse(saved));
+        } catch (e) { }
+    }, [bookmarkStorageKey]);
+
+    const toggleBookmark = () => {
+        setBookmarks(prev => {
+            const exists = prev.some(b => b.page === pageNumber);
+            let updated;
+            if (exists) {
+                updated = prev.filter(b => b.page !== pageNumber);
+            } else {
+                const matchedSec = tocSections.find(s => s.page === pageNumber);
+                updated = [
+                    ...prev,
+                    {
+                        page: pageNumber,
+                        label: matchedSec ? matchedSec.title : `Bookmarked Page ${pageNumber}`
+                    }
+                ].sort((a, b) => a.page - b.page);
+            }
+            try {
+                localStorage.setItem(bookmarkStorageKey, JSON.stringify(updated));
+            } catch (e) { }
+            return updated;
+        });
+    };
+
+    const isCurrentPageBookmarked = bookmarks.some(b => b.page === pageNumber);
+
+    // Calculate Dynamic Pixel Dimensions for Crisp High-DPI Zoomed Text
+    const getTargetPageDimensions = useCallback((page) => {
+        const baseViewport = page.getViewport({ scale: 1 });
+        const availW = containerRef.current ? containerRef.current.clientWidth : window.innerWidth;
+        const availH = containerRef.current ? containerRef.current.clientHeight : (window.innerHeight - 110);
+
+        const maxSingleW = bookSpreadMode
+            ? Math.max(240, (availW - 140) / 2)
+            : Math.max(300, availW - 100);
+        const maxSingleH = Math.max(320, availH - 115);
+
+        const fitScale = Math.min(maxSingleW / baseViewport.width, maxSingleH / baseViewport.height);
+        const displayWidth = Math.round(baseViewport.width * fitScale * zoomLevel);
+        const displayHeight = Math.round(baseViewport.height * fitScale * zoomLevel);
+
+        const dpr = Math.min(window.devicePixelRatio || 1.5, 2.5);
+        const renderScale = fitScale * zoomLevel * dpr;
+
+        return { displayWidth, displayHeight, renderScale };
+    }, [bookSpreadMode, zoomLevel]);
+
+    // Render any PDF page onto a target canvas with High-DPI Crisp Font + DRM Watermark
+    const renderSingleCanvas = useCallback(async (pageNum, canvasEl) => {
+        if (!pdfDoc || !canvasEl) return;
+        if (pageNum < 1 || pageNum > pdfDoc.numPages) {
+            const ctx = canvasEl.getContext('2d');
+            ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+            return;
+        }
+
+        const page = await pdfDoc.getPage(pageNum);
+        const { displayWidth, displayHeight, renderScale } = getTargetPageDimensions(page);
+        const viewport = page.getViewport({ scale: renderScale });
+        const context = canvasEl.getContext('2d');
+
+        canvasEl.width = viewport.width;
+        canvasEl.height = viewport.height;
+
+        canvasEl.style.width = `${displayWidth}px`;
+        canvasEl.style.height = `${displayHeight}px`;
+
+        await page.render({ canvasContext: context, viewport }).promise;
+
+        // Apply Diagonal DRM Watermark
+        context.save();
+        const fontSize = Math.max(16, Math.round(15 * renderScale));
+        context.font = `900 ${fontSize}px 'Segoe UI', Arial, sans-serif`;
+        context.fillStyle = "rgba(190, 30, 45, 0.23)";
+        context.textAlign = "center";
+        context.textBaseline = "middle";
+        context.rotate((-28 * Math.PI) / 180);
+
+        const watermarkText = `USER ID: ${userEmail}  |  ${new Date().toLocaleDateString('en-IN')}  |  B. JAIN DRM`;
+        const textMetrics = context.measureText(watermarkText);
+        const stepX = Math.max(textMetrics.width + 100, 420);
+        const stepY = Math.max(200, Math.round(180 * renderScale));
+
+        for (let y = -canvasEl.height; y < canvasEl.height * 2; y += stepY) {
+            const rowOffset = (Math.abs(Math.round(y / stepY)) % 2) * (stepX / 2);
+            for (let x = -canvasEl.width; x < canvasEl.width * 2; x += stepX) {
+                context.fillText(watermarkText, x + rowOffset, y);
+            }
+        }
+        context.restore();
+    }, [pdfDoc, userEmail, getTargetPageDimensions]);
+
+    // Realistic 180-Degree 3D Page Flip Engine
+    const triggerPhysicalPageFlip = useCallback(async (direction) => {
+        if (!pdfDoc || isFlippingRef.current || loading) return;
+
+        const leftPg = bookSpreadMode
+            ? (pageNumber % 2 === 1 ? pageNumber : Math.max(1, pageNumber - 1))
+            : pageNumber;
+
+        const step = bookSpreadMode ? 2 : 1;
+        const targetPage = direction === 'next'
+            ? Math.min(leftPg + step, numPages)
+            : Math.max(leftPg - step, 1);
+
+        if (targetPage === leftPg) return;
+
+        isFlippingRef.current = true;
+        setFlipDirection(direction);
+        setFlipAngle(0);
+
+        try {
+            if (bookSpreadMode) {
+                if (direction === 'next') {
+                    const currentRightPg = Math.min(leftPg + 1, numPages);
+                    const nextLeftPg = targetPage;
+                    if (flipFrontCanvasRef.current) await renderSingleCanvas(currentRightPg, flipFrontCanvasRef.current);
+                    if (flipBackCanvasRef.current) await renderSingleCanvas(nextLeftPg, flipBackCanvasRef.current);
+                } else {
+                    const currentLeftPg = leftPg;
+                    const prevRightPg = Math.min(targetPage + 1, numPages);
+                    if (flipFrontCanvasRef.current) await renderSingleCanvas(currentLeftPg, flipFrontCanvasRef.current);
+                    if (flipBackCanvasRef.current) await renderSingleCanvas(prevRightPg, flipBackCanvasRef.current);
+                }
+            } else {
+                if (flipFrontCanvasRef.current) await renderSingleCanvas(pageNumber, flipFrontCanvasRef.current);
+                if (flipBackCanvasRef.current) await renderSingleCanvas(targetPage, flipBackCanvasRef.current);
+            }
+        } catch (e) { }
+
+        const duration = 600;
+        let startTs = null;
+
+        const animateFlip = (ts) => {
+            if (!startTs) startTs = ts;
+            const elapsed = ts - startTs;
+            const t = Math.min(elapsed / duration, 1);
+            const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+            setFlipAngle(eased * 180);
+
+            if (t < 1) {
+                requestAnimationFrame(animateFlip);
+            } else {
+                setPageNumber(targetPage);
+                setFlipDirection(null);
+                setFlipAngle(0);
+                isFlippingRef.current = false;
+            }
+        };
+
+        requestAnimationFrame(animateFlip);
+    }, [pdfDoc, bookSpreadMode, pageNumber, numPages, loading, renderSingleCanvas]);
+
+    // Draw Left & Right Open Book Pages
+    useEffect(() => {
+        if (!pdfDoc) return;
+        let cancelled = false;
+
+        const drawSpread = async () => {
+            setRenderingPage(true);
+            try {
+                if (bookSpreadMode) {
+                    const leftPg = pageNumber % 2 === 1 ? pageNumber : Math.max(1, pageNumber - 1);
+                    const rightPg = leftPg + 1;
+
+                    if (leftCanvasRef.current) {
+                        await renderSingleCanvas(leftPg, leftCanvasRef.current);
+                    }
+                    if (!cancelled && rightCanvasRef.current) {
+                        if (rightPg <= numPages) {
+                            await renderSingleCanvas(rightPg, rightCanvasRef.current);
+                        } else if (leftCanvasRef.current) {
+                            rightCanvasRef.current.width = leftCanvasRef.current.width;
+                            rightCanvasRef.current.height = leftCanvasRef.current.height;
+                            rightCanvasRef.current.style.width = leftCanvasRef.current.style.width;
+                            rightCanvasRef.current.style.height = leftCanvasRef.current.style.height;
+                            const ctx = rightCanvasRef.current.getContext('2d');
+                            ctx.clearRect(0, 0, rightCanvasRef.current.width, rightCanvasRef.current.height);
+                        }
+                    }
+                } else {
+                    if (leftCanvasRef.current) {
+                        await renderSingleCanvas(pageNumber, leftCanvasRef.current);
+                    }
+                }
+                if (!cancelled) setJumpPageInput(String(pageNumber));
+            } catch (err) {
+                if (err?.name !== 'RenderingCancelledException') {
+                    console.error("Spread render notice:", err);
+                }
+            } finally {
+                if (!cancelled) setRenderingPage(false);
+            }
+        };
+
+        drawSpread();
+        return () => { cancelled = true; };
+    }, [pdfDoc, pageNumber, zoomLevel, bookSpreadMode, sidebarOpen, numPages, renderSingleCanvas]);
+
+    // DRM Anti-Copy, Print, DevTools & Keyboard Shortcuts
     useEffect(() => {
         const blockShortcuts = (e) => {
-            if ((e.ctrlKey || e.metaKey) && ['p', 's', 'u'].includes(e.key.toLowerCase())) {
+            if (
+                ((e.ctrlKey || e.metaKey) && ['p', 's', 'u', 'c'].includes(e.key.toLowerCase())) ||
+                ((e.ctrlKey || e.metaKey) && e.shiftKey && ['i', 'j', 'c'].includes(e.key.toLowerCase())) ||
+                e.key === 'F12'
+            ) {
                 e.preventDefault();
                 e.stopPropagation();
                 return false;
             }
+            if ((e.ctrlKey || e.metaKey) && (e.key === '+' || e.key === '=')) {
+                e.preventDefault();
+                setZoomLevel(prev => Math.min(Number((prev + 0.2).toFixed(2)), 2.6));
+                return false;
+            }
+            if ((e.ctrlKey || e.metaKey) && e.key === '-') {
+                e.preventDefault();
+                setZoomLevel(prev => Math.max(Number((prev - 0.2).toFixed(2)), 0.7));
+                return false;
+            }
+            if ((e.ctrlKey || e.metaKey) && e.key === '0') {
+                e.preventDefault();
+                setZoomLevel(1.0);
+                setBookYaw(0);
+                setBookPitch(0);
+                return false;
+            }
             if (e.key === 'PrintScreen') {
                 e.preventDefault();
+                setIsBlurred(true);
+                setTimeout(() => setIsBlurred(false), 2000);
                 return false;
+            }
+            if (e.key === 'ArrowRight' || e.key === 'PageDown') {
+                e.preventDefault();
+                triggerPhysicalPageFlip('next');
+            } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+                e.preventDefault();
+                triggerPhysicalPageFlip('prev');
             }
         };
 
         const blockContextMenu = (e) => {
             e.preventDefault();
             return false;
+        };
+
+        const handleVisibility = () => {
+            if (document.hidden) setIsBlurred(true);
+            else setTimeout(() => setIsBlurred(false), 300);
         };
 
         const printStyle = document.createElement('style');
@@ -298,16 +813,19 @@ function SecurePdfViewerModal({ book, user, onClose }) {
         window.addEventListener('keydown', blockShortcuts, true);
         document.addEventListener('keydown', blockShortcuts, true);
         document.addEventListener('contextmenu', blockContextMenu, true);
+        document.addEventListener('visibilitychange', handleVisibility);
 
         return () => {
             window.removeEventListener('keydown', blockShortcuts, true);
             document.removeEventListener('keydown', blockShortcuts, true);
             document.removeEventListener('contextmenu', blockContextMenu, true);
+            document.removeEventListener('visibilitychange', handleVisibility);
             const existingStyle = document.getElementById('drm-print-blocker');
             if (existingStyle) existingStyle.remove();
         };
-    }, []);
+    }, [triggerPhysicalPageFlip]);
 
+    // Load PDF Stream
     useEffect(() => {
         let isMounted = true;
         setLoading(true);
@@ -318,8 +836,6 @@ function SecurePdfViewerModal({ book, user, onClose }) {
                 if (!realId) throw new Error("Invalid Book Identifier!");
 
                 const encodedVal = encodeURIComponent(realId);
-
-                // Prioritize specific streamUrl if available to avoid 404 waterfall
                 const endpoints = book?.streamUrl
                     ? [book.streamUrl]
                     : [
@@ -341,9 +857,7 @@ function SecurePdfViewerModal({ book, user, onClose }) {
                         } else {
                             lastStatus = res.status;
                         }
-                    } catch (e) {
-                        console.warn(`Fetch error for ${url}:`, e);
-                    }
+                    } catch (e) { }
                 }
 
                 if (!arrayBuffer || arrayBuffer.byteLength === 0) {
@@ -363,6 +877,44 @@ function SecurePdfViewerModal({ book, user, onClose }) {
                     const safePage = Math.min(Math.max(1, startPage), pdf.numPages || 1);
                     setPageNumber(safePage);
                     setJumpPageInput(String(safePage));
+
+                    try {
+                        const outline = await pdf.getOutline();
+                        if (outline && outline.length > 0) {
+                            const resolvedSections = [];
+                            for (let i = 0; i < Math.min(outline.length, 50); i++) {
+                                const item = outline[i];
+                                let destPage = i + 1;
+                                try {
+                                    const dest = typeof item.dest === 'string'
+                                        ? await pdf.getDestination(item.dest)
+                                        : item.dest;
+                                    if (Array.isArray(dest) && dest[0]) {
+                                        const idx = await pdf.getPageIndex(dest[0]);
+                                        destPage = idx + 1;
+                                    }
+                                } catch (e) { }
+                                resolvedSections.push({
+                                    title: item.title || `Section ${i + 1}`,
+                                    page: destPage
+                                });
+                            }
+                            if (isMounted && resolvedSections.length > 0) {
+                                setTocSections(resolvedSections);
+                            }
+                        } else {
+                            const step = pdf.numPages <= 20 ? 4 : 10;
+                            const generated = [];
+                            for (let p = 1; p <= pdf.numPages; p += step) {
+                                generated.push({
+                                    title: p === 1 ? 'Cover & Front Matter' : `Section — Pages ${p}–${Math.min(p + step - 1, pdf.numPages)}`,
+                                    page: p
+                                });
+                            }
+                            if (isMounted) setTocSections(generated);
+                        }
+                    } catch (outlineErr) { }
+
                     setLoading(false);
                 }
             } catch (err) {
@@ -377,63 +929,7 @@ function SecurePdfViewerModal({ book, user, onClose }) {
         return () => { isMounted = false; };
     }, [realId]);
 
-    const renderPage = useCallback(async (num) => {
-        if (!pdfDoc || !canvasRef.current) return;
-
-        if (renderTaskRef.current) {
-            try { renderTaskRef.current.cancel(); } catch (e) { }
-        }
-
-        setRenderingPage(true);
-        try {
-            const page = await pdfDoc.getPage(num);
-            const viewport = page.getViewport({ scale: zoomScale });
-            const canvas = canvasRef.current;
-            const context = canvas.getContext('2d');
-
-            canvas.height = viewport.height;
-            canvas.width = viewport.width;
-
-            const renderContext = { canvasContext: context, viewport };
-            renderTaskRef.current = page.render(renderContext);
-            await renderTaskRef.current.promise;
-
-            context.save();
-            const fontSize = Math.max(18, Math.round(16 * (zoomScale || 1.35)));
-            context.font = `900 ${fontSize}px 'Segoe UI', Arial, sans-serif`;
-            context.fillStyle = "rgba(190, 30, 45, 0.34)";
-            context.textAlign = "center";
-            context.textBaseline = "middle";
-            context.rotate((-28 * Math.PI) / 180);
-
-            const watermarkText = `USER ID: ${userEmail}  |  ${new Date().toLocaleDateString('en-IN')}  |  B. JAIN DRM`;
-            const textMetrics = context.measureText(watermarkText);
-            const stepX = Math.max(textMetrics.width + 110, 440);
-            const stepY = 210;
-
-            for (let y = -canvas.height; y < canvas.height * 2; y += stepY) {
-                const rowOffset = (Math.abs(Math.round(y / stepY)) % 2) * (stepX / 2);
-                for (let x = -canvas.width; x < canvas.width * 2; x += stepX) {
-                    context.fillText(watermarkText, x + rowOffset, y);
-                }
-            }
-            context.restore();
-        } catch (err) {
-            if (err?.name !== 'RenderingCancelledException') {
-                console.error("Page Render Error:", err);
-            }
-        } finally {
-            setRenderingPage(false);
-        }
-    }, [pdfDoc, userEmail, zoomScale]);
-
-    useEffect(() => {
-        if (pdfDoc) {
-            renderPage(pageNumber);
-            setJumpPageInput(pageNumber.toString());
-        }
-    }, [pdfDoc, pageNumber, renderPage]);
-
+    // Auto-Save Reading Progress
     useEffect(() => {
         if (!pdfDoc || !realId || numPages <= 0) return;
         if (book?.itemType === 'Journal' || (book?.streamUrl && book.streamUrl.includes('/journal/'))) return;
@@ -447,38 +943,28 @@ function SecurePdfViewerModal({ book, user, onClose }) {
                     lastReadPage: pageNumber,
                     totalPages: numPages
                 })
-            }).catch(err => console.warn("Live progress save warning:", err));
+            }).catch(() => { });
         }, 500);
 
         return () => clearTimeout(saveTimer);
     }, [pdfDoc, realId, pageNumber, numPages, book]);
 
-    const handleZoomIn = () => setZoomScale(prev => Math.min(Number((prev + 0.25).toFixed(2)), 3.0));
-    const handleZoomOut = () => setZoomScale(prev => Math.max(Number((prev - 0.25).toFixed(2)), 0.6));
-    const handleZoomReset = () => setZoomScale(1.35);
+    const handleZoomIn = () => setZoomLevel(prev => Math.min(Number((prev + 0.2).toFixed(2)), 2.6));
+    const handleZoomOut = () => setZoomLevel(prev => Math.max(Number((prev - 0.2).toFixed(2)), 0.7));
+    const handleZoomReset = () => setZoomLevel(1.0);
+
+    // 3D Rotation Step Helpers
+    const rotateLeft = () => setBookYaw(prev => Math.max(-24, prev - 6));
+    const rotateRight = () => setBookYaw(prev => Math.min(24, prev + 6));
+    const tiltUp = () => setBookPitch(prev => Math.min(16, prev + 4));
+    const tiltDown = () => setBookPitch(prev => Math.max(-16, prev - 4));
+    const reset3DRotation = () => { setBookYaw(0); setBookPitch(0); };
 
     const handleWheelScroll = (e) => {
         if (e.ctrlKey || e.metaKey) {
             e.preventDefault();
             if (e.deltaY < 0) handleZoomIn();
             else if (e.deltaY > 0) handleZoomOut();
-            return;
-        }
-
-        if (isScrollingRef.current || loading) return;
-
-        if (e.deltaY > 25) {
-            if (pageNumber < numPages) {
-                isScrollingRef.current = true;
-                setPageNumber(prev => Math.min(prev + 1, numPages));
-                setTimeout(() => { isScrollingRef.current = false; }, 180);
-            }
-        } else if (e.deltaY < -25) {
-            if (pageNumber > 1) {
-                isScrollingRef.current = true;
-                setPageNumber(prev => Math.max(prev - 1, 1));
-                setTimeout(() => { isScrollingRef.current = false; }, 180);
-            }
         }
     };
 
@@ -492,109 +978,378 @@ function SecurePdfViewerModal({ book, user, onClose }) {
         }
     };
 
+    const themeConfig = {
+        light: {
+            paperBg: 'bg-[#faf8f3] text-slate-800',
+            sidebarBg: 'bg-[#f8fafc] border-slate-200 text-slate-700',
+            sidebarSub: 'text-slate-400',
+            footerBg: 'bg-[#0b2240] border-white/10 text-slate-200',
+            canvasFilter: 'none'
+        },
+        sepia: {
+            paperBg: 'bg-[#f4ebd7] text-[#3d3222]',
+            sidebarBg: 'bg-[#f2ead8] border-[#dfd3ba] text-[#4a3d2b]',
+            sidebarSub: 'text-[#8c7a5e]',
+            footerBg: 'bg-[#2c2216] border-amber-900/30 text-amber-100',
+            canvasFilter: 'sepia(0.32) contrast(0.97) brightness(0.98)'
+        },
+        dark: {
+            paperBg: 'bg-[#131d31] text-slate-200',
+            sidebarBg: 'bg-[#0f172a] border-slate-800 text-slate-300',
+            sidebarSub: 'text-slate-500',
+            footerBg: 'bg-[#070d19] border-slate-800 text-slate-300',
+            canvasFilter: 'invert(0.89) hue-rotate(180deg) contrast(0.95)'
+        }
+    }[readerTheme];
+
+    const leftDisplayPage = bookSpreadMode
+        ? (pageNumber % 2 === 1 ? pageNumber : Math.max(1, pageNumber - 1))
+        : pageNumber;
+    const rightDisplayPage = leftDisplayPage + 1;
+    const isZoomedIn = zoomLevel > 1.05;
+    const isRotated3D = bookYaw !== 0 || bookPitch !== 0;
+
     return (
         <div
             onContextMenu={(e) => e.preventDefault()}
-            className="fixed inset-0 bg-slate-950/95 z-[100] flex flex-col select-none overflow-hidden">
-            <div className="flex flex-wrap items-center justify-between bg-[#0d233a] px-6 py-3 border-b border-slate-800 shadow-lg text-white gap-3">
-                <div className="flex items-center gap-4">
-                    <button onClick={onClose} className="bg-[#be1e2d] hover:bg-red-700 text-white font-bold px-3 py-1.5 rounded text-xs transition cursor-pointer">
-                        ← Close Reader
+            className="fixed inset-0 z-[100] flex flex-col select-none font-sans overflow-hidden bg-[#1a110a]">
+
+            {/* TOP EDITORIAL READER HEADER BAR */}
+            <header className="h-14 bg-[#0b2240] text-white px-3 md:px-5 flex items-center justify-between border-b border-white/10 shrink-0 z-30 shadow-md gap-2">
+                <div className="flex items-center gap-2.5 min-w-0">
+                    <button
+                        type="button"
+                        onClick={() => setSidebarOpen(prev => !prev)}
+                        title="Toggle Chapters & Bookmarks"
+                        className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 flex items-center justify-center text-white transition cursor-pointer shrink-0">
+                        <i className="fa-solid fa-list-ul text-xs"></i>
                     </button>
-                    <div>
-                        <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider block flex items-center gap-1">
-                            <i className="fa-solid fa-shield-halved"></i> Fast DRM Continuous Viewer
-                        </span>
-                        <h2 className="text-xs font-bold text-white truncate max-w-xs">
-                            {book?.itemName || book?.ItemName || book?.title || "Secured Book View"}
+
+                    <div className="min-w-0">
+                        <h2 className="font-serif font-bold text-sm md:text-base leading-tight truncate text-white">
+                            {bookTitle}
                         </h2>
+                        <p className="text-[10px] text-slate-300 truncate">
+                            {bookAuthor} • 3D Rotatable DRM Edition
+                        </p>
                     </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 md:gap-2 shrink-0">
+                    {/* 3D BOOK ROTATION CONTROLS (Yaw Left/Right, Pitch Up/Down, Reset) */}
+                    <div className="hidden xl:flex items-center bg-[#132c4e] border border-white/15 rounded-lg px-1.5 py-1 gap-1 text-[11px] font-bold">
+                        <span className="text-slate-300 px-1 flex items-center gap-1" title="Drag book cover or use buttons to rotate in 3D">
+                            <i className="fa-solid fa-cube text-amber-400"></i> 3D:
+                        </span>
+                        <button type="button" onClick={rotateLeft} title="Rotate Book Left (Yaw -6°)" className="px-1.5 py-0.5 rounded hover:bg-white/15 cursor-pointer">↺</button>
+                        <button type="button" onClick={rotateRight} title="Rotate Book Right (Yaw +6°)" className="px-1.5 py-0.5 rounded hover:bg-white/15 cursor-pointer">↻</button>
+                        <button type="button" onClick={tiltUp} title="Tilt Book Up (Pitch +4°)" className="px-1.5 py-0.5 rounded hover:bg-white/15 cursor-pointer">↑</button>
+                        <button type="button" onClick={tiltDown} title="Tilt Book Down (Pitch -4°)" className="px-1.5 py-0.5 rounded hover:bg-white/15 cursor-pointer">↓</button>
+                        <button
+                            type="button"
+                            onClick={reset3DRotation}
+                            title="Reset 3D Angle to 0°"
+                            className={`px-1.5 py-0.5 rounded text-[10px] cursor-pointer ${isRotated3D ? 'bg-amber-400 text-slate-950 font-extrabold' : 'text-slate-300 hover:bg-white/15'}`}>
+                            {bookYaw}°/{bookPitch}°
+                        </button>
+                    </div>
+
+                    {/* 2-Page Physical Book vs 1-Page Toggle */}
                     <button
-                        onClick={() => setPageNumber(prev => Math.max(prev - 1, 1))}
-                        disabled={pageNumber <= 1 || loading}
-                        className="px-3 py-1 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-white font-bold rounded text-xs border border-slate-700 cursor-pointer">
-                        ◀ Prev
+                        type="button"
+                        onClick={() => setBookSpreadMode(prev => !prev)}
+                        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold border transition cursor-pointer ${bookSpreadMode
+                                ? 'bg-amber-400/20 text-amber-300 border-amber-400/40'
+                                : 'bg-white/10 text-slate-200 border-white/15 hover:bg-white/20'
+                            }`}>
+                        <i className="fa-solid fa-book-open"></i>
+                        <span className="hidden sm:inline">{bookSpreadMode ? 'Open Book' : 'Single Page'}</span>
                     </button>
 
-                    <form onSubmit={handleJumpPage} className="flex items-center gap-1 bg-slate-950 px-2 py-1 rounded border border-slate-800 text-xs">
-                        <span className="text-slate-400 font-bold">Page</span>
-                        <input
-                            type="text"
-                            value={jumpPageInput}
-                            onChange={(e) => setJumpPageInput(e.target.value)}
-                            className="w-14 bg-slate-900 border border-slate-700 text-amber-400 font-bold text-center rounded outline-none px-1"
-                        />
-                        <span className="text-slate-400 font-bold">of {numPages}</span>
-                        <button type="submit" className="text-[10px] bg-slate-800 hover:bg-slate-700 text-white px-2 py-0.5 rounded font-bold ms-1">Go</button>
-                    </form>
+                    {/* Light / Sepia / Dark Theme Pill */}
+                    <div className="hidden sm:flex items-center bg-[#061529] p-1 rounded-lg border border-white/10">
+                        <button type="button" onClick={() => setReaderTheme('light')} className={`px-2 py-0.5 rounded text-xs font-bold cursor-pointer ${readerTheme === 'light' ? 'bg-white text-[#0b2240]' : 'text-slate-300'}`}>Light</button>
+                        <button type="button" onClick={() => setReaderTheme('sepia')} className={`px-2 py-0.5 rounded text-xs font-bold cursor-pointer ${readerTheme === 'sepia' ? 'bg-[#f4ecd8] text-[#3d3222]' : 'text-slate-300'}`}>Sepia</button>
+                        <button type="button" onClick={() => setReaderTheme('dark')} className={`px-2 py-0.5 rounded text-xs font-bold cursor-pointer ${readerTheme === 'dark' ? 'bg-[#1e293b] text-white' : 'text-slate-300'}`}>Dark</button>
+                    </div>
 
-                    <button
-                        onClick={() => setPageNumber(prev => Math.min(prev + 1, numPages))}
-                        disabled={pageNumber >= numPages || loading}
-                        className="px-3 py-1 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-white font-bold rounded text-xs border border-slate-700 cursor-pointer">
-                        Next ▶
-                    </button>
-
-                    <div className="flex items-center gap-1 bg-slate-950 px-2 py-1 rounded border border-slate-700 ms-2">
+                    {/* TRUE ZOOM CONTROLS */}
+                    <div className="flex items-center bg-[#132c4e] border border-white/15 rounded-lg px-2 py-1 gap-1 text-xs font-bold">
                         <button
                             type="button"
                             onClick={handleZoomOut}
-                            disabled={zoomScale <= 0.6 || loading}
-                            title="Zoom Out Page"
-                            className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-white font-black rounded text-xs cursor-pointer">
-                            −
+                            disabled={zoomLevel <= 0.7 || loading}
+                            title="Zoom Out"
+                            className="hover:text-emerald-300 disabled:opacity-40 cursor-pointer px-1.5 py-0.5 rounded hover:bg-white/10">
+                            A-
                         </button>
                         <button
                             type="button"
                             onClick={handleZoomReset}
-                            title="Reset Zoom (100%)"
-                            className="px-2 py-0.5 text-amber-400 font-bold text-[11px] min-w-[46px] text-center cursor-pointer">
-                            {Math.round((zoomScale / 1.35) * 100)}%
+                            title="Reset Zoom to 100%"
+                            className="text-amber-300 min-w-[40px] text-center cursor-pointer">
+                            {Math.round(zoomLevel * 100)}%
                         </button>
                         <button
                             type="button"
                             onClick={handleZoomIn}
-                            disabled={zoomScale >= 3.0 || loading}
-                            title="Zoom In Page"
-                            className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-white font-black rounded text-xs cursor-pointer">
-                            +
+                            disabled={zoomLevel >= 2.6 || loading}
+                            title="Zoom In"
+                            className="hover:text-emerald-300 disabled:opacity-40 cursor-pointer px-1.5 py-0.5 rounded hover:bg-white/10">
+                            A+
                         </button>
                     </div>
-                </div>
 
-                <div className="hidden sm:block text-right">
-                    <span className="text-[11px] text-slate-300 block font-mono">{userEmail}</span>
-                </div>
-            </div>
+                    {/* Bookmark */}
+                    <button
+                        type="button"
+                        onClick={toggleBookmark}
+                        className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${isCurrentPageBookmarked ? 'bg-amber-500 text-slate-950' : 'bg-[#0f8a5f] hover:bg-[#0c734f] text-white'
+                            }`}>
+                        <i className={`fa-${isCurrentPageBookmarked ? 'solid' : 'regular'} fa-bookmark`}></i>
+                        <span className="hidden md:inline">{isCurrentPageBookmarked ? 'Bookmarked' : 'Bookmark'}</span>
+                    </button>
 
-            <div
-                ref={containerRef}
-                onWheel={handleWheelScroll}
-                className="flex-1 overflow-auto p-4 flex justify-center items-start bg-slate-950 relative cursor-grab">
-                {loading ? (
-                    <div className="text-white text-xs font-bold flex flex-col items-center gap-2">
-                        <i className="fa-solid fa-spinner fa-spin text-3xl text-amber-500"></i>
-                        <span>Decrypting DRM Book Memory Stream...</span>
-                    </div>
-                ) : errorMsg ? (
-                    <div className="bg-red-950/60 border border-red-600 text-red-200 p-4 rounded text-xs font-bold max-w-md text-center">
-                        ⚠️ {errorMsg}
-                    </div>
-                ) : (
-                    <div className="relative shadow-2xl rounded bg-white border border-slate-800 min-h-[650px] flex items-center justify-center">
-                        {renderingPage && (
-                            <div className="absolute inset-0 bg-slate-950/40 backdrop-blur-[1px] z-10 flex items-center justify-center text-white text-xs font-bold gap-2">
-                                <i className="fa-solid fa-circle-notch fa-spin text-xl text-amber-400"></i>
-                                <span>Loading Page {pageNumber}...</span>
+                    {/* Close */}
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        title="Close Reader"
+                        className="w-8 h-8 rounded-full bg-white/10 hover:bg-[#be1e2d] border border-white/15 flex items-center justify-center text-white transition cursor-pointer">
+                        <i className="fa-solid fa-xmark text-sm"></i>
+                    </button>
+                </div>
+            </header>
+
+            {/* MAIN BODY: WOODEN DESK TABLE + 3D ROTATABLE HARDCOVER OPEN BOOK */}
+            <div className="flex-1 flex overflow-hidden relative">
+                {sidebarOpen && (
+                    <aside className={`w-64 border-r shrink-0 flex flex-col overflow-y-auto z-20 ${themeConfig.sidebarBg}`}>
+                        <div className="p-4">
+                            <p className={`text-[10px] font-extrabold tracking-widest uppercase mb-3 ${themeConfig.sidebarSub}`}>
+                                SECTIONS & CHAPTERS
+                            </p>
+                            <div className="space-y-1.5">
+                                {tocSections.map((sec, idx) => {
+                                    const nextSecPage = tocSections[idx + 1]?.page || (numPages + 1);
+                                    const isActive = pageNumber >= sec.page && pageNumber < nextSecPage;
+                                    return (
+                                        <button
+                                            key={idx}
+                                            type="button"
+                                            onClick={() => setPageNumber(sec.page)}
+                                            className={`w-full text-left px-3 py-2.5 rounded-xl transition cursor-pointer ${isActive ? 'bg-[#0b2240] text-white shadow-sm' : 'hover:bg-black/5'
+                                                }`}>
+                                            <div className="text-xs font-bold leading-snug line-clamp-2">{sec.title}</div>
+                                            <div className={`text-[10px] mt-1 font-semibold ${isActive ? 'text-slate-300' : themeConfig.sidebarSub}`}>
+                                                Page {sec.page}
+                                            </div>
+                                        </button>
+                                    );
+                                })}
                             </div>
-                        )}
-                        <canvas ref={canvasRef} className="block select-none pointer-events-none" />
-                    </div>
+
+                            {bookmarks.length > 0 && (
+                                <div className="mt-5 pt-4 border-t border-slate-300/40">
+                                    <p className={`text-[10px] font-extrabold tracking-widest uppercase mb-2 ${themeConfig.sidebarSub}`}>
+                                        MY BOOKMARKS ({bookmarks.length})
+                                    </p>
+                                    <div className="space-y-1">
+                                        {bookmarks.map((bm) => (
+                                            <button
+                                                key={bm.page}
+                                                type="button"
+                                                onClick={() => setPageNumber(bm.page)}
+                                                className={`w-full text-left px-3 py-1.5 rounded-lg text-xs flex items-center justify-between cursor-pointer ${pageNumber === bm.page ? 'bg-emerald-700 text-white font-bold' : 'hover:bg-black/5'
+                                                    }`}>
+                                                <span className="truncate pr-2">{bm.label}</span>
+                                                <span className="text-[10px] opacity-80 shrink-0">Pg {bm.page}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </aside>
                 )}
+
+                {/* WOODEN TABLE DESK STAGE */}
+                <main
+                    ref={containerRef}
+                    onWheel={handleWheelScroll}
+                    className={`flex-1 overflow-auto p-4 sm:p-6 md:p-8 flex ${isZoomedIn ? 'items-start justify-start md:justify-center' : 'items-center justify-center'} relative drm-wood-desk drm-book-perspective`}>
+                    {loading ? (
+                        <div className="m-auto bg-black/50 backdrop-blur-md px-6 py-5 rounded-2xl flex flex-col items-center gap-3 text-amber-100 border border-white/15 shadow-2xl">
+                            <i className="fa-solid fa-book-open fa-fade text-3xl text-amber-400"></i>
+                            <span className="text-xs font-bold uppercase tracking-wider">Opening 3D Hardcover DRM Edition...</span>
+                        </div>
+                    ) : errorMsg ? (
+                        <div className="m-auto bg-red-50 border border-red-300 text-red-800 p-5 rounded-2xl text-xs font-bold max-w-md text-center shadow-xl">
+                            ⚠️ {errorMsg}
+                        </div>
+                    ) : (
+                        /* 3D ROTATABLE WRAPPER (Drag border to tilt in 3D) */
+                        <div
+                            onMouseDown={handleCoverMouseDown}
+                            title="Drag the maroon cover border to rotate book in 3D"
+                            style={{
+                                transform: `rotateX(${bookPitch}deg) rotateY(${bookYaw}deg)`
+                            }}
+                            className={`relative shrink-0 drm-3d-rotatable-book cursor-grab active:cursor-grabbing ${dragRotateRef.current.active ? 'is-dragging' : ''} ${isBlurred ? 'blur-xl opacity-30' : ''}`}>
+
+                            {/* MAROON HARDCOVER BOOK OUTER COVER */}
+                            <div className="relative drm-hardcover-board cursor-default">
+
+                                {/* STACKED PAPER THICKNESS (LEFT & RIGHT EDGES) */}
+                                <div className={`relative flex items-stretch ${bookSpreadMode ? 'drm-page-stack-left drm-page-stack-right' : 'rounded-lg'}`}>
+
+                                    {/* LEFT OPEN PAGE */}
+                                    <div
+                                        onClick={() => leftDisplayPage > 1 && triggerPhysicalPageFlip('prev')}
+                                        title={leftDisplayPage > 1 ? "Click to flip previous page" : ""}
+                                        className={`drm-page-host drm-paper-leaf-left relative px-3.5 py-4 sm:px-6 sm:py-5 border-r border-slate-400/50 transition-colors ${leftDisplayPage > 1 ? 'cursor-pointer' : ''} ${themeConfig.paperBg}`}>
+
+                                        <div className="flex items-center justify-between text-[9px] sm:text-[10px] tracking-widest uppercase font-semibold opacity-55 pb-2 mb-2.5 border-b border-current/15">
+                                            <span>B. JAIN PUBLISHERS</span>
+                                            <span>PAGE {leftDisplayPage}</span>
+                                        </div>
+
+                                        <canvas
+                                            ref={leftCanvasRef}
+                                            style={{ filter: themeConfig.canvasFilter }}
+                                            className="block select-none pointer-events-none"
+                                        />
+
+                                        {leftDisplayPage > 1 && (
+                                            <div className="drm-page-curl-corner pointer-events-none absolute bottom-0 left-0 w-6 h-6 rounded-tr-lg"></div>
+                                        )}
+                                    </div>
+
+                                    {/* RIGHT OPEN PAGE */}
+                                    {bookSpreadMode && (
+                                        <div
+                                            onClick={() => rightDisplayPage <= numPages && triggerPhysicalPageFlip('next')}
+                                            title={rightDisplayPage <= numPages ? "Click to flip next page" : ""}
+                                            className={`drm-page-host drm-paper-leaf-right relative px-3.5 py-4 sm:px-6 sm:py-5 transition-colors ${rightDisplayPage <= numPages ? 'cursor-pointer' : ''} ${themeConfig.paperBg}`}>
+
+                                            <div className="flex items-center justify-between text-[9px] sm:text-[10px] tracking-widest uppercase font-semibold opacity-55 pb-2 mb-2.5 border-b border-current/15">
+                                                <span>{bookCategory}</span>
+                                                <span>{rightDisplayPage <= numPages ? `PAGE ${rightDisplayPage}` : 'END OF BOOK'}</span>
+                                            </div>
+
+                                            <canvas
+                                                ref={rightCanvasRef}
+                                                style={{ filter: themeConfig.canvasFilter }}
+                                                className="block select-none pointer-events-none"
+                                            />
+
+                                            {rightDisplayPage < numPages && (
+                                                <div className="drm-page-curl-corner pointer-events-none absolute bottom-0 right-0 w-6 h-6 rounded-tl-lg"></div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {/* 3D ANIMATED TURNING PAPER LEAF (180° PHYSICAL PAGE TURN) */}
+                                    {flipDirection && (
+                                        <div
+                                            style={{
+                                                position: 'absolute',
+                                                top: 0,
+                                                bottom: 0,
+                                                left: bookSpreadMode ? 'calc(50% - 5.5px)' : '0',
+                                                width: bookSpreadMode ? 'calc(50% - 5.5px)' : '100%',
+                                                transformOrigin: 'left center',
+                                                transform: flipDirection === 'next'
+                                                    ? `rotateY(${-flipAngle}deg)`
+                                                    : `rotateY(${-(180 - flipAngle)}deg)`,
+                                                zIndex: 50,
+                                                pointerEvents: 'none'
+                                            }}
+                                            className="drm-flip-leaf">
+
+                                            <div className={`drm-flip-face drm-paper-leaf-right absolute inset-0 px-3.5 py-4 sm:px-6 sm:py-5 border-l border-slate-400/60 shadow-[0_20px_40px_rgba(0,0,0,0.45)] flex flex-col justify-center items-center ${themeConfig.paperBg}`}>
+                                                <canvas
+                                                    ref={flipFrontCanvasRef}
+                                                    style={{ filter: themeConfig.canvasFilter }}
+                                                    className="max-w-full max-h-full object-contain"
+                                                />
+                                            </div>
+
+                                            <div className={`drm-flip-face-back drm-paper-leaf-left absolute inset-0 px-3.5 py-4 sm:px-6 sm:py-5 border-r border-slate-400/60 shadow-[0_20px_40px_rgba(0,0,0,0.45)] flex flex-col justify-center items-center ${themeConfig.paperBg}`}>
+                                                <canvas
+                                                    ref={flipBackCanvasRef}
+                                                    style={{ filter: themeConfig.canvasFilter }}
+                                                    className="max-w-full max-h-full object-contain"
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </main>
             </div>
+
+            {/* BOTTOM NAVIGATION FOOTER BAR */}
+            <footer className={`h-12 border-t px-4 md:px-6 flex items-center justify-between shrink-0 z-30 ${themeConfig.footerBg}`}>
+                <div className="flex items-center gap-2 text-xs font-semibold">
+                    <span>
+                        {bookSpreadMode && rightDisplayPage <= numPages
+                            ? <>Open Spread: Pages <strong>{leftDisplayPage}–{rightDisplayPage}</strong> of <strong>{numPages || '—'}</strong></>
+                            : <>Page <strong>{leftDisplayPage}</strong> of <strong>{numPages || '—'}</strong></>
+                        }
+                    </span>
+                    {isRotated3D && (
+                        <button
+                            type="button"
+                            onClick={reset3DRotation}
+                            className="ml-2 text-[10px] bg-amber-400/20 text-amber-300 border border-amber-400/40 px-2 py-0.5 rounded font-bold cursor-pointer">
+                            Reset 3D ({bookYaw}°, {bookPitch}°)
+                        </button>
+                    )}
+                    {isZoomedIn && (
+                        <button
+                            type="button"
+                            onClick={handleZoomReset}
+                            className="ml-1 text-[10px] bg-white/15 hover:bg-white/25 px-2 py-0.5 rounded font-bold cursor-pointer">
+                            Reset Zoom ({Math.round(zoomLevel * 100)}%)
+                        </button>
+                    )}
+                </div>
+
+                {/* Quick Page Jump */}
+                <form onSubmit={handleJumpPage} className="hidden md:flex items-center gap-1.5 text-xs">
+                    <span className="opacity-75">Jump to Page:</span>
+                    <input
+                        type="text"
+                        value={jumpPageInput}
+                        onChange={(e) => setJumpPageInput(e.target.value)}
+                        className="w-12 px-1.5 py-0.5 rounded border border-white/25 bg-white/10 text-center font-bold text-xs outline-none"
+                    />
+                    <button type="submit" className="text-[10px] bg-amber-500 text-slate-950 px-2.5 py-1 rounded font-extrabold cursor-pointer">
+                        Go
+                    </button>
+                </form>
+
+                {/* ← Flip Back & Flip Next → Buttons */}
+                <div className="flex items-center gap-2">
+                    <button
+                        type="button"
+                        disabled={leftDisplayPage <= 1 || loading}
+                        onClick={() => triggerPhysicalPageFlip('prev')}
+                        className="px-3.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/15 text-xs font-bold disabled:opacity-35 transition cursor-pointer">
+                        ← Flip Back
+                    </button>
+                    <button
+                        type="button"
+                        disabled={(bookSpreadMode ? rightDisplayPage >= numPages : leftDisplayPage >= numPages) || loading}
+                        onClick={() => triggerPhysicalPageFlip('next')}
+                        className="px-4 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-extrabold disabled:opacity-35 transition cursor-pointer shadow">
+                        Flip Next →
+                    </button>
+                </div>
+            </footer>
         </div>
     );
 }
@@ -1098,8 +1853,20 @@ function App() {
     };
 
     const handleClosePdfModal = () => {
+        if (window.clearApiCache) {
+            window.clearApiCache('my-library');
+        }
         setSelectedBookForDrm(null);
     };
+
+    useEffect(() => {
+        const forceCloseHandler = () => {
+            if (window.clearApiCache) window.clearApiCache('my-library');
+            setSelectedBookForDrm(null);
+        };
+        window.addEventListener('forceCloseDrmReader', forceCloseHandler);
+        return () => window.removeEventListener('forceCloseDrmReader', forceCloseHandler);
+    }, []);
 
     const fetchPlansMaster = async () => {
         try {
@@ -1348,20 +2115,37 @@ function App() {
             return;
         }
 
-        if (isAdmin) {
-            saveReadingProgressToBackend(bookObj, 1);
+        const targetId = bookObj.id || bookObj.Id || bookObj.bookId;
+
+        const openBookWithSavedProgress = async () => {
+            let resumePage = bookObj.initialPage || bookObj.lastReadPage || 1;
+            try {
+                const libRes = await fetch(`/api/reader/my-library?_t=${Date.now()}`, { noCache: true });
+                if (libRes.ok) {
+                    const libData = await window.safeJsonParse(libRes);
+                    const found = Array.isArray(libData) && libData.find(item =>
+                        String(item.bookId).toLowerCase() === String(targetId).toLowerCase()
+                    );
+                    if (found && found.lastReadPage > 1) {
+                        resumePage = found.lastReadPage;
+                    }
+                }
+            } catch (e) { }
+
+            const bookWithResume = { ...bookObj, initialPage: resumePage };
             window.history.pushState({ modal: 'reader' }, '');
-            setSelectedBookForDrm(bookObj);
+            setSelectedBookForDrm(bookWithResume);
+        };
+
+        if (isAdmin) {
+            await openBookWithSavedProgress();
             return;
         }
 
-        const targetId = bookObj.id || bookObj.Id || bookObj.bookId;
         const isOwned = await checkBookOwnership(targetId);
 
         if (isOwned) {
-            saveReadingProgressToBackend(bookObj, 1);
-            window.history.pushState({ modal: 'reader' }, '');
-            setSelectedBookForDrm(bookObj);
+            await openBookWithSavedProgress();
             return;
         }
 
@@ -2070,15 +2854,24 @@ function App() {
     });
 
     const scrollToHomeSection = (sectionId) => {
+        const smoothScrollToTarget = () => {
+            const el = document.getElementById(sectionId);
+            if (!el) return;
+            const headerOffset = 88;
+            const elementPosition = el.getBoundingClientRect().top;
+            const offsetPosition = elementPosition + window.pageYOffset - headerOffset;
+
+            window.scrollTo({
+                top: offsetPosition,
+                behavior: 'smooth'
+            });
+        };
+
         if (activeTab !== 'store') {
             changeNavState({ activeTab: 'store' });
-            setTimeout(() => {
-                const el = document.getElementById(sectionId);
-                if (el) el.scrollIntoView({ behavior: 'smooth' });
-            }, 150);
+            setTimeout(smoothScrollToTarget, 180);
         } else {
-            const el = document.getElementById(sectionId);
-            if (el) el.scrollIntoView({ behavior: 'smooth' });
+            smoothScrollToTarget();
         }
     };
 
@@ -3130,24 +3923,53 @@ function App() {
                                                         </p>
                                                     </div>
 
-                                                    {/* Portrait Book Cover Showcase (Never Cropped) */}
+                                                    {/* INTERACTIVE 3D HARDCOVER BOOK MODEL SHOWCASE */}
                                                     <div
+                                                        onMouseMove={(e) => {
+                                                            const rect = e.currentTarget.getBoundingClientRect();
+                                                            const x = (e.clientX - rect.left) / rect.width - 0.5;
+                                                            const y = (e.clientY - rect.top) / rect.height - 0.5;
+                                                            const stage = e.currentTarget.querySelector('.book-3d-stage');
+                                                            if (stage) {
+                                                                stage.classList.remove('animate-book-3d-float');
+                                                                stage.style.transform = `rotateY(${x * 34}deg) rotateX(${-y * 24}deg) scale3d(1.05, 1.05, 1.05)`;
+                                                            }
+                                                        }}
+                                                        onMouseLeave={(e) => {
+                                                            const stage = e.currentTarget.querySelector('.book-3d-stage');
+                                                            if (stage) {
+                                                                stage.style.transform = '';
+                                                                stage.classList.add('animate-book-3d-float');
+                                                            }
+                                                        }}
                                                         onClick={() => featuredBook ? handleReadAccess(featuredBook) : scrollToHomeSection('catalog-section')}
-                                                        className="relative h-64 sm:h-72 rounded-2xl overflow-hidden mb-4 bg-slate-900/90 border border-white/10 flex items-center justify-center p-4 cursor-pointer group">
-                                                        {/* Soft Blurred Backdrop */}
-                                                        <img
-                                                            src={featuredCover}
-                                                            alt=""
-                                                            aria-hidden="true"
-                                                            className="absolute inset-0 w-full h-full object-cover opacity-20 blur-xl scale-125 pointer-events-none"
-                                                        />
-                                                        {/* Crisp Full Portrait Book Cover */}
-                                                        <img
-                                                            src={featuredCover}
-                                                            alt={featuredTitle}
-                                                            onError={(e) => { e.currentTarget.src = '/images/default-cover.png'; }}
-                                                            className="relative z-10 max-h-full max-w-full w-auto h-auto object-contain rounded-lg shadow-[0_15px_35px_rgba(0,0,0,0.65)] group-hover:scale-105 transition-transform duration-500"
-                                                        />
+                                                        className="relative h-68 sm:h-76 rounded-2xl overflow-hidden mb-4 bg-gradient-to-br from-slate-900 via-[#0d233a] to-slate-950 border border-white/10 flex items-center justify-center p-6 cursor-pointer group perspective-1200">
+
+                                                        {/* Ambient 3D Glow Ring */}
+                                                        <div className="absolute w-44 h-44 rounded-full bg-emeraldPrimary/25 blur-2xl pointer-events-none"></div>
+
+                                                        {/* 3D Book Object (Cover + Spine + Pages) */}
+                                                        <div className="book-3d-stage animate-book-3d-float relative z-10 h-52 sm:h-56 flex items-center justify-center">
+                                                            {/* Left 3D Hardcover Spine */}
+                                                            <div className="book-3d-spine"></div>
+
+                                                            {/* Front Cover */}
+                                                            <img
+                                                                src={featuredCover}
+                                                                alt={featuredTitle}
+                                                                onError={(e) => { e.currentTarget.src = '/images/default-cover.png'; }}
+                                                                className="h-full w-auto max-w-[175px] object-contain rounded-r-md shadow-[0_22px_40px_rgba(0,0,0,0.8)] border border-white/15 bg-slate-800"
+                                                            />
+
+                                                            {/* Right 3D Page Edges */}
+                                                            <div className="book-3d-pages"></div>
+                                                        </div>
+
+                                                        {/* 3D Interactive Hint Badge */}
+                                                        <span className="absolute top-3 left-3 z-20 bg-white/10 backdrop-blur-xs text-slate-200 border border-white/15 text-[10px] font-bold px-2.5 py-1 rounded-full flex items-center gap-1">
+                                                            <i className="fa-solid fa-cube text-emeraldPrimary"></i> 3D View
+                                                        </span>
+
                                                         {/* Price Tag Pill */}
                                                         <span className="absolute bottom-3 right-3 z-20 bg-navyDark/90 backdrop-blur-xs text-white border border-white/15 text-xs font-black px-3 py-1 rounded-lg shadow">
                                                             ₹{Number(featuredPrice).toLocaleString('en-IN')}
@@ -3314,7 +4136,7 @@ function App() {
                                                         return (
                                                             <div
                                                                 key={b.id || b.Id}
-                                                                className="bg-white rounded-2xl border border-slate-200/90 overflow-hidden shadow-xs hover:shadow-xl hover:-translate-y-1 hover:border-emeraldPrimary/50 transition-all duration-300 flex flex-col justify-between group">
+                                                                className="card-3d-hover bg-white rounded-2xl border border-slate-200/90 overflow-hidden shadow-xs hover:border-emeraldPrimary/50 flex flex-col justify-between group">
 
                                                                 {/* TOP COVER CONTAINER (NO CROPPING + PORTRAIT ASPECT RATIO) */}
                                                                 <div>

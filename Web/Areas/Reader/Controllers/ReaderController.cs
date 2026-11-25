@@ -553,7 +553,6 @@ namespace Web.Areas.Reader.Controllers
             }
         }
 
-        // POST: /Reader/api/save-progress
         [HttpPost("api/save-progress")]
         [HttpPost("/api/reader/save-progress")]
         public async Task<IActionResult> SaveProgress([FromBody] ReadingProgressDto dto)
@@ -567,37 +566,57 @@ namespace Web.Areas.Reader.Controllers
             if (dto == null || dto.BookId == Guid.Empty)
                 return BadRequest(new { message = "Invalid Book ID provided." });
 
+            // 1. Check karein ki User aur Book dono database mein exist karte hain ya nahi (Foreign Key crash se bachne ke liye)
+            var userExists = await _dbContext.Users.AnyAsync(u => u.Id == userId);
             var bookEntity = await _dbContext.Books.FirstOrDefaultAsync(b => b.Id == dto.BookId);
+
+            if (!userExists || bookEntity == null)
+            {
+                return Ok(new
+                {
+                    success = false,
+                    message = "Skipped saving progress: User or Book record not found in database."
+                });
+            }
+
             int resolvedTotalPages = dto.TotalPages > 0
                 ? dto.TotalPages
-                : (bookEntity != null && bookEntity.NoOfPages > 0 ? bookEntity.NoOfPages : 1);
+                : (bookEntity.NoOfPages > 0 ? bookEntity.NoOfPages : 1);
 
             int safePage = Math.Max(1, Math.Min(dto.LastReadPage > 0 ? dto.LastReadPage : 1, resolvedTotalPages));
 
-            var progress = await _dbContext.UserReadingProgress
-                .FirstOrDefaultAsync(p => p.UserId == userId && p.BookId == dto.BookId);
-
-            if (progress == null)
+            try
             {
-                progress = new UserReadingProgress
+                var progress = await _dbContext.UserReadingProgress
+                    .FirstOrDefaultAsync(p => p.UserId == userId && p.BookId == dto.BookId);
+
+                if (progress == null)
                 {
-                    Id = Guid.NewGuid(),
-                    UserId = userId,
-                    BookId = dto.BookId,
-                    LastReadPage = safePage,
-                    TotalPages = resolvedTotalPages,
-                    LastReadAt = DateTime.UtcNow
-                };
-                _dbContext.UserReadingProgress.Add(progress);
-            }
-            else
-            {
-                progress.LastReadPage = safePage;
-                progress.TotalPages = resolvedTotalPages;
-                progress.LastReadAt = DateTime.UtcNow;
-            }
+                    progress = new UserReadingProgress
+                    {
+                        Id = Guid.NewGuid(),
+                        UserId = userId,
+                        BookId = dto.BookId,
+                        LastReadPage = safePage,
+                        TotalPages = resolvedTotalPages,
+                        LastReadAt = DateTime.UtcNow
+                    };
+                    _dbContext.UserReadingProgress.Add(progress);
+                }
+                else
+                {
+                    progress.LastReadPage = safePage;
+                    progress.TotalPages = resolvedTotalPages;
+                    progress.LastReadAt = DateTime.UtcNow;
+                }
 
-            await _dbContext.SaveChangesAsync();
+                await _dbContext.SaveChangesAsync();
+            }
+            catch (DbUpdateException)
+            {
+                
+                _dbContext.ChangeTracker.Clear();
+            }
 
             int pct = resolvedTotalPages > 0
                 ? Math.Min(100, (int)Math.Round((double)safePage / resolvedTotalPages * 100))
@@ -613,7 +632,7 @@ namespace Web.Areas.Reader.Controllers
             });
         }
 
-        // GET: /api/reader/my-library OR /Reader/api/my-library
+       
         [HttpGet("api/my-library")]
         [HttpGet("/api/reader/my-library")]
         public async Task<IActionResult> GetMyLibrary([FromQuery] string? userId = null)
