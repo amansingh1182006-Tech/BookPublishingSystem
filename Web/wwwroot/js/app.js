@@ -97,6 +97,74 @@ window.smoothScrollToY = function (targetY, duration = 750) {
             transform: translateY(-8px) rotateX(2deg) rotateY(-2deg);
             box-shadow: 0 22px 40px -12px rgba(11, 19, 37, 0.22);
         }
+
+        /* ================================================================
+           UNIQUE 3D HERO BANNER CAROUSEL & DEPTH ENGINE (10 BANNERS)
+           ================================================================ */
+        .hero-3d-stage {
+            perspective: 1600px;
+            transform-style: preserve-3d;
+        }
+        .hero-banner-3d-card {
+            transform-style: preserve-3d;
+            transition: transform 0.55s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.45s ease;
+            will-change: transform, opacity;
+        }
+        .hero-3d-layer-back {
+            transform: translateZ(-35px) scale(0.96);
+        }
+        .hero-3d-layer-mid {
+            transform: translateZ(18px);
+        }
+        .hero-3d-layer-front {
+            transform: translateZ(42px);
+        }
+        @keyframes bannerProgressFill {
+            from { width: 0%; }
+            to { width: 100%; }
+        }
+        .banner-progress-bar {
+            animation: bannerProgressFill 4.5s linear forwards;
+        }
+        .banner-progress-paused {
+            animation-play-state: paused !important;
+        }
+        /* ================================================================
+           FULL-BLEED 3D SCENE BACKGROUND + 10 AUTO-SCROLLING BANNERS
+           ================================================================ */
+        .hero-3d-stage {
+            perspective: 1700px;
+            transform-style: preserve-3d;
+        }
+        .hero-bg-scene-layer {
+            transform-style: preserve-3d;
+            transition: transform 0.9s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.8s ease;
+            will-change: transform, opacity;
+        }
+        .hero-banner-3d-card {
+            transform-style: preserve-3d;
+            transition: transform 0.55s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.45s ease;
+            will-change: transform, opacity;
+        }
+        .hero-3d-layer-back {
+            transform: translateZ(-45px) scale(1.04);
+        }
+        .hero-3d-layer-mid {
+            transform: translateZ(20px);
+        }
+        .hero-3d-layer-front {
+            transform: translateZ(48px);
+        }
+        @keyframes bannerProgressFill {
+            from { width: 0%; }
+            to { width: 100%; }
+        }
+        .banner-progress-bar {
+            animation: bannerProgressFill 4.5s linear forwards;
+        }
+        .banner-progress-paused {
+            animation-play-state: paused !important;
+        }
     `;
     document.head.appendChild(style);
 })();
@@ -578,7 +646,7 @@ function SecurePdfViewerModal({ book, user, onClose }) {
 
     const isCurrentPageBookmarked = bookmarks.some(b => b.page === pageNumber);
 
-    // Calculate Dynamic Pixel Dimensions for Crisp High-DPI Zoomed Text
+    
     const getTargetPageDimensions = useCallback((page) => {
         const baseViewport = page.getViewport({ scale: 1 });
         const availW = containerRef.current ? containerRef.current.clientWidth : window.innerWidth;
@@ -599,7 +667,7 @@ function SecurePdfViewerModal({ book, user, onClose }) {
         return { displayWidth, displayHeight, renderScale };
     }, [bookSpreadMode, zoomLevel]);
 
-    // Render any PDF page onto a target canvas with High-DPI Crisp Font + DRM Watermark
+    
     const renderSingleCanvas = useCallback(async (pageNum, canvasEl) => {
         if (!pdfDoc || !canvasEl) return;
         if (pageNum < 1 || pageNum > pdfDoc.numPages) {
@@ -1354,6 +1422,650 @@ function SecurePdfViewerModal({ book, user, onClose }) {
     );
 }
 window.SecurePdfViewerModal = SecurePdfViewerModal;
+
+// ============================================================================
+// 10 PROJECT-SPECIFIC BANNERS + FULL 3D BACKGROUND SCENE & SHOWCASE
+// ============================================================================
+const BJAINRX_HERO_BANNERS = [
+    {
+        id: 1,
+        badge: "Banner 01 • Core Clinical Pillar",
+        tag: "Materia Medica",
+        titlePrefix: "Authentic",
+        titleHighlight: "Materia Medica",
+        titleSuffix: "Digital Editions",
+        subtitle: "Explore classical and modern remedy pictures, keynotes, and clinical provings with instant rubric & symptom lookup.",
+        statLabel: "Verified Remedies",
+        statValue: "3,500+",
+        accentFrom: "from-emerald-300",
+        accentTo: "to-teal-100",
+        glowColor: "rgba(0, 168, 132, 0.30)",
+        bgImage: "/images/banners/banner-01-materia-medica.jpg",
+        sceneMood: "warm-library",
+        hudTitle: "Materia Medica & Remedy Matrix",
+        hudSub: "3,500+ Verified Remedies • Keynotes & Clinical Provings",
+        icon: "fa-pills",
+        ctaText: "Explore Materia Medica",
+        filterCategory: "Materia Medica",
+        actionType: "category"
+    },
+    {
+        id: 2,
+        badge: "Banner 02 • Repertorization Engine",
+        tag: "Repertory",
+        titlePrefix: "Precision",
+        titleHighlight: "Repertory & Rubrics",
+        titleSuffix: "At Your Fingertips",
+        subtitle: "Kent, Synthesis, Boenninghausen, and clinical repertories structured for fast case analysis and accurate prescription.",
+        statLabel: "Indexed Rubrics",
+        statValue: "1,20,000+",
+        accentFrom: "from-amber-200",
+        accentTo: "to-yellow-100",
+        glowColor: "rgba(212, 175, 55, 0.30)",
+        bgImage: "/images/banners/banner-02-repertory.jpg",
+        sceneMood: "amber-study",
+        hudTitle: "Repertory & Rubric Analyzer",
+        hudSub: "1,20,000+ Rubrics • Kent, Synthesis & Boenninghausen",
+        icon: "fa-list-check",
+        ctaText: "Browse Repertories",
+        filterCategory: "Repertory",
+        actionType: "category"
+    },
+    {
+        id: 3,
+        badge: "Banner 03 • Hahnemannian Foundation",
+        tag: "Organon",
+        titlePrefix: "Master the",
+        titleHighlight: "Organon of Medicine",
+        titleSuffix: "& Philosophy",
+        subtitle: "Deep-dive into foundational aphorisms, chronic miasms, and constitutional homeopathy curated for students & scholars.",
+        statLabel: "Classic Editions",
+        statValue: "180+",
+        accentFrom: "from-sky-200",
+        accentTo: "to-cyan-100",
+        glowColor: "rgba(56, 189, 248, 0.28)",
+        bgImage: "/images/banners/banner-03-organon.jpg",
+        sceneMood: "classic-archive",
+        hudTitle: "Organon-Based Medicine",
+        hudSub: "Aphorisms, Miasmatic Analysis & Constitutional Philosophy",
+        icon: "fa-book-journal-whills",
+        ctaText: "Read Organon Titles",
+        filterCategory: "Organon",
+        actionType: "category"
+    },
+    {
+        id: 4,
+        badge: "Banner 04 • Practice & Therapeutics",
+        tag: "Clinical",
+        titlePrefix: "Evidence-Based",
+        titleHighlight: "Clinical Therapeutics",
+        titleSuffix: "For Practitioners",
+        subtitle: "Practical clinical guides across pediatrics, dermatology, oncology, and acute/chronic case management.",
+        statLabel: "Clinical Guides",
+        statValue: "950+",
+        accentFrom: "from-purple-200",
+        accentTo: "to-indigo-100",
+        glowColor: "rgba(168, 85, 247, 0.26)",
+        bgImage: "/images/banners/banner-04-clinical.jpg",
+        sceneMood: "clinical-desk",
+        hudTitle: "Clinical Therapeutics Desk",
+        hudSub: "950+ Case Guides • Pediatrics, Skin & Chronic Care",
+        icon: "fa-stethoscope",
+        ctaText: "View Clinical Books",
+        filterCategory: "Clinical",
+        actionType: "category"
+    },
+    {
+        id: 5,
+        badge: "Banner 05 • Potency & Preparation",
+        tag: "Pharmacy",
+        titlePrefix: "Homoeopathic",
+        titleHighlight: "Pharmacy & Potency",
+        titleSuffix: "Standards",
+        subtitle: "Authentic reference texts on decimal, centesimal, and 50-millesimal scales, drug proving, and pharmacopoeia.",
+        statLabel: "Pharmacopoeia Refs",
+        statValue: "240+",
+        accentFrom: "from-emerald-200",
+        accentTo: "to-lime-100",
+        glowColor: "rgba(16, 185, 129, 0.28)",
+        bgImage: "/images/banners/banner-05-pharmacy.jpg",
+        sceneMood: "apothecary-gold",
+        hudTitle: "Homoeopathic Pharmacy & Potency",
+        hudSub: "240+ References • 50-Millesimal, LM & Pharmacopoeia",
+        icon: "fa-vial",
+        ctaText: "Explore Pharmacy",
+        filterCategory: "Pharmacy",
+        actionType: "category"
+    },
+    {
+        id: 6,
+        badge: "Banner 06 • Peer-Reviewed Research",
+        tag: "Journals",
+        titlePrefix: "Academic & Clinical",
+        titleHighlight: "Homeopathy Journals",
+        titleSuffix: "Latest Issues",
+        subtitle: "Stay updated with peer-reviewed research papers, clinical trials, and institutional case reports.",
+        statLabel: "Research Archives",
+        statValue: "500+",
+        accentFrom: "from-fuchsia-200",
+        accentTo: "to-pink-100",
+        glowColor: "rgba(217, 70, 239, 0.24)",
+        bgImage: "/images/banners/banner-06-journals.jpg",
+        sceneMood: "research-hall",
+        hudTitle: "Peer-Reviewed Research Journals",
+        hudSub: "500+ Issues • Clinical Trials & Institutional Papers",
+        icon: "fa-newspaper",
+        ctaText: "Open Journals",
+        filterCategory: "All",
+        actionType: "catalog"
+    },
+    {
+        id: 7,
+        badge: "Banner 07 • Global Medical Community",
+        tag: "60,000+ Doctors",
+        titlePrefix: "Trusted by",
+        titleHighlight: "60,000+ Homeopaths",
+        titleSuffix: "Worldwide Since 1966",
+        subtitle: "Powering homeopathic medical colleges, clinics, and independent doctors across 120+ countries.",
+        statLabel: "Doctors Network",
+        statValue: "60,000+",
+        accentFrom: "from-amber-200",
+        accentTo: "to-orange-100",
+        glowColor: "rgba(245, 158, 11, 0.28)",
+        bgImage: "/images/banners/banner-07-doctors.jpg",
+        sceneMood: "warm-library",
+        hudTitle: "60,000+ Doctors Network",
+        hudSub: "Colleges, Clinics & Practitioners Across 120+ Countries",
+        icon: "fa-user-doctor",
+        ctaText: "Join Practitioner Network",
+        filterCategory: "All",
+        actionType: "auth"
+    },
+    {
+        id: 8,
+        badge: "Banner 08 • Anti-Piracy Security",
+        tag: "100% DRM Vault",
+        titlePrefix: "Dynamic Watermark &",
+        titleHighlight: "3D DRM Reader",
+        titleSuffix: "Copyright Shield",
+        subtitle: "Every page renders with user-specific watermarks, anti-copy protection, and smooth 3D page-turn physics.",
+        statLabel: "Security Grade",
+        statValue: "AES + DRM",
+        accentFrom: "from-rose-200",
+        accentTo: "to-amber-100",
+        glowColor: "rgba(244, 63, 94, 0.24)",
+        bgImage: "/images/banners/banner-08-drm.jpg",
+        sceneMood: "amber-study",
+        hudTitle: "Encrypted 3D DRM Vault",
+        hudSub: "Dynamic User Watermark • Anti-Piracy Page Protection",
+        icon: "fa-shield-halved",
+        ctaText: "See How DRM Works",
+        filterCategory: "All",
+        actionType: "services"
+    },
+    {
+        id: 9,
+        badge: "Banner 09 • Seamless Cloud Sync",
+        tag: "Auto Page Sync",
+        titlePrefix: "Resume Reading",
+        titleHighlight: "Across Any Device",
+        titleSuffix: "In Real Time",
+        subtitle: "Start a chapter on desktop and continue from the exact page on tablet or mobile with cloud progress sync.",
+        statLabel: "Sync Accuracy",
+        statValue: "99.9%",
+        accentFrom: "from-teal-200",
+        accentTo: "to-emerald-100",
+        glowColor: "rgba(20, 184, 166, 0.28)",
+        bgImage: "/images/banners/banner-09-cloud-sync.jpg",
+        sceneMood: "classic-archive",
+        hudTitle: "Multi-Device Cloud Page Sync",
+        hudSub: "Instant Bookmark & Page Sync Across Desktop, Tab & Mobile",
+        icon: "fa-cloud-arrow-down",
+        ctaText: "Explore Membership Plans",
+        filterCategory: "All",
+        actionType: "plans"
+    },
+    {
+        id: 10,
+        badge: "Banner 10 • Value Bundles & Passes",
+        tag: "Curated Bundles",
+        titlePrefix: "Save More With",
+        titleHighlight: "Clinical Book Bundles",
+        titleSuffix: "& Reader Plans",
+        subtitle: "Unlock multi-book clinical collections and flexible validity passes tailored for students and clinics.",
+        statLabel: "Bundle Savings",
+        statValue: "Up to 40%",
+        accentFrom: "from-goldAccent",
+        accentTo: "to-emerald-100",
+        glowColor: "rgba(212, 175, 55, 0.30)",
+        bgImage: "/images/banners/banner-10-bundles.jpg",
+        sceneMood: "apothecary-gold",
+        hudTitle: "Curated Clinical Book Bundles",
+        hudSub: "Save Up to 40% With Multi-Title & Validity Passes",
+        icon: "fa-layer-group",
+        ctaText: "View Plans & Bundles",
+        filterCategory: "All",
+        actionType: "plans"
+    }
+];
+
+function Hero3DBannerShowcase({
+    storeBooks,
+    getBookAuthorName,
+    getBookCategoryName,
+    handleReadAccess,
+    searchQuery,
+    setSearchQuery,
+    setSelectedCategoryFilter,
+    scrollToHomeSection,
+    user,
+    isAdmin,
+    setSelectedRoleInput,
+    openAuthModal,
+    changeNavState
+}) {
+    const [activeBannerIdx, setActiveBannerIdx] = useState(0);
+    const [isPaused, setIsPaused] = useState(false);
+    const [tilt3D, setTilt3D] = useState({ rx: 0, ry: 0, px: 50, py: 50 });
+
+    const totalBanners = BJAINRX_HERO_BANNERS.length;
+    const currentBanner = BJAINRX_HERO_BANNERS[activeBannerIdx] || BJAINRX_HERO_BANNERS[0];
+
+    const goNextBanner = useCallback(() => {
+        setActiveBannerIdx(prev => (prev + 1) % totalBanners);
+    }, [totalBanners]);
+
+    const goPrevBanner = useCallback(() => {
+        setActiveBannerIdx(prev => (prev - 1 + totalBanners) % totalBanners);
+    }, [totalBanners]);
+
+    useEffect(() => {
+        if (isPaused) return;
+        const timer = setInterval(() => {
+            goNextBanner();
+        }, 4500);
+        return () => clearInterval(timer);
+    }, [isPaused, goNextBanner]);
+
+    const handleStageMouseMove = (e) => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        const normX = (e.clientX - rect.left) / rect.width - 0.5;
+        const normY = (e.clientY - rect.top) / rect.height - 0.5;
+        setTilt3D({
+            ry: Number((normX * 10).toFixed(2)),
+            rx: Number((-normY * 7).toFixed(2)),
+            px: Math.round(((e.clientX - rect.left) / rect.width) * 100),
+            py: Math.round(((e.clientY - rect.top) / rect.height) * 100)
+        });
+    };
+
+    const handleStageMouseLeave = () => {
+        setTilt3D({ rx: 0, ry: 0, px: 50, py: 50 });
+    };
+
+    const handleBannerCtaClick = (banner) => {
+        if (banner.actionType === 'category') {
+            setSelectedCategoryFilter(banner.filterCategory);
+            scrollToHomeSection('catalog-section');
+        } else if (banner.actionType === 'auth') {
+            if (!user.isLoggedIn) {
+                setSelectedRoleInput('Reader');
+                openAuthModal('register');
+            } else {
+                scrollToHomeSection('catalog-section');
+            }
+        } else if (banner.actionType === 'services') {
+            scrollToHomeSection('services');
+        } else if (banner.actionType === 'plans') {
+            if (user.isLoggedIn && !isAdmin) changeNavState({ activeTab: 'user-plans' });
+            else scrollToHomeSection('plans');
+        } else {
+            scrollToHomeSection('catalog-section');
+        }
+    };
+
+    const matchedBook =
+        storeBooks.find(b => getBookCategoryName(b).toLowerCase().includes(currentBanner.tag.toLowerCase())) ||
+        storeBooks[activeBannerIdx % Math.max(1, storeBooks.length)] ||
+        storeBooks[0];
+
+    const featuredCover = matchedBook?.image || matchedBook?.Image || '/images/default-cover.png';
+    const featuredTitle = matchedBook?.itemName || matchedBook?.ItemName || "Kent's Lectures on Materia Medica";
+    const featuredAuthor = matchedBook ? getBookAuthorName(matchedBook) : 'Dr. James Tyler Kent';
+    const featuredCategory = matchedBook ? getBookCategoryName(matchedBook) : currentBanner.tag;
+    const featuredPrice = matchedBook?.price !== undefined ? matchedBook.price : (matchedBook?.Price ?? 499);
+
+   
+    const slidePalette = [
+        'from-[#1b120b]/85 via-[#0b1925]/75 to-[#07111b]/90',
+        'from-[#1f1608]/85 via-[#101c24]/75 to-[#08121a]/90',
+        'from-[#091b29]/85 via-[#0d2230]/75 to-[#061018]/90',
+        'from-[#160f29]/85 via-[#0b1925]/75 to-[#07111b]/90',
+        'from-[#09211b]/85 via-[#0d2224]/75 to-[#061213]/90',
+        'from-[#240e24]/85 via-[#0e1a28]/75 to-[#07111b]/90',
+        'from-[#231507]/85 via-[#0b1925]/75 to-[#07111b]/90',
+        'from-[#240d16]/85 via-[#0b1925]/75 to-[#07111b]/90',
+        'from-[#082024]/85 via-[#0b1925]/75 to-[#07111b]/90',
+        'from-[#1f1807]/85 via-[#0b1925]/75 to-[#07111b]/90'
+    ];
+    const activeOverlay = slidePalette[activeBannerIdx % slidePalette.length];
+
+    return (
+        <section
+            onMouseEnter={() => setIsPaused(true)}
+            onMouseLeave={() => { setIsPaused(false); handleStageMouseLeave(); }}
+            onMouseMove={handleStageMouseMove}
+            className="text-white relative py-10 sm:py-14 lg:py-16 overflow-hidden border-b border-white/10 hero-3d-stage bg-[#07111b]">
+
+            {/* ================================================================
+                FULL-BLEED 10-BANNER AUTO-SCROLLING 3D BACKGROUND LAYER
+               ================================================================ */}
+            <div className="pointer-events-none absolute inset-0 overflow-hidden">
+                {BJAINRX_HERO_BANNERS.map((banner, idx) => {
+                    const isCurrent = idx === activeBannerIdx;
+                    const offsetStep = (idx - activeBannerIdx + totalBanners) % totalBanners;
+                    const depthShift = isCurrent ? 1.06 : 1.0 + (offsetStep * 0.015);
+                    const panX = ((idx % 5) - 2) * 1.4 - tilt3D.ry * 0.45;
+                    const panY = ((idx % 3) - 1) * 1.2 + tilt3D.rx * 0.45;
+
+                    return (
+                        <div
+                            key={banner.id}
+                            style={{
+                                opacity: isCurrent ? 0.52 : 0,
+                                transform: `translate3d(${panX}%, ${panY}%, 0) scale(${depthShift}) rotateY(${isCurrent ? tilt3D.ry * 0.25 : 0}deg)`
+                            }}
+                            className="hero-bg-scene-layer absolute inset-0 w-full h-full">
+                            <img
+                                src={banner.bgImage}
+                                alt={banner.hudTitle}
+                                onError={(e) => {
+                                    // Smooth architectural fallback inside the same 3D scene if custom banner file isn't added yet
+                                    e.currentTarget.style.display = 'none';
+                                }}
+                                className="w-full h-full object-cover object-center"
+                            />
+                            {/* Rich 3D Architectural Library & Amber Remedy Fallback Canvas */}
+                            <div
+                                style={{
+                                    background: `radial-gradient(circle at ${25 + (idx * 7) % 55}% ${30 + (idx * 9) % 45}%, ${banner.glowColor}, transparent 55%), linear-gradient(135deg, #1b120b 0%, #0d1d2b 48%, #07121b 100%)`
+                                }}
+                                className="w-full h-full flex items-center justify-between px-6 sm:px-16 opacity-90">
+                                {/* Decorative 3D Library Shelves & Floating Holographic Cards */}
+                                <div className="hidden md:grid grid-cols-3 gap-4 w-full max-w-5xl mx-auto opacity-30">
+                                    <div className="h-44 rounded-2xl border border-amber-200/20 bg-amber-950/30 p-4 flex flex-col justify-between">
+                                        <span className="text-[10px] uppercase tracking-widest text-amber-300 font-bold">Classic Shelves</span>
+                                        <span className="text-xl font-black text-white/80">1866–2026</span>
+                                    </div>
+                                    <div className="h-44 rounded-2xl border border-emerald-300/25 bg-emerald-950/30 p-4 flex flex-col justify-between translate-y-4">
+                                        <span className="text-[10px] uppercase tracking-widest text-emerald-300 font-bold">{banner.tag}</span>
+                                        <span className="text-xl font-black text-white/85">{banner.statValue}</span>
+                                    </div>
+                                    <div className="h-44 rounded-2xl border border-white/15 bg-slate-900/40 p-4 flex flex-col justify-between">
+                                        <span className="text-[10px] uppercase tracking-widest text-slate-300 font-bold">Digital Vault</span>
+                                        <span className="text-xl font-black text-white/80">3D Reader</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })}
+
+                {/* Contrast-Preserving Gradient & 3D Cursor Spotlight */}
+                <div className={`absolute inset-0 bg-gradient-to-r ${activeOverlay}`}></div>
+                <div
+                    style={{
+                        background: `radial-gradient(640px circle at ${tilt3D.px}% ${tilt3D.py}%, ${currentBanner.glowColor}, transparent 68%)`
+                    }}
+                    className="absolute inset-0 transition-opacity duration-300">
+                </div>
+            </div>
+
+            {/* ================================================================
+                FOREGROUND CONTENT (10-BANNER CONTROLS + 3D HERO + 3D BOOK)
+               ================================================================ */}
+            <div className="relative z-10 w-full px-4 sm:px-8 lg:px-12">
+                {/* TOP BANNER BAR */}
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-6 pb-3.5 border-b border-white/15">
+                    <div className="flex flex-wrap items-center gap-2.5">
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emeraldPrimary/25 text-emerald-200 border border-emeraldPrimary/40 text-[11px] font-extrabold tracking-wide backdrop-blur-xs">
+                            <i className={`fa-solid ${currentBanner.icon} text-goldAccent`}></i>
+                            <span>{currentBanner.badge}</span>
+                        </span>
+                        <span className="hidden sm:inline-block text-[11px] text-slate-300 font-semibold">
+                            Scene <strong className="text-white">{activeBannerIdx + 1}</strong> of <strong className="text-white">{totalBanners}</strong> • {currentBanner.hudTitle}
+                        </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={goPrevBanner}
+                            title="Previous Banner"
+                            className="w-8 h-8 rounded-lg bg-white/10 hover:bg-emeraldPrimary text-white border border-white/20 flex items-center justify-center text-xs transition cursor-pointer">
+                            <i className="fa-solid fa-chevron-left"></i>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setIsPaused(p => !p)}
+                            title={isPaused ? "Resume Auto-Scroll" : "Pause Auto-Scroll"}
+                            className="px-2.5 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-slate-100 border border-white/20 flex items-center gap-1.5 text-[11px] font-bold transition cursor-pointer">
+                            <i className={`fa-solid ${isPaused ? 'fa-play text-emeraldPrimary' : 'fa-pause text-goldAccent'}`}></i>
+                            <span>{isPaused ? 'Paused' : 'Auto Scroll'}</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={goNextBanner}
+                            title="Next Banner"
+                            className="w-8 h-8 rounded-lg bg-white/10 hover:bg-emeraldPrimary text-white border border-white/20 flex items-center justify-center text-xs transition cursor-pointer">
+                            <i className="fa-solid fa-chevron-right"></i>
+                        </button>
+                    </div>
+                </div>
+
+                {/* MAIN 3D TILTED HERO GRID */}
+                <div
+                    key={currentBanner.id}
+                    style={{
+                        transform: `rotateX(${tilt3D.rx}deg) rotateY(${tilt3D.ry}deg)`
+                    }}
+                    className="hero-banner-3d-card grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
+
+                    {/* LEFT COLUMN: ACTIVE BANNER COPY + SEARCH + CTAs */}
+                    <div className="lg:col-span-7 space-y-5 text-center lg:text-left hero-3d-layer-mid">
+                        <div className="inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-black/35 text-slate-100 text-[11px] sm:text-xs font-bold border border-white/20 backdrop-blur-md">
+                            <span className="w-2 h-2 rounded-full bg-emeraldPrimary animate-pulse"></span>
+                            <span>{currentBanner.hudSub}</span>
+                        </div>
+
+                        <h1 className="text-3xl sm:text-5xl xl:text-[3.45rem] font-extrabold tracking-tight leading-[1.12] drop-shadow-lg">
+                            {currentBanner.titlePrefix}{' '}
+                            <span className={`text-transparent bg-clip-text bg-gradient-to-r ${currentBanner.accentFrom} ${currentBanner.accentTo}`}>
+                                {currentBanner.titleHighlight}
+                            </span>{' '}
+                            <br className="hidden sm:block" />
+                            <span className="text-white">{currentBanner.titleSuffix}</span>
+                        </h1>
+
+                        <p className="text-slate-200 text-sm sm:text-base font-normal max-w-2xl leading-relaxed mx-auto lg:mx-0 drop-shadow">
+                            {currentBanner.subtitle}
+                        </p>
+
+                        {/* Instant Hero Search Bar */}
+                        <div className="max-w-xl mx-auto lg:mx-0">
+                            <div className="flex items-center bg-black/45 backdrop-blur-md border border-white/25 focus-within:border-emeraldPrimary rounded-2xl p-1.5 shadow-2xl transition-all">
+                                <div className="pl-3 pr-2 text-emeraldPrimary">
+                                    <i className="fa-solid fa-magnifying-glass text-sm"></i>
+                                </div>
+                                <input
+                                    type="text"
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') scrollToHomeSection('catalog-section');
+                                    }}
+                                    placeholder="Search by book title, author, or ISBN..."
+                                    className="w-full bg-transparent text-white placeholder-slate-300 text-xs sm:text-sm py-2.5 px-2 outline-none"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => scrollToHomeSection('catalog-section')}
+                                    className="bg-emeraldPrimary hover:bg-emeraldHover text-white font-bold text-xs px-4 sm:px-5 py-2.5 rounded-xl transition shrink-0 cursor-pointer shadow-md">
+                                    Search
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Primary & Secondary Action Buttons */}
+                        <div className="flex flex-col sm:flex-row justify-center lg:justify-start gap-3 pt-1 hero-3d-layer-front">
+                            <button
+                                type="button"
+                                onClick={() => handleBannerCtaClick(currentBanner)}
+                                className="bg-emeraldPrimary hover:bg-emeraldHover text-white font-bold px-6 py-3.5 rounded-xl transition shadow-lg shadow-emeraldPrimary/35 flex items-center justify-center space-x-2 text-xs sm:text-sm cursor-pointer">
+                                <i className={`fa-solid ${currentBanner.icon}`}></i>
+                                <span>{currentBanner.ctaText}</span>
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    if (!user.isLoggedIn) {
+                                        setSelectedRoleInput('Author');
+                                        openAuthModal('register');
+                                    } else if (isAdmin) {
+                                        changeNavState({ activeTab: 'admin' });
+                                    } else {
+                                        changeNavState({ activeTab: 'user-plans' });
+                                    }
+                                }}
+                                className="bg-black/40 hover:bg-black/60 text-white font-bold px-6 py-3.5 rounded-xl border border-white/25 transition flex items-center justify-center space-x-2 text-xs sm:text-sm backdrop-blur-md cursor-pointer">
+                                <i className={`fa-solid ${isAdmin ? 'fa-sliders' : 'fa-crown'} text-goldAccent`}></i>
+                                <span>{isAdmin ? 'Open Admin Console' : 'View Membership Plans'}</span>
+                            </button>
+                        </div>
+
+                        {/* Trust Metrics Strip */}
+                        <div className="grid grid-cols-3 gap-3 sm:gap-6 text-center lg:text-left pt-4 border-t border-white/15">
+                            <div>
+                                <h4 className="text-lg sm:text-2xl font-black text-emerald-300">{currentBanner.statValue}</h4>
+                                <p className="text-[11px] sm:text-xs text-slate-300 font-medium">{currentBanner.statLabel}</p>
+                            </div>
+                            <div>
+                                <h4 className="text-lg sm:text-2xl font-black text-white">60,000+</h4>
+                                <p className="text-[11px] sm:text-xs text-slate-300 font-medium">Active Doctors</p>
+                            </div>
+                            <div>
+                                <h4 className="text-lg sm:text-2xl font-black text-white">100%</h4>
+                                <p className="text-[11px] sm:text-xs text-slate-300 font-medium">DRM Protected</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* RIGHT COLUMN: 3D FLOATING HARDCOVER EDITION MODEL */}
+                    <div className="lg:col-span-5 flex justify-center hero-3d-layer-front">
+                        <div className="bg-navyDeep/85 backdrop-blur-xl p-5 sm:p-6 rounded-3xl border border-white/20 shadow-2xl w-full max-w-md relative">
+                            <div className="absolute -top-3.5 right-5 bg-gradient-to-r from-goldAccent to-amber-300 text-navyDark font-black text-[11px] px-3.5 py-1 rounded-full shadow-lg flex items-center gap-1.5">
+                                <i className="fa-solid fa-cube text-[10px]"></i>
+                                <span>3D Model #{activeBannerIdx + 1}</span>
+                            </div>
+
+                            <div className="mb-3.5">
+                                <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-300">
+                                    {featuredCategory}
+                                </span>
+                                <h3 className="text-white font-extrabold text-base sm:text-lg leading-snug line-clamp-1 mt-0.5" title={featuredTitle}>
+                                    {featuredTitle}
+                                </h3>
+                                <p className="text-slate-300 text-xs mt-0.5">
+                                    by <span className="text-white font-semibold">{featuredAuthor}</span>
+                                </p>
+                            </div>
+
+                            <div
+                                onMouseMove={(e) => {
+                                    const rect = e.currentTarget.getBoundingClientRect();
+                                    const x = (e.clientX - rect.left) / rect.width - 0.5;
+                                    const y = (e.clientY - rect.top) / rect.height - 0.5;
+                                    const stage = e.currentTarget.querySelector('.book-3d-stage');
+                                    if (stage) {
+                                        stage.classList.remove('animate-book-3d-float');
+                                        stage.style.transform = `rotateY(${x * 38}deg) rotateX(${-y * 28}deg) scale3d(1.07, 1.07, 1.07)`;
+                                    }
+                                }}
+                                onMouseLeave={(e) => {
+                                    const stage = e.currentTarget.querySelector('.book-3d-stage');
+                                    if (stage) {
+                                        stage.style.transform = '';
+                                        stage.classList.add('animate-book-3d-float');
+                                    }
+                                }}
+                                onClick={() => matchedBook ? handleReadAccess(matchedBook) : scrollToHomeSection('catalog-section')}
+                                className="relative h-64 sm:h-72 rounded-2xl overflow-hidden mb-4 bg-gradient-to-br from-slate-950/90 via-[#0d233a]/85 to-amber-950/50 border border-white/15 flex items-center justify-center p-6 cursor-pointer group perspective-1200">
+
+                                <div className="absolute w-44 h-44 rounded-full bg-emeraldPrimary/25 blur-2xl pointer-events-none"></div>
+
+                                <div className="book-3d-stage animate-book-3d-float relative z-10 h-48 sm:h-52 flex items-center justify-center">
+                                    <div className="book-3d-spine"></div>
+                                    <img
+                                        src={featuredCover}
+                                        alt={featuredTitle}
+                                        onError={(e) => { e.currentTarget.src = '/images/default-cover.png'; }}
+                                        className="h-full w-auto max-w-[170px] object-contain rounded-r-md shadow-[0_22px_40px_rgba(0,0,0,0.85)] border border-white/20 bg-slate-800"
+                                    />
+                                    <div className="book-3d-pages"></div>
+                                </div>
+
+                                <span className="absolute top-3 left-3 z-20 bg-black/50 backdrop-blur-xs text-slate-100 border border-white/20 text-[10px] font-bold px-2.5 py-1 rounded-full flex items-center gap-1">
+                                    <i className="fa-solid fa-arrows-up-down-left-right text-emerald-300"></i> Drag / Hover 3D
+                                </span>
+
+                                <span className="absolute bottom-3 right-3 z-20 bg-navyDark/95 backdrop-blur-xs text-white border border-white/20 text-xs font-black px-3 py-1 rounded-lg shadow">
+                                    ₹{Number(featuredPrice).toLocaleString('en-IN')}
+                                </span>
+                            </div>
+
+                            <button
+                                type="button"
+                                onClick={() => matchedBook ? handleReadAccess(matchedBook) : scrollToHomeSection('catalog-section')}
+                                className="w-full bg-emeraldPrimary hover:bg-emeraldHover text-white font-bold py-3 rounded-xl transition text-xs flex items-center justify-center space-x-2 shadow-lg shadow-emeraldPrimary/30 cursor-pointer">
+                                <span>{matchedBook ? 'Read Edition Now' : 'Browse Complete Catalog'}</span>
+                                <i className="fa-solid fa-arrow-right"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                {/* BOTTOM 10-BANNER SELECTOR STRIP & AUTO-SCROLL PROGRESS BAR */}
+                <div className="mt-8 pt-4 border-t border-white/15 space-y-2.5">
+                    <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+                        {BJAINRX_HERO_BANNERS.map((b, idx) => {
+                            const active = idx === activeBannerIdx;
+                            return (
+                                <button
+                                    key={b.id}
+                                    type="button"
+                                    onClick={() => setActiveBannerIdx(idx)}
+                                    className={`px-3 py-1.5 rounded-xl text-[11px] font-bold whitespace-nowrap transition cursor-pointer flex items-center gap-1.5 border ${active
+                                        ? 'bg-emeraldPrimary text-white border-emeraldPrimary shadow-md shadow-emeraldPrimary/30'
+                                        : 'bg-black/35 text-slate-200 border-white/15 hover:bg-black/55 hover:text-white'}`}>
+                                    <span className="opacity-75 font-mono text-[10px]">{String(idx + 1).padStart(2, '0')}</span>
+                                    <span>{b.tag}</span>
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    <div className="w-full h-1 bg-white/15 rounded-full overflow-hidden">
+                        <div
+                            key={`${activeBannerIdx}-${isPaused}`}
+                            className={`h-full bg-gradient-to-r from-emeraldPrimary via-teal-300 to-goldAccent ${isPaused ? 'banner-progress-paused w-1/2' : 'banner-progress-bar'}`}>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    );
+}
 
 // ----------------------------------------------------------------------
 // MAIN APPLICATION COMPONENT WITH INTERNAL BROWSER HISTORY ROUTER
@@ -3769,249 +4481,27 @@ function App() {
 
                 {activeTab === 'store' && (
                     <main className="w-full overflow-x-hidden">
-                        {/* HERO BANNER SECTION (INDUSTRY-STANDARD RESPONSIVE SHOWCASE) */}
-                        <section className="hero-pattern text-white relative py-12 sm:py-16 lg:py-20 overflow-hidden border-b border-white/10">
-                            {/* Subtle Ambient Lighting Effects */}
-                            <div className="pointer-events-none absolute -top-24 -left-24 w-96 h-96 rounded-full bg-emeraldPrimary/15 blur-3xl"></div>
-                            <div className="pointer-events-none absolute -bottom-32 right-10 w-[28rem] h-[28rem] rounded-full bg-goldAccent/10 blur-3xl"></div>
+                        <Hero3DBannerShowcase
+                            storeBooks={storeBooks}
+                            getBookAuthorName={getBookAuthorName}
+                            getBookCategoryName={getBookCategoryName}
+                            handleReadAccess={handleReadAccess}
+                            searchQuery={searchQuery}
+                            setSearchQuery={setSearchQuery}
+                            setSelectedCategoryFilter={setSelectedCategoryFilter}
+                            scrollToHomeSection={scrollToHomeSection}
+                            user={user}
+                            isAdmin={isAdmin}
+                            setSelectedRoleInput={setSelectedRoleInput}
+                            openAuthModal={openAuthModal}
+                            changeNavState={changeNavState}
+                        />
 
-                            <div className="relative z-10 w-full px-4 sm:px-8 lg:px-12">
-                                <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-12 items-center">
-
-                                    {/* LEFT COLUMN: VALUE PROPOSITION + HERO SEARCH + CTAs */}
-                                    <div className="lg:col-span-7 space-y-6 text-center lg:text-left">
-                                        <div className="inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-emeraldPrimary/15 text-emeraldPrimary text-[11px] sm:text-xs font-bold tracking-wide border border-emeraldPrimary/30 backdrop-blur-xs">
-                                            <i className="fa-solid fa-shield-halved text-goldAccent"></i>
-                                            <span>Official B. Jain Homeopathy Digital Platform • Since 1966</span>
-                                        </div>
-
-                                        <h1 className="text-3xl sm:text-5xl xl:text-6xl font-extrabold tracking-tight leading-[1.12]">
-                                            The World's Largest <br className="hidden sm:block" />
-                                            <span className="text-transparent bg-clip-text bg-gradient-to-r from-emeraldPrimary via-teal-300 to-emerald-200">
-                                                Homeopathy Digital Library
-                                            </span>
-                                        </h1>
-
-                                        <p className="text-slate-300 text-sm sm:text-base lg:text-lg font-normal max-w-2xl leading-relaxed mx-auto lg:mx-0">
-                                            Access authentic Homeopathic works, Materia Medica, Repertories, and Academic Journals on demand. Read seamlessly with DRM protection and instant search.
-                                        </p>
-
-                                        {/* Instant Hero Search Bar */}
-                                        <div className="max-w-xl mx-auto lg:mx-0">
-                                            <div className="flex items-center bg-white/10 backdrop-blur-md border border-white/20 focus-within:border-emeraldPrimary focus-within:bg-white/15 rounded-2xl p-1.5 shadow-xl transition-all">
-                                                <div className="pl-3 pr-2 text-emeraldPrimary">
-                                                    <i className="fa-solid fa-magnifying-glass text-sm"></i>
-                                                </div>
-                                                <input
-                                                    type="text"
-                                                    value={searchQuery}
-                                                    onChange={(e) => setSearchQuery(e.target.value)}
-                                                    onKeyDown={(e) => {
-                                                        if (e.key === 'Enter') scrollToHomeSection('catalog-section');
-                                                    }}
-                                                    placeholder="Search by book title, author, or ISBN..."
-                                                    className="w-full bg-transparent text-white placeholder-slate-400 text-xs sm:text-sm py-2.5 px-2 outline-none"
-                                                />
-                                                <button
-                                                    type="button"
-                                                    onClick={() => scrollToHomeSection('catalog-section')}
-                                                    className="bg-emeraldPrimary hover:bg-emeraldHover text-white font-bold text-xs px-4 sm:px-5 py-2.5 rounded-xl transition shrink-0 cursor-pointer shadow-md">
-                                                    Search
-                                                </button>
-                                            </div>
-
-                                            {/* Quick Category Filter Pills */}
-                                            <div className="flex flex-wrap items-center justify-center lg:justify-start gap-2 mt-3 text-[11px]">
-                                                <span className="text-slate-400 font-semibold">Popular:</span>
-                                                {['Materia Medica', 'Repertory', 'Organon', 'Clinical'].map(tag => (
-                                                    <button
-                                                        key={tag}
-                                                        type="button"
-                                                        onClick={() => {
-                                                            setSelectedCategoryFilter(tag);
-                                                            scrollToHomeSection('catalog-section');
-                                                        }}
-                                                        className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-emeraldPrimary/20 text-slate-300 hover:text-emeraldPrimary border border-white/10 transition cursor-pointer font-medium">
-                                                        {tag}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </div>
-
-                                        {/* Primary & Secondary Action Buttons */}
-                                        <div className="flex flex-col sm:flex-row justify-center lg:justify-start gap-3.5 pt-1">
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    if (!user.isLoggedIn) {
-                                                        setSelectedRoleInput('Reader');
-                                                        openAuthModal('register');
-                                                    } else {
-                                                        scrollToHomeSection('catalog-section');
-                                                    }
-                                                }}
-                                                className="bg-emeraldPrimary hover:bg-emeraldHover text-white font-bold px-7 py-3.5 rounded-xl transition shadow-lg shadow-emeraldPrimary/30 flex items-center justify-center space-x-2 text-xs sm:text-sm cursor-pointer">
-                                                <i className="fa-solid fa-book-open"></i>
-                                                <span>{user.isLoggedIn ? 'Explore Digital Library' : 'Join as Reader / Practitioner'}</span>
-                                            </button>
-
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    if (!user.isLoggedIn) {
-                                                        setSelectedRoleInput('Author');
-                                                        openAuthModal('register');
-                                                    } else if (isAdmin) {
-                                                        changeNavState({ activeTab: 'admin' });
-                                                    } else {
-                                                        changeNavState({ activeTab: 'user-plans' });
-                                                    }
-                                                }}
-                                                className="bg-white/10 hover:bg-white/20 text-white font-bold px-7 py-3.5 rounded-xl border border-white/20 transition flex items-center justify-center space-x-2 text-xs sm:text-sm backdrop-blur-md cursor-pointer">
-                                                <i className={`fa-solid ${isAdmin ? 'fa-sliders' : 'fa-crown'} text-goldAccent`}></i>
-                                                <span>{isAdmin ? 'Open Admin Console' : 'View Membership Plans'}</span>
-                                            </button>
-                                        </div>
-
-                                        {/* Trust Metrics Strip */}
-                                        <div className="grid grid-cols-3 gap-3 sm:gap-6 text-center lg:text-left pt-5 border-t border-white/10">
-                                            <div>
-                                                <h4 className="text-lg sm:text-2xl font-black text-white">
-                                                    {storeBooks.length > 0 ? `${storeBooks.length}+` : '10,000+'}
-                                                </h4>
-                                                <p className="text-[11px] sm:text-xs text-slate-400 font-medium">Verified Titles</p>
-                                            </div>
-                                            <div>
-                                                <h4 className="text-lg sm:text-2xl font-black text-white">60,000+</h4>
-                                                <p className="text-[11px] sm:text-xs text-slate-400 font-medium">Active Doctors</p>
-                                            </div>
-                                            <div>
-                                                <h4 className="text-lg sm:text-2xl font-black text-emeraldPrimary">100%</h4>
-                                                <p className="text-[11px] sm:text-xs text-slate-400 font-medium">DRM Protected</p>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* RIGHT COLUMN: FEATURED CLINICAL CHOICE (ZERO-CROP PORTRAIT SHOWCASE) */}
-                                    <div className="lg:col-span-5 flex justify-center">
-                                        {(() => {
-                                            const featuredBook = storeBooks[0];
-                                            const featuredCover = featuredBook?.image || featuredBook?.Image || '/images/default-cover.png';
-                                            const featuredTitle = featuredBook?.itemName || featuredBook?.ItemName || "Kent's Lectures on Materia Medica";
-                                            const featuredAuthor = featuredBook ? getBookAuthorName(featuredBook) : 'Dr. James Tyler Kent';
-                                            const featuredCategory = featuredBook ? getBookCategoryName(featuredBook) : 'Materia Medica';
-                                            const featuredPrice = featuredBook?.price !== undefined ? featuredBook.price : (featuredBook?.Price ?? 499);
-
-                                            return (
-                                                <div className="bg-navyDeep/95 backdrop-blur-md p-5 sm:p-6 rounded-3xl border border-white/15 shadow-2xl w-full max-w-md relative">
-                                                    {/* Floating Gold Pill */}
-                                                    <div className="absolute -top-3.5 right-5 bg-gradient-to-r from-goldAccent to-amber-300 text-navyDark font-black text-[11px] px-3.5 py-1 rounded-full shadow-lg flex items-center gap-1.5">
-                                                        <i className="fa-solid fa-star text-[10px]"></i>
-                                                        <span>Featured Edition</span>
-                                                    </div>
-
-                                                    {/* Header */}
-                                                    <div className="mb-4">
-                                                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-emeraldPrimary">
-                                                            {featuredCategory}
-                                                        </span>
-                                                        <h3 className="text-white font-extrabold text-base sm:text-lg leading-snug line-clamp-1 mt-0.5" title={featuredTitle}>
-                                                            {featuredTitle}
-                                                        </h3>
-                                                        <p className="text-slate-400 text-xs mt-0.5">
-                                                            by <span className="text-slate-200 font-semibold">{featuredAuthor}</span>
-                                                        </p>
-                                                    </div>
-
-                                                    {/* INTERACTIVE 3D HARDCOVER BOOK MODEL SHOWCASE */}
-                                                    <div
-                                                        onMouseMove={(e) => {
-                                                            const rect = e.currentTarget.getBoundingClientRect();
-                                                            const x = (e.clientX - rect.left) / rect.width - 0.5;
-                                                            const y = (e.clientY - rect.top) / rect.height - 0.5;
-                                                            const stage = e.currentTarget.querySelector('.book-3d-stage');
-                                                            if (stage) {
-                                                                stage.classList.remove('animate-book-3d-float');
-                                                                stage.style.transform = `rotateY(${x * 34}deg) rotateX(${-y * 24}deg) scale3d(1.05, 1.05, 1.05)`;
-                                                            }
-                                                        }}
-                                                        onMouseLeave={(e) => {
-                                                            const stage = e.currentTarget.querySelector('.book-3d-stage');
-                                                            if (stage) {
-                                                                stage.style.transform = '';
-                                                                stage.classList.add('animate-book-3d-float');
-                                                            }
-                                                        }}
-                                                        onClick={() => featuredBook ? handleReadAccess(featuredBook) : scrollToHomeSection('catalog-section')}
-                                                        className="relative h-68 sm:h-76 rounded-2xl overflow-hidden mb-4 bg-gradient-to-br from-slate-900 via-[#0d233a] to-slate-950 border border-white/10 flex items-center justify-center p-6 cursor-pointer group perspective-1200">
-
-                                                        {/* Ambient 3D Glow Ring */}
-                                                        <div className="absolute w-44 h-44 rounded-full bg-emeraldPrimary/25 blur-2xl pointer-events-none"></div>
-
-                                                        {/* 3D Book Object (Cover + Spine + Pages) */}
-                                                        <div className="book-3d-stage animate-book-3d-float relative z-10 h-52 sm:h-56 flex items-center justify-center">
-                                                            {/* Left 3D Hardcover Spine */}
-                                                            <div className="book-3d-spine"></div>
-
-                                                            {/* Front Cover */}
-                                                            <img
-                                                                src={featuredCover}
-                                                                alt={featuredTitle}
-                                                                onError={(e) => { e.currentTarget.src = '/images/default-cover.png'; }}
-                                                                className="h-full w-auto max-w-[175px] object-contain rounded-r-md shadow-[0_22px_40px_rgba(0,0,0,0.8)] border border-white/15 bg-slate-800"
-                                                            />
-
-                                                            {/* Right 3D Page Edges */}
-                                                            <div className="book-3d-pages"></div>
-                                                        </div>
-
-                                                        {/* 3D Interactive Hint Badge */}
-                                                        <span className="absolute top-3 left-3 z-20 bg-white/10 backdrop-blur-xs text-slate-200 border border-white/15 text-[10px] font-bold px-2.5 py-1 rounded-full flex items-center gap-1">
-                                                            <i className="fa-solid fa-cube text-emeraldPrimary"></i> 3D View
-                                                        </span>
-
-                                                        {/* Price Tag Pill */}
-                                                        <span className="absolute bottom-3 right-3 z-20 bg-navyDark/90 backdrop-blur-xs text-white border border-white/15 text-xs font-black px-3 py-1 rounded-lg shadow">
-                                                            ₹{Number(featuredPrice).toLocaleString('en-IN')}
-                                                        </span>
-                                                    </div>
-
-                                                    {/* Feature Checklist */}
-                                                    <div className="grid grid-cols-2 gap-2 border-t border-white/10 pt-3.5 text-[11px] text-slate-300">
-                                                        <div className="flex items-center gap-1.5">
-                                                            <i className="fa-solid fa-circle-check text-emeraldPrimary"></i>
-                                                            <span>DRM Watermarked</span>
-                                                        </div>
-                                                        <div className="flex items-center gap-1.5">
-                                                            <i className="fa-solid fa-circle-check text-emeraldPrimary"></i>
-                                                            <span>Auto Page Sync</span>
-                                                        </div>
-                                                        <div className="flex items-center gap-1.5">
-                                                            <i className="fa-solid fa-circle-check text-emeraldPrimary"></i>
-                                                            <span>Instant Cloud Access</span>
-                                                        </div>
-                                                        <div className="flex items-center gap-1.5">
-                                                            <i className="fa-solid fa-circle-check text-emeraldPrimary"></i>
-                                                            <span>Multi-Device Ready</span>
-                                                        </div>
-                                                    </div>
-
-                                                    {/* CTA Button */}
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => featuredBook ? handleReadAccess(featuredBook) : scrollToHomeSection('catalog-section')}
-                                                        className="mt-4 w-full bg-emeraldPrimary hover:bg-emeraldHover text-white font-bold py-3 rounded-xl transition text-xs flex items-center justify-center space-x-2 shadow-lg shadow-emeraldPrimary/25 cursor-pointer">
-                                                        <span>{featuredBook ? 'Read Featured Edition' : 'Browse Complete Catalog'}</span>
-                                                        <i className="fa-solid fa-arrow-right"></i>
-                                                    </button>
-                                                </div>
-                                            );
-                                        })()}
-                                    </div>
-
-                                </div>
-                            </div>
-                        </section>
+                        {/* Baaki store sections (Categories, Catalog, About, Plans, Services, etc.) */}
+                        {/* ... */}
+                    </main>
+                )}
+            </div>
 
                         {/* CATEGORIES HIGHLIGHT SECTION */}
                         <section id="categories" className="py-12 sm:py-16 bg-white border-b border-slate-200">
@@ -4816,9 +5306,9 @@ function App() {
                                 </div>
                             </div>
                         </footer>
-                    </main>
-                )}
-                </div>
+                   
+                )
+                
 
             {/* INTEGRATED SECURE CANVASES DRM PDF VIEWER MODAL */}
             {selectedBookForDrm && (
